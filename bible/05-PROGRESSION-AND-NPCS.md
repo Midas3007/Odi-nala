@@ -58,8 +58,14 @@ run.** That is what makes the choices choices.
 
 ## 5.3 The mirrors and the riddles
 
-Four mirrors: rooms 0, 2, 4, 5. **[NOT BUILT]** — rooms 8 and 9 need one each; the
-back half of the game currently has no fast travel, which is a real flaw.
+Eight mirrors: rooms 0, 2, 4, 5, 6, 7, 8, 9. The Forge and the Open Sky were added in
+Phase 1 — the back half of the game had no fast travel, and room 9 had an `M` tile with
+no table entry, which was the freeze.
+
+**Every `M` tile must have a `MIRRORS` entry and every entry must have an `M` tile.**
+`tools/audit.py` fails on either. A mirror with no entry no longer throws — `mirrorInfo()`
+falls back to the room's own name and warns once on the console — but the fallback is a
+net, not a licence: fix the table.
 
 An unattuned mirror asks a **gwam gwam gwam** — a real Igbo riddle — presented in Igbo
 with an English gloss below and three answers.

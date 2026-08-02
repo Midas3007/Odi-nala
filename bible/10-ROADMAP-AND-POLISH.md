@@ -6,21 +6,21 @@ Shipping. Ten rooms, three bosses, nine enemy types, four weapons, four spells, 
 tutorial, a codex, an ending, fast travel, two save slots, a speedrun mode, and a
 test suite. Roughly 90 minutes for a first completion.
 
-Two crash-class bugs are outstanding at the time of writing; they are Phase 1 of the
-roadmap and nothing else starts until they are closed.
+Phase 1 is **closed**. Both crash-class bugs are fixed, `tools/audit.py` is clean and
+wired into `node test.js`, and the loop can no longer be killed by a throw.
 
 ## 10.2 The roadmap
 
 ### Phase 1 — Stability (blocking)
 | # | Item | Notes |
 |---|---|---|
-| 1.1 | Room 9 has an `M` tile with no `MIRRORS` entry — correct riddle answer throws and kills the rAF loop | **Confirmed. Freezes the game permanently.** |
-| 1.2 | `MIRRORS` entries for rooms 8 and 9 | Back half currently has no fast travel |
-| 1.3 | Defensive fallbacks in `openRiddle` / `riddleUpdate` / `travelUpdate` | Never throw on a missing table entry |
-| 1.4 | **try/catch around the `frame()` body**, keep pumping rAF | The systemic fix. Matters more than 1.1. |
-| 1.5 | Fix everything `tools/audit.py` reports | Includes `room 3 → room 2` landing in mid-air |
-| 1.6 | Runtime de-embed: push the player out of solid geometry, fall back to last charm | Solves the soft-lock class forever |
-| 1.7 | Regression tests for both, plus audit wired into the test run | |
+| 1.1 | ~~Room 9 `M` tile with no `MIRRORS` entry~~ | **Done.** Was exactly as diagnosed. Guarded by a test that answers every mirror correctly. |
+| 1.2 | ~~`MIRRORS` entries for rooms 8 and 9~~ | **Done.** Mirror at the Forge, Mirror under the Open Sky. Room 8 needed an `M` tile too. |
+| 1.3 | ~~Defensive fallbacks in the mirror path~~ | **Done.** `mirrorInfo()` falls back to the room name and warns once. Empty travel list no longer divides by zero. |
+| 1.4 | ~~try/catch around the `frame()` body~~ | **Done.** Sets `G.crashed`, draws a one-line notice, restores `ctx` from `baseCtx`, keeps pumping rAF. |
+| 1.5 | ~~Fix everything the audit reports~~ | **Done.** 4 problems to 0: room 9 mirror, room 3 to room 2 landing, two embedded spawns in room 6. |
+| 1.6 | ~~Runtime de-embed~~ | **Done.** `unstickPlayer()` runs first in `playerUpdate`, searches outward preferring up, falls back to the last charm. Silent. |
+| 1.7 | ~~Regression tests plus the audit wired in~~ | **Done.** 623 assertions. The audit is now the first section of the suite. |
 
 ### Phase 2 — Content (the doubling)
 | # | Item | Value |

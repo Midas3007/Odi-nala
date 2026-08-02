@@ -50,6 +50,45 @@ while (acc >= step) {
 **The `consumed` flag is load-bearing.** It is why a tap during a freeze frame is not
 eaten. Do not simplify it.
 
+### The crash guard
+
+`frame()` is a wrapper. All the work is in `frameBody()`, and the wrapper is:
+
+```js
+function frame(now){
+  try{ frameBody(now); }
+  catch(err){ /* log once, G.crashed = true, restore ctx, draw a notice */ }
+  requestAnimationFrame(frame);   // unconditional — this is the whole point
+}
+```
+
+**The rAF call is outside the try and must stay there.** A throw anywhere in any update
+or painter used to escape `frame()`, skip the re-schedule, and stop the game permanently:
+the player sees a frozen picture, does not know it is a crash, and loses the run. One bad
+property lookup should never be able to do that again.
+
+On a caught error the guard also restores `ctx` from `baseCtx`. `buildBackLayers()` swaps
+`ctx` for an offscreen context; if it throws mid-bake the swap-back never happens and
+every later frame paints into a discarded canvas — which looks exactly like a freeze.
+
+`G.crashed` and `G.crashErr` are set once and surfaced as a small non-blocking strip at
+the bottom of the screen. The game keeps playing. **A game running with one broken system
+beats a game that has stopped.**
+
+### The soft-lock net
+
+`unstickPlayer()` is the first thing `playerUpdate()` calls. If the player's body overlaps
+solid tiles — which should be impossible — it searches outward in 2px steps up to three
+tiles, preferring up, and moves them to the first free spot; if nothing is free it returns
+them to the last rest charm. It is silent: no message, no mode, the player never learns it
+exists.
+
+It tests `SOLID` only. One-way platforms are deliberately excluded, because resting on one
+is normal and is not being stuck.
+
+This is a net, not a licence. `tools/audit.py` is what stops bad geometry shipping; this is
+what stops bad geometry ending a run if it does.
+
 ## 9.4 Coding standards
 
 ### Naming
@@ -137,7 +176,8 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **552 assertions, headless Node, no dependencies**, about 18 seconds.
+`test.js` — **623 assertions, headless Node, no dependencies**, about 20 seconds. Its
+first section shells out to `tools/audit.py`, so a red audit is a red test run.
 
 ### How it works
 It stubs `document`, `AudioContext`, `localStorage` and `requestAnimationFrame`, loads

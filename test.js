@@ -19,6 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { spawnSync } = require('child_process');
 
 const HTML = path.join(__dirname, 'odinala.html');
 
@@ -140,6 +141,8 @@ const canvas = mkCanvas(1440, 810);
 const storage = mkStorage();
 let clock = 0;                 // ms; the harness owns time entirely
 let rafCb = null;              // the game's frame(), captured on registration
+let lastFrame = null;          // the same callback, kept even when a crash skips
+                               // re-registration — see rearm()
 let timers = [];
 const listeners = {};          // real window listeners, so the audio unlock runs
 
@@ -156,7 +159,7 @@ const sandbox = {
   },
   localStorage: storage,
   performance: { now: () => clock },
-  requestAnimationFrame: (cb) => { rafCb = cb; return 1; },
+  requestAnimationFrame: (cb) => { rafCb = cb; lastFrame = cb; return 1; },
   cancelAnimationFrame: () => {},
   setTimeout: (fn, ms) => { timers.push({ fn, at: clock + (ms || 0) }); return timers.length; },
   clearTimeout: () => {},
@@ -203,12 +206,20 @@ const STEP = 1000 / 60;
 function tick(n) {
   for (let i = 0; i < (n == null ? 1 : n); i++) {
     clock += STEP;
-    const cb = rafCb; rafCb = null;
+    const cb = rafCb || lastFrame;
+    if (!cb) throw new Error('the game never scheduled a frame');
+    rafCb = null;
     cb(clock);
     while (timers.length && timers[0].at <= clock) timers.shift().fn();
+    // A frame that throws never reaches its own requestAnimationFrame call, so
+    // an unset rafCb is exactly the "game is dead forever" signature. Report it
+    // as a failure rather than letting it take the rest of the suite with it.
     if (!rafCb) throw new Error('frame() stopped re-registering with requestAnimationFrame');
   }
 }
+// Put the loop back after a crash so later blocks still run and still report.
+// The harness must survive a dead game; the assertion above is what records it.
+function rearm() { rafCb = lastFrame; }
 // Goes through the real down()/up(), so `pressed` behaves exactly as it does for
 // a player — including surviving hitstop.
 function press(code, hold, after) {
@@ -327,6 +338,27 @@ check('the first key press completes the audio unlock handshake', audio.started 
   'started=' + audio.started + ' osc=' + audio.osc + ' noise=' + audio.noise);
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('the static audit');
+(() => {
+  // tools/audit.py catches what a running test cannot: a table that has drifted
+  // out of sync with ROOMS, geometry a player cannot leave. It is one of the two
+  // gates in CLAUDE.md, so a red audit is a red test run — otherwise a future
+  // room can reintroduce exactly the soft-lock this suite exists to prevent.
+  const audit = path.join(__dirname, 'tools', 'audit.py');
+  check('tools/audit.py is present', fs.existsSync(audit), audit);
+  if (fs.existsSync(audit)) {
+    const r = spawnSync('python3', [audit, HTML], { encoding: 'utf8' });
+    if (r.error) {
+      check('tools/audit.py runs', false, String(r.error.message));
+    } else {
+      const out = ((r.stdout || '') + (r.stderr || '')).trim();
+      check('tools/audit.py reports the room tables and geometry clean', r.status === 0,
+        out.split('\n').map(l => '  ' + l).join('\n'));
+    }
+  }
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('world integrity');
 const ROOMS = api.ROOMS;
 check('ten rooms are authored', ROOMS.length === 10, 'rooms=' + ROOMS.length);
@@ -412,6 +444,73 @@ check('every riddle has exactly one correct index in range', RIDDLES.every(r => 
 check('every riddle answer is labelled', RIDDLES.every(r => r.a.every(x => typeof x === 'string' && x.length > 0)));
 check('there are at least as many riddles as mirrors', RIDDLES.length >= mirrorKeys.length,
   RIDDLES.length + ' riddles, ' + mirrorKeys.length + ' mirrors');
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('every mirror can be answered correctly without killing the loop');
+(() => {
+  // REGRESSION — Bug A. riddleUpdate() built its success message from
+  // MIRRORS[RID.mirror.id].name. Room 9 has an M tile and had no MIRRORS entry,
+  // so a *correct* answer read .name off undefined and threw. The throw escaped
+  // frame(), so the requestAnimationFrame at the bottom never ran and the game
+  // stopped forever. A wrong answer took the other branch, which is why it only
+  // broke for players who got it right.
+  //
+  // Every room with an M tile is answered correctly here, and the loop has to
+  // still be turning afterwards.
+  const mirrorRooms = [];
+  ROOMS.forEach((r, i) => { if (r.map.some(row => row.indexOf('M') >= 0)) mirrorRooms.push(i); });
+  check('the world has mirrors to attune', mirrorRooms.length > 0, 'rooms=' + mirrorRooms.join(','));
+
+  function mirrorTile(i) {
+    const r = ROOMS[i];
+    for (let y = 0; y < r.h; y++) { const x = r.map[y].indexOf('M'); if (x >= 0) return { x: x, y: y }; }
+    return null;
+  }
+  function floorUnder(i, tx, ty) {
+    const r = ROOMS[i];
+    for (let y = ty; y < r.h; y++) if (SOL(api.tileAt(r, tx, y))) return y;
+    return -1;
+  }
+
+  for (const i of mirrorRooms) {
+    const mt = mirrorTile(i);
+    const fy = floorUnder(i, mt.x, mt.y);
+    check('room ' + i + '’s mirror stands on a floor', fy > 0, 'M at (' + mt.x + ',' + mt.y + ')');
+    if (fy < 0) continue;
+
+    let threw = null, opened = false, crashed = false, ranOn = false;
+    try {
+      revive();
+      api.unlockAll();
+      G().cheat = false;                       // real behaviour, not one-touch
+      G().crashed = false;
+      G().mirrors = {}; G().mirrorLock = {};
+      G().taught = { bossIn: 1, ekIn: 1, onIn: 1, exec: 1, bound: 1 };
+      at(i, mt.x, fy);
+      const sh = api.shrines.find(s => s.kind === 'mirror');
+      if (!sh) { check('room ' + i + ' spawns a usable mirror shrine', false, 'no mirror in shrines'); continue; }
+      P().x = sh.x; P().y = sh.y; P().inv = 600;
+      const idx = G().riddleIdx % RIDDLES.length;
+      press('KeyE', 1, 2);
+      if (G().mode !== 'riddle') { check('room ' + i + '’s mirror asks a riddle', false, 'mode=' + G().mode); continue; }
+      for (let n = 0; n < RIDDLES[idx].c; n++) press('ArrowDown', 1, 1);
+      press('KeyZ', 1, 4);                     // the correct answer — this is what threw
+      tick(30);
+      opened = !!G().mirrors[i];
+      crashed = !!G().crashed;
+      tick(30);                                // if the loop died, tick() throws here
+      ranOn = true;
+    } catch (e) {
+      threw = e && e.message ? e.message : String(e);
+      rearm();                                 // the game is dead; the harness is not
+    }
+
+    check('REGRESSION answering room ' + i + '’s riddle correctly does not throw', threw === null, threw);
+    check('REGRESSION the loop is still turning after room ' + i + '’s riddle', ranOn, 'frame() stopped being scheduled');
+    check('answering room ' + i + '’s riddle correctly opens its mirror', opened, 'mirrors=' + JSON.stringify(G().mirrors));
+    check('answering room ' + i + '’s riddle correctly does not trip the crash guard', !crashed, 'G.crashed=' + crashed);
+  }
+})();
 
 // ═════════════════════════════════════════════════════════════════════════════
 section('the title screen');
@@ -513,14 +612,17 @@ section('arriving through every exit');
       finite(P().x) && finite(settled) && settled >= 0 && settled < ROOMS[ex.to].h * 16,
       'arrival (' + ex.sx + ',' + ex.sy + ') settled at x=' + P().x.toFixed(1) + ' y=' + settled.toFixed(1) +
       ', room is ' + (ROOMS[ex.to].h * 16) + 'px tall');
-    hold('ArrowRight', 45); release('ArrowRight', 2);
+    hold('ArrowRight', 60); release('ArrowRight', 2);
     const movedRight = Math.abs(P().x - x0);
     at(ex.to, ex.sx, ex.sy);
     tick(30);
-    hold('ArrowLeft', 45); release('ArrowLeft', 2);
+    hold('ArrowLeft', 60); release('ArrowLeft', 2);
     const movedLeft = Math.abs(P().x - x0);
+    // Both directions, 60 frames each. A buried arrival moves 0px either way:
+    // moveEnt() blocks x and y when the body already overlaps solid, so the
+    // player is pinned and it reads as a hang rather than a bug.
     check('REGRESSION arriving in room ' + ex.to + ' from room ' + i + ', the player can walk away',
-      movedRight > 8 || movedLeft > 8,
+      movedRight > 0 && movedLeft > 0,
       'arrival (' + ex.sx + ',' + ex.sy + ') — moved ' + movedRight.toFixed(1) + 'px right, ' +
       movedLeft.toFixed(1) + 'px left; y ' + y0.toFixed(1) + '→' + settled.toFixed(1));
   }));
@@ -528,6 +630,88 @@ section('arriving through every exit');
   // ọfọ every frame — leave it set and every later block silently stops testing
   // what it thinks it is testing.
   G().cheat = false;
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('the soft-lock safety net');
+(() => {
+  // Bug B, solved as a class. Nothing should ever put the player inside rock,
+  // so this plants them there deliberately and checks they get out. Silent by
+  // design — no message, no mode, the player never learns it happened.
+  const embed = [
+    { room: 0, tx: 9, ty: 18, what: 'buried two tiles under the floor' },
+    { room: 3, tx: 5, ty: 16, what: 'the old bone-road landing' },
+    { room: 6, tx: 13, ty: 15, what: 'inside a pillar' }
+  ];
+  for (const e of embed) {
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1 };
+    G().checkpoint = { room: 0, tx: 9, ty: 16 };
+    at(e.room, 2, 16);
+    // plant them inside the geometry, bypassing every normal path
+    P().x = e.tx * 16 + 3; P().y = e.ty * 16 - P().h; P().vx = 0; P().vy = 0;
+    P().inv = 600;
+    const x0 = P().x, y0 = P().y;
+    tick(6);
+    const freed = !(P().x === x0 && P().y === y0);
+    check('a player ' + e.what + ' in room ' + e.room + ' is moved out', freed,
+      'stayed at (' + P().x.toFixed(1) + ',' + P().y.toFixed(1) + ')');
+    hold('ArrowRight', 60); release('ArrowRight', 2);
+    const movedR = Math.abs(P().x - x0);
+    check('...and can then walk', movedR > 0, 'moved ' + movedR.toFixed(1) + 'px');
+    check('...without being told', !/stuck|error|sorry/i.test(G().msg || ''), 'msg=' + G().msg);
+    check('...and is left somewhere real', finite(P().x) && finite(P().y), 'x=' + P().x + ' y=' + P().y);
+  }
+  // Standing on a one-way platform is not "stuck" and must not trigger the net.
+  (() => {
+    const r = ROOMS[1];
+    let px = -1, py = -1;
+    for (let y = 0; y < r.h && py < 0; y++) { const x = r.map[y].indexOf('-'); if (x >= 0) { px = x; py = y; } }
+    if (px < 0) return;
+    revive();
+    at(1, 2, 16);
+    P().x = px * 16 + 3; P().y = py * 16 - P().h; P().vx = 0; P().vy = 0.5;
+    tick(10);
+    check('resting on a one-way platform is not treated as being stuck',
+      Math.abs(P().x - (px * 16 + 3)) < 8, 'x moved to ' + P().x.toFixed(1));
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('the crash guard');
+(() => {
+  // The systemic half of Bug A. A throw anywhere inside a frame must not be able
+  // to stop the loop. Break a painter on purpose and confirm the game survives.
+  revive();
+  at(0, 9, 16);
+  G().crashed = false;
+  const room = api.R;
+  const realName = room.name;
+  let survived = false, flagged = false;
+  try {
+    // R.w is read through tileAt on the first line of playerUpdate, so this is
+    // guaranteed to throw inside the frame rather than merely maybe.
+    const realW = room.w;
+    Object.defineProperty(room, 'w', { get() { throw new Error('deliberate test explosion'); }, configurable: true });
+    try { tick(5); survived = true; }
+    finally { Object.defineProperty(room, 'w', { value: realW, writable: true, configurable: true }); }
+  } catch (e) {
+    survived = false;
+    rearm();
+  }
+  flagged = !!G().crashed;
+  check('REGRESSION a throw inside a frame does not stop the loop', survived,
+    'the loop stopped being scheduled');
+  check('a contained crash is recorded on G.crashed', flagged, 'G.crashed=' + G().crashed);
+  check('a contained crash records what went wrong', /deliberate test explosion/.test(G().crashErr || ''),
+    'G.crashErr=' + G().crashErr);
+  G().crashed = false; G().crashErr = '';
+  revive();
+  at(0, 9, 16);
+  tick(30);
+  check('the game keeps playing after a contained crash', G().mode === 'play' && !P().dead, 'mode=' + G().mode);
+  check('a clean run never sets the crash flag', !G().crashed, 'G.crashed=' + G().crashed);
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -806,16 +990,24 @@ section('every boss is killable and its gate opens');
   const gate = ROOMS[6].exits.find(e => e.needs === 'ekwensu');
   check('the bone road has a gated exit', !!gate);
   if (gate) {
-    G().cheat = false;
-    at(6, gate.tx, gate.ty - 1);
-    P().x = gate.tx * 16 + 2; P().y = gate.ty * 16;
-    tick(3);
-    check('with Ekwensu standing, the gated exit does not fire', G().room === 6, 'room=' + G().room);
-    G().slain.ekwensu = 1;
-    at(6, 7, 16);
-    P().x = gate.tx * 16 + 2; P().y = gate.ty * 16;
-    tick(3);
-    check('with Ekwensu down, the gate carries you through', G().room === gate.to, 'room=' + G().room);
+    // Walked into, not teleported into. Placing the player on the trigger by
+    // hand puts them inside the doorway's wall tile, which the soft-lock net now
+    // correctly undoes — and which never resembled what a player does anyway.
+    function walkEast() {
+      revive();
+      api.unlockAll(); G().cheat = false;
+      G().taught = { bossIn: 1, ekIn: 1, onIn: 1 };
+      at(6, 44, 16);
+      for (let i = 0; i < 400 && G().room === 6; i++) { P().inv = 9999; api.down('ArrowRight'); tick(1); }
+      api.up('ArrowRight');
+      return G().room;
+    }
+    G().slain = { ogbunabali: 1 };
+    check('with Ekwensu standing, walking east off the bone road is refused', walkEast() === 6,
+      'room=' + G().room);
+    G().slain = { ogbunabali: 1, ekwensu: 1 };
+    check('with Ekwensu down, walking east off the bone road carries you through',
+      walkEast() === gate.to, 'room=' + G().room);
   }
 })();
 

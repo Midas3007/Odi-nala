@@ -73,6 +73,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const cvs = document.getElementById('g');
 let ctx = cvs.getContext('2d');
+// buildBackLayers() swaps ctx for an offscreen context and swaps it back. If it
+// throws in between, the swap-back never happens and every later frame paints
+// into a discarded canvas — a black screen that looks exactly like a freeze.
+// The crash guard in frame() restores from here.
+const baseCtx = ctx;
 ctx.imageSmoothingEnabled = false;
 const W = 480, H = 270, T = 16, SC = 3;   // logical space stays 480x270; we paint it at 3x
 ctx.setTransform(SC,0,0,SC,0,0);
@@ -320,7 +325,7 @@ const ROOMS = [
   "############################################",
   "############################################",
   "############################################"],
-  exits:[{tx:0,ty:12,tw:1,th:2,to:2,sx:28,sy:34},
+  exits:[{tx:0,ty:12,tw:1,th:2,to:2,sx:28,sy:35},
          {tx:42,ty:12,tw:1,th:2,to:6,sx:2,sy:16, needs:'ogbunabali'}] },
 
 { name:"Ahịa Mmụọ — the market that opens at night", tint:'#150e14',
@@ -390,7 +395,7 @@ const ROOMS = [
   "#.......-----.............-----.............-----......#",
   "#......................................................#",
   "E......M....##................##......................E#",
-  "E...S.......r#........W.......#v........r........X....E",
+  "E...S.....r..#........W.......#.v.......r........X....E",
   "########################################################",
   "########################################################",
   "########################################################",
@@ -439,7 +444,7 @@ const ROOMS = [
   "#...................--a--..............................#",
   "#.........-i---...............................----.....#",
   "#............................-----.....................#",
-  "E......................................................E",
+  "E......M...............................................E",
   "E...S......k...............i..v................k..F....E",
   "##################.......###########.......#############",
   "##################.......###########.......#############",
@@ -693,6 +698,35 @@ function moveEnt(e){
     else { if(e.vy>0) e.onGround=true; e.vy=0; }
   }
   e.x = clamp(e.x, 0, R.w*T-e.w);
+}
+
+// -- the last line against a soft-lock ---------------------------------------
+// Overlapping rock is asked about, not passed through: one-way platforms are
+// deliberately excluded, because resting on one is normal and is not stuck.
+function insideSolid(x,y){
+  const pts=[[x+1,y+1],[x+P.w-1,y+1],[x+1,y+P.h-1],[x+P.w-1,y+P.h-1],
+             [x+P.w/2,y+P.h/2]];
+  for(const p of pts) if(SOLID(tileAt(R,Math.floor(p[0]/T),Math.floor(p[1]/T)))) return true;
+  return false;
+}
+// Nothing should ever put the player inside geometry. A bad exit landing did
+// once, and a player who cannot move in any direction has lost their run — it
+// reads as a freeze, not a bug, so they do not even know to reload. Push out
+// along the shortest axis, preferring up; if three tiles of searching finds
+// nothing, put them back at the last charm. Silent either way: this is a net,
+// not a feature, and the player should never learn it exists.
+function unstickPlayer(){
+  if(!insideSolid(P.x,P.y)) return false;
+  for(let d=2; d<=T*3; d+=2){
+    const tries=[[0,-d],[0,d],[-d,0],[d,0]];
+    for(const t of tries){
+      const nx=clamp(P.x+t[0],0,R.w*T-P.w), ny=P.y+t[1];
+      if(!insideSolid(nx,ny)){ P.x=nx; P.y=ny; P.vx=0; P.vy=0; return true; }
+    }
+  }
+  const c=G.checkpoint||{room:0,tx:9,ty:16};
+  resetPlayerAt(c.room,c.tx,c.ty);
+  return true;
 }
 
 // ── fx ───────────────────────────────────────────────────────────────────────
@@ -1273,6 +1307,7 @@ function startExec(e){
 }
 
 function playerUpdate(){
+  unstickPlayer();          // before anything reads P.x/P.y this frame
   P.anim++;
   if(P.inv>0) P.inv--;
   if(P.hurtT>0) P.hurtT--;
@@ -4441,6 +4476,8 @@ const RIDDLES=[
 ];
 const RID={idx:0, sel:0, mirror:null, shake:0, wrong:0};
 function openRiddle(m){
+  if(!m || !RIDDLES.length) return;              // never open a riddle with no mirror behind it
+  mirrorInfo(m.id);                              // warn now, at the glass, not at the answer
   RID.idx = G.riddleIdx % RIDDLES.length;
   G.riddleIdx++;
   RID.sel=0; RID.mirror=m; RID.wrong=0;
@@ -4449,6 +4486,9 @@ function openRiddle(m){
 }
 function riddleUpdate(){
   const r=RIDDLES[RID.idx];
+  // a riddle with nothing behind it is an authoring bug, not a player state —
+  // hand control back rather than working with undefined
+  if(!r || !RID.mirror){ G.mode='play'; return; }
   if(RID.wrong>0){
     RID.wrong--;
     if(RID.wrong===0){
@@ -4466,7 +4506,7 @@ function riddleUpdate(){
       G.mirrors[RID.mirror.id]=true;
       G.mode='play';
       S.name(); G.flash=12;
-      say("The glass clears. "+MIRRORS[RID.mirror.id].name+" will carry you now.",200);
+      say("The glass clears. "+mirrorInfo(RID.mirror.id).name+" will carry you now.",200);
       burst(RID.mirror.x+8, RID.mirror.y+10, 30, C.spiritOr||C.gold, 2.6, 46);
       saveGame();
     } else {
@@ -4512,8 +4552,38 @@ const MIRRORS={
   4:{room:4, tx:5,  ty:16, name:'Mirror in the Night Market'},
   5:{room:5, tx:6,  ty:16, name:'Mirror under the Water'},
   6:{room:6, tx:7,  ty:16, name:'Mirror on the Bone Road'},
-  7:{room:7, tx:8,  ty:16, name:'Mirror in the Land of Spirits'}
+  7:{room:7, tx:8,  ty:16, name:'Mirror in the Land of Spirits'},
+  8:{room:8, tx:7,  ty:16, name:'Mirror at the Forge'},
+  9:{room:9, tx:10, ty:16, name:'Mirror under the Open Sky'}
 };
+// A room can carry an M tile and have no entry here — that is an authoring
+// mistake, and it used to be a fatal one: reading .name off undefined threw out
+// of frame() and the loop never restarted. Fall back to the room's own name and
+// the floor under its M tile so the glass still works, and complain once so the
+// mistake is findable. tools/audit.py fails on this statically.
+const MIRROR_WARNED={};
+function mirrorInfo(id){
+  const m=MIRRORS[id];
+  if(m) return m;
+  if(!MIRROR_WARNED[id]){
+    MIRROR_WARNED[id]=1;
+    if(typeof console!=='undefined' && console.warn)
+      console.warn('Ọdịnala: room '+id+' has a mirror but no MIRRORS entry. '+
+                   'Using the room name. Add one — tools/audit.py checks for this.');
+  }
+  const r=ROOMS[id];
+  let tx=2, ty=16;
+  if(r){
+    for(let y=0;y<r.h && ty===16;y++){
+      const x=r.map[y].indexOf('M');
+      if(x<0) continue;
+      tx=x;
+      for(let k=y;k<r.h;k++) if(SOLID(tileAt(r,tx,k))){ ty=k; break; }
+      break;
+    }
+  }
+  return {room:id, tx:tx, ty:ty, name:(r?r.name:'The glass'), fallback:true};
+}
 const TRV={sel:0};
 function openTravel(){
   const keys=Object.keys(G.mirrors).filter(k=>G.mirrors[k]);
@@ -4523,11 +4593,15 @@ function openTravel(){
 function travelList(){ return Object.keys(MIRRORS).filter(k=>G.mirrors[k]); }
 function travelUpdate(){
   const list=travelList();
+  // an empty list would make the modulo below NaN and strand the player in a
+  // menu with nothing in it
+  if(!list.length){ if(tap('KeyX')||tap('KeyZ')||tap('Enter')) G.mode='play'; return; }
+  if(TRV.sel>=list.length) TRV.sel=0;
   if(tap('ArrowUp')||tap('KeyW')){ TRV.sel=(TRV.sel-1+list.length)%list.length; tone(540,.05,'square',.02); }
   if(tap('ArrowDown')||tap('KeyS')){ TRV.sel=(TRV.sel+1)%list.length; tone(540,.05,'square',.02); }
   if(tap('KeyX')){ G.mode='play'; return; }
   if(tap('KeyZ')||tap('Enter')){
-    const m=MIRRORS[list[TRV.sel]];
+    const m=mirrorInfo(list[TRV.sel]);
     G.mode='play'; G.fade=1; S.name();
     resetPlayerAt(m.room, m.tx, m.ty);
     say(m.name,120); saveGame();
@@ -4539,7 +4613,7 @@ function renderTravel(){
   ctx.textAlign='center'; ctx.font='9px ui-sans-serif,system-ui'; ctx.fillStyle=C.goldDim;
   ctx.fillText('STEP THROUGH', W/2, 54);
   for(let i=0;i<list.length;i++){
-    const m=MIRRORS[list[i]], y=88+i*24, on=i===TRV.sel;
+    const m=mirrorInfo(list[i]), y=88+i*24, on=i===TRV.sel;
     if(on){ ctx.globalAlpha=.16; px(W/2-120,y-12,240,19,C.gold); ctx.globalAlpha=1; }
     ctx.font='10px ui-serif,Georgia,serif'; ctx.fillStyle=on?C.bone:C.chalkDim;
     ctx.fillText(m.name, W/2, y);
@@ -5114,7 +5188,36 @@ function renderMap(){
 
 // ── loop ─────────────────────────────────────────────────────────────────────
 let last=performance.now(), acc=0;
+// The loop must never be able to die. A single bad property lookup inside any
+// update or painter used to escape frame(), skip the requestAnimationFrame at
+// the bottom, and stop the game permanently — the player sees a frozen picture
+// and loses the run. Everything is wrapped: on a throw we log once, mark
+// G.crashed, and keep scheduling. A game running with one broken system beats a
+// game that has stopped.
 function frame(now){
+  try{ frameBody(now); }
+  catch(err){
+    if(!G.crashed){
+      G.crashed = true;
+      G.crashErr = (err && err.message) ? err.message : String(err);
+      if(typeof console!=='undefined' && console.error)
+        console.error('Ọdịnala: a frame threw and was contained. The loop keeps running.', err);
+    }
+    // ctx is a `let` that buildBackLayers() swaps; if the throw happened mid-bake
+    // we would otherwise keep painting into the offscreen canvas forever
+    if(ctx!==baseCtx) ctx=baseCtx;
+    try{ drawCrashNotice(); }catch(e){}
+  }
+  requestAnimationFrame(frame);
+}
+// Small, non-blocking, and it does not stop the player playing.
+function drawCrashNotice(){
+  ctx.globalAlpha=.72; px(0,H-11,W,11,'#1a0d0d'); ctx.globalAlpha=1;
+  ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle='#c0603b'; ctx.textAlign='left';
+  ctx.fillText('something went wrong here — the game is still running', 6, H-3);
+  ctx.textAlign='left';
+}
+function frameBody(now){
   let dt = now-last; last=now; acc += Math.min(60,dt);
   const step = 1000/60;
   while(acc>=step){
@@ -5154,7 +5257,7 @@ function frame(now){
     else if(G.mode==='codex') renderCodex();
     else if(G.mode==='ending') renderEnding();
   }
-  requestAnimationFrame(frame);
+  if(G.crashed) drawCrashNotice();
 }
 // -- speedrun: everything open, nothing in the way ---------------------------
 function unlockAll(){
