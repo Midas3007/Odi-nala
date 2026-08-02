@@ -108,7 +108,7 @@ array. No `.map`/`.filter` inside `update()` or `render()` on entity lists.
 
 ## 11.6 Testing requirements
 
-`test.js` is the contract. **218 assertions, 0 failures, always.**
+`test.js` is the contract. **539 assertions, 0 failures, always.**
 
 **What the harness does:** stubs the DOM, canvas context, `AudioContext`,
 `localStorage` and timers; loads the real script; drives the real frame loop one
@@ -122,7 +122,11 @@ it.
    real bugs found in this project — dropped inputs during hitstop, multi-hit
    swings, colliding save slots, the unreachable room — has a permanent test.
 4. Tests are hermetic: reset player state, clear hitstop and slow-mo, set facing.
-   Most flaky-test debugging here has been forgetting `P.face`.
+   Most flaky-test debugging here has been forgetting `P.face`. **`G.cheat` is
+   the other one** — `unlockAll()` leaves it on, and cheat mode refills life,
+   gourds and ọfọ every frame, so a block that forgets to clear it silently
+   stops testing what it thinks it is testing. Turn it off when you are done
+   with it.
 5. Two randomised soaks (12k and 14k frames across every mode) check for NaN and
    illegal states. Any new mode joins the soak's key list.
 6. If the test harness needs to reach a new internal, add it to the
@@ -130,6 +134,10 @@ it.
 
 **What must always have coverage:**
 - Every room is reachable from some other room's exit list
+- Every exit's arrival tile is walkable — checked twice, once on the geometry
+  and once by actually coming through the doorway and walking away from where
+  you land. An arrival buried in rock pins the player: no direction moves them,
+  and only a mirror or death gets them out. It reads as a hang, not a bug.
 - Every mirror's destination lands on solid ground
 - Every boss is killable and its gate opens
 - Every weapon swings and its chain length is right

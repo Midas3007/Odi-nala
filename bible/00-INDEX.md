@@ -10,7 +10,7 @@ If this document and a good idea disagree, argue it out in writing and amend the
 
 Ọdịnala is a hand-made, single-file, browser-native Metroidvania built on Igbo
 cosmology. It exists. It runs. It has ten rooms, four bosses, nine enemy species,
-four weapons, four spells, a tutorial, a codex, an ending, and 218 automated
+four weapons, four spells, a tutorial, a codex, an ending, and 539 automated
 assertions guarding all of it.
 
 This bible is not a pitch for a game that might exist. It is the operating

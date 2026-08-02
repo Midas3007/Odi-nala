@@ -6,7 +6,7 @@
 4 spells × 3 levels · 5 skills · tutorial · codex (lore + bestiary) · riddle
 mirrors + fast travel · cowrie economy + ledger · map · pause + inventory ·
 save/load with two slots · speedrun mode · one ending · procedural soundtrack ·
-synthesized voices · 218 passing assertions.
+synthesized voices · 539 passing assertions.
 
 **The honest gaps:** one ending where three are designed · no accessibility
 options beyond speedrun · no weather · no NG+ · six bosses and thirteen enemy

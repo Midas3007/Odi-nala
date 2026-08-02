@@ -22,10 +22,22 @@ Open `odinala.html` in a browser and it runs.
 node test.js
 ```
 
-218 assertions, headless. It stubs the DOM and AudioContext, drives the real
-game loop frame by frame, and ends with two randomised soaks (12k and 14k
-frames of button mashing across every screen) checking for NaN and illegal
-states. **If it does not end with `0 failures`, the change is not done.**
+539 assertions, headless, about 18 seconds. It stubs the DOM, the 2D context,
+AudioContext, `localStorage` and the frame clock, loads the real script out of
+`odinala.html`, and drives the real loop one tick at a time — it tests the game,
+not a model of it. It ends with two randomised soaks (12k and 14k frames of
+button mashing across every screen) checking for NaN and illegal states.
+**If it does not end with `0 failures`, the change is not done.**
+
+The audio stub *records* instead of no-opping, so "silence is a bug" is
+assertable: every emitter in the game short-circuits on `if(!AC) return`, and a
+null AudioContext would hide every silent event rather than catch it. Sound only
+starts after a key is delivered through the game's own listeners, the same
+unlock handshake a real device does.
+
+Assertions tagged **REGRESSION** guard a bug this project has actually shipped:
+dropped inputs during hitstop, multi-hit swings, colliding save slots, and
+arrivals that bury the player in rock. Do not weaken one to make a change pass.
 
 Syntax check on its own:
 
