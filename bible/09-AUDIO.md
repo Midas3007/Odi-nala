@@ -102,6 +102,11 @@ Every sound is a function. Categories and their rules:
 - **Break / execution** — long, low, with a bloom.
 - **Name** — a 110 Hz sine over 800 ms with a triangle over it. Used for
   everything sacred: naming, mirrors attuning, purchases, weapons found.
+- **Pick** — a 45 ms dry noise transient at 1800 Hz plus a short triangle rising
+  560 → 760 Hz. Handling, not consecration: taking hold of a weapon or changing
+  the word in your mouth. Both `cycleWeapon()` and `cycleSpell()` end in it, and
+  they must stay identical — a swap that sounds bigger one way than the other
+  tells the player something untrue about which choice mattered.
 
 **Rules:**
 1. Nothing loops except the music.

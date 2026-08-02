@@ -844,19 +844,47 @@ section('death and respawn');
   }
 })();
 (() => {
-  // NOTE — no assertion here yet on the shade the player drops on death.
-  // Dying to a hazard reclaims your own shade in the same frame: hurtPlayer()
-  // runs from inside playerUpdate() before the shade-pickup check further down
-  // the same function, so the shade is created on the player's own hitbox and
-  // collected immediately. That is an open question for the owner, not
-  // something to freeze into a test either way. See the handover notes.
+  // REGRESSION — dying to a hazard used to refund your own shade in the same
+  // frame. hurtPlayer() runs from inside playerUpdate(), and the shade-pickup
+  // check sits 46 lines further down that same function, so die() dropped the
+  // shade on the player's own hitbox and the code below collected it before the
+  // frame ended. Death cost nothing. Enemy deaths never showed it, because their
+  // damage lands after playerUpdate() has already returned.
   const h = findHazard(8);
   revive();
   G().checkpoint = { room: 0, tx: 9, ty: 16 };
-  killPlayer();
+  G().cheat = false;
+  at(8, h.x, h.y - 2);
+  G().cheat = false;
+  P().cowries = 90; P().hp = 1; P().inv = 0; P().flasks = 0;
+  P().x = h.x * 16 + 3; P().y = h.y * 16 - P().h + 4;
+  for (let i = 0; i < 30 && !P().dead; i++) { P().inv = 0; tick(1); }
+  check('dying to a hazard kills the player', P().dead === true, 'hp=' + P().hp);
+  check('REGRESSION death drops the cowries you were carrying', P().cowries === 0, 'cowries=' + P().cowries);
+  check('REGRESSION the shade survives the frame you died on', !!api.shade, 'shade=' + JSON.stringify(api.shade));
+  check('the shade holds what you dropped', !!api.shade && api.shade.amt === 90, 'amt=' + (api.shade || {}).amt);
+  check('the shade is left in the room you fell in', !!api.shade && api.shade.room === 8, 'room=' + (api.shade || {}).room);
+
   clock += 2000;
   while (timers.length && timers[0].at <= clock) timers.shift().fn();
   tick(4);
+  check('the shade is not waiting at the charm you woke up at', !!api.shade && api.shade.room !== G().room,
+    'shade room=' + (api.shade || {}).room + ' player room=' + G().room);
+  check('waking up does not refund the cowries', P().cowries === 0, 'cowries=' + P().cowries);
+
+  // ...and walking back onto it returns what you lost.
+  if (api.shade) {
+    const amt = api.shade.amt, sx = api.shade.x, sy = api.shade.y;
+    at(8, h.x, h.y - 4);
+    P().x = sx; P().y = sy - 6; P().inv = 600;
+    tick(3);
+    check('walking back onto the shade returns what you dropped', P().cowries === amt, 'cowries=' + P().cowries);
+    check('a collected shade is gone', !api.shade, 'shade=' + JSON.stringify(api.shade));
+  } else {
+    check('walking back onto the shade returns what you dropped', false, 'there was no shade left to walk back to');
+    check('a collected shade is gone', false, 'there was no shade left to collect');
+  }
+  revive();
   check('waking clears built ọfọ', P().ofo === 0, 'ofo=' + P().ofo);
   check('waking puts the player back on solid ground', P().onGround || P().vy >= 0, 'vy=' + P().vy);
   check('the speedrun player cannot be killed by a hazard', (() => {
@@ -1266,10 +1294,8 @@ section('sound');
     ['swinging', () => { press('KeyZ', 1, 2); }],
     ['rolling', () => { press('KeyX', 1, 2); }],
     ['cycling weapons', () => { G().weapons = { mma: 1, ogu: 1 }; api.cycleWeapon(1); }],
-    // NOTE — cycling *words* is deliberately absent. cycleSpell() ends in
-    // `S.pick && S.pick()` and the sound bank has no `pick`, so swapping your
-    // ọfọ is silent while swapping your weapon is not. Open question for the
-    // owner; asserting either way would freeze the answer. See the handover notes.
+    ['cycling words', () => { G().spells = { amadioha: 1, ala: 1, idemili: 0, ikenga: 0 }; tick(1);
+      api.down('KeyG'); tick(2); api.up('KeyG'); }],
     ['opening the pause menu', () => { press('Escape', 1, 2); }],
     ['healing', () => { P().flasks = 2; P().hp = 10; press('KeyV', 1, 40); }],
     ['a heavy landing', () => { hold('KeyZ', 60); release('KeyZ', 30); }],
@@ -1286,6 +1312,29 @@ section('sound');
     revive();
     G().mode = 'play';
   }
+  // REGRESSION — swapping equipment used to be half silent. Both cycles called
+  // `S.pick && S.pick()` against a bank that had no `pick`, so the weapon swap
+  // only made a noise because of a second, inline tone() the spell swap lacked.
+  // Silence is a bug (13.11), and the two must sound alike.
+  revive();
+  at(0, 9, 16);
+  G().cheat = false;
+  G().weapons = { mma: 1, ogu: 1 }; G().weapon = 'mma';
+  audioReset();
+  api.cycleWeapon(1);
+  const weaponSwap = audioTotal();
+  revive();
+  at(0, 9, 16);
+  G().cheat = false;
+  G().spells = { amadioha: 1, ala: 1, idemili: 0, ikenga: 0 }; G().equipped = 'amadioha';
+  audioReset();
+  api.down('KeyG'); tick(2); api.up('KeyG');
+  const spellSwap = audioTotal();
+  check('REGRESSION swapping the word in your mouth makes a sound', spellSwap > 0, 'audio events=' + spellSwap);
+  check('REGRESSION swapping weapon and swapping word sound alike',
+    weaponSwap === spellSwap, 'weapon=' + weaponSwap + ' word=' + spellSwap);
+  check('the swap sound is one short gesture, not a fanfare', spellSwap <= 4, 'audio events=' + spellSwap);
+
   revive();
   audioReset();
   const died = killPlayer();

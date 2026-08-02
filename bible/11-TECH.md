@@ -108,7 +108,7 @@ array. No `.map`/`.filter` inside `update()` or `render()` on entity lists.
 
 ## 11.6 Testing requirements
 
-`test.js` is the contract. **539 assertions, 0 failures, always.**
+`test.js` is the contract. **552 assertions, 0 failures, always.**
 
 **What the harness does:** stubs the DOM, canvas context, `AudioContext`,
 `localStorage` and timers; loads the real script; drives the real frame loop one
@@ -120,7 +120,11 @@ it.
 2. **A new system ships with new assertions.** No exceptions.
 3. **A bug fix ships with a test that would have caught it.** Every one of the
    real bugs found in this project — dropped inputs during hitstop, multi-hit
-   swings, colliding save slots, the unreachable room — has a permanent test.
+   swings, colliding save slots, the unreachable room, an arrival buried in rock,
+   a shade reclaimed on the frame you dropped it, a silent equipment swap — has a
+   permanent test, tagged `REGRESSION`. Each was mutation-tested when it was
+   fixed: put the bug back and the suite must go red. A guard nobody has seen
+   fail is a guard nobody should trust.
 4. Tests are hermetic: reset player state, clear hitstop and slow-mo, set facing.
    Most flaky-test debugging here has been forgetting `P.face`. **`G.cheat` is
    the other one** — `unlockAll()` leaves it on, and cheat mode refills life,
