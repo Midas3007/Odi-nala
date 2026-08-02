@@ -11,7 +11,7 @@
 
 ## 9.2 File anatomy
 
-`odinala.html`, roughly 4,900 lines. One `<script>`. Order:
+`odinala.html`, roughly 5,200 lines. One `<script>`. Order:
 
 | Section | Contents |
 |---|---|
@@ -137,7 +137,7 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **218 assertions, headless Node, no dependencies.**
+`test.js` — **552 assertions, headless Node, no dependencies**, about 18 seconds.
 
 ### How it works
 It stubs `document`, `AudioContext`, `localStorage` and `requestAnimationFrame`, loads
@@ -162,9 +162,25 @@ and illegal states.
 3. **Every bug gets a regression test** *before* it is fixed.
 4. **Tests must be hermetic.** Reset `G.hitstop`, `G.slow`, `P.face`, `P.st` before
    asserting. Most flaky failures in this suite's history were leftover hitstop.
+   **`G.cheat` is the other one** — `unlockAll()` leaves it on, and cheat mode refills
+   life, gourds and ọfọ every frame, so a block that forgets to clear it silently stops
+   testing what it thinks it is testing.
 5. **Never weaken an assertion to make it pass.** If the game changed, change the
    expectation deliberately and say why.
 6. **The soak tests are not optional.** They have caught real crashes.
+7. **Assertions tagged `REGRESSION` guard a bug that actually shipped**, and each was
+   mutation-tested when it was fixed: put the bug back, watch the suite go red, restore.
+   A guard nobody has seen fail is a guard nobody should trust. Currently guarded:
+   dropped inputs during hitstop, multi-hit swings, colliding save slots, an arrival
+   buried in rock, a shade reclaimed on the frame it was dropped, a silent equipment
+   swap.
+8. **Exit arrivals are checked twice** — once on the geometry, and once by actually
+   coming through the doorway and walking away from where you land. `tools/audit.py`
+   covers the static half; the suite covers the played half. An arrival buried in rock
+   pins the player: no direction moves them, and it reads as a hang rather than a bug.
+
+*(Rules 4's cheat clause, 7 and 8 recovered from `bible/archive/11-TECH.md` §11.6 — they
+describe the shipped suite and the new set had dropped them.)*
 
 ### Syntax check
 ```bash

@@ -121,7 +121,16 @@ Every SFX in `S` is a function, not a file.
 | `parry` | 1500 Hz square + 760 Hz triangle + bright noise — **the brightest sound in the game** |
 | `brk` | 260→900 triangle + noise |
 | `exec` | 90→40 sawtooth + long noise + a sine tail |
+| `pick` | 45 ms dry noise at 1800 Hz + a triangle rising 560→760 — equipment handling |
 | `hurt`, `die`, `heal`, `roll`, `charge`, `pray`, `name`, `step` | see `S` |
+
+`pick` is **handling, not consecration**: taking hold of a weapon or changing the word
+in your mouth. `name` is reserved for what is sacred — naming, mirrors attuning,
+purchases, weapons found — and a swap is not that. Both `cycleWeapon()` and
+`cycleSpell()` end in `S.pick()` and **must stay identical**: a swap that sounds bigger
+one way than the other tells the player something untrue about which choice mattered.
+*(Recovered from `bible/archive/09-AUDIO.md` §9.6 — the cue is shipped and the new set
+had dropped it.)*
 
 ### SFX rules
 - **The parry is the brightest sound in the game.** Nothing else is allowed to be
