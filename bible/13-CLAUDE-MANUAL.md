@@ -11,7 +11,7 @@ your instincts and this manual disagree, the manual wins.
 
 Ọdịnala is a **finished, working game** that is being extended — not a prototype,
 not a greenfield project. Ten rooms, four bosses, nine enemy species, four
-weapons, an ending, and 218 passing assertions already exist.
+weapons, an ending, and 552 passing assertions already exist.
 
 **The consequence:** your default posture is *conservative*. Your job is to add
 without breaking. A change that adds a feature and breaks a test has made the

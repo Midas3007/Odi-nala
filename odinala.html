@@ -395,7 +395,7 @@ const ROOMS = [
   "########################################################",
   "########################################################",
   "########################################################"],
-  exits:[{tx:0,ty:14,tw:1,th:2,to:3,sx:5,sy:16},
+  exits:[{tx:0,ty:14,tw:1,th:2,to:3,sx:40,sy:14},
          {tx:55,ty:14,tw:1,th:2,to:8,sx:2,sy:16,needs:'ekwensu',
           locked:"The road ends in fire. Something on this road has to fall first."}] },
 
@@ -568,7 +568,7 @@ function cycleSpell(d){
   const own=ownedSpells(); if(own.length<2) return;
   let i=own.indexOf(G.equipped); if(i<0) i=0;
   i=(i+d+own.length)%own.length; G.equipped=own[i];
-  say(SPELLS[G.equipped].name+' \u2014 '+SPELLS[G.equipped].cost+' \u1ecdf\u1ecd',80); S.pick&&S.pick();
+  say(SPELLS[G.equipped].name+' \u2014 '+SPELLS[G.equipped].cost+' \u1ecdf\u1ecd',80); S.pick();
 }
 let R = ROOMS[G.room];
 const cam = {x:0,y:0};
@@ -862,6 +862,10 @@ const S={
   charge:()=>{tone(200,.3,'triangle',.03,700);},
   pray:()=>{nz(.5,.08,900); tone(1300,.4,'square',.04,180); tone(90,.6,'sine',.05,50);},
   name:()=>{tone(110,.8,'sine',.06,55); tone(300,.6,'triangle',.04,150);},
+  // taking hold of a thing, not consecrating it: dry noise transient for the
+  // hand on the haft, short triangle rising for the choice. name() is reserved
+  // for what is sacred (9.6) and a swap is not that.
+  pick:()=>{nz(.045,.03,1800); tone(560,.07,'triangle',.032,760);},
   step:()=>{nz(.04,.012,500);}
 };
 
@@ -1236,7 +1240,7 @@ function cycleWeapon(d){
   let i=own.indexOf(G.weapon); if(i<0) i=0;
   i=(i+(d||1)+own.length)%own.length;
   G.weapon=own[i]; P.combo=0; P.comboWin=0; P.charge=0;
-  say(WA().name,110); S.pick&&S.pick(); tone(560,.09,'triangle',.035,820);
+  say(WA().name,110); S.pick();
   burst(P.x+5,P.y+9,10,WA().tint,1.8,22);
 }
 const ATK = [ {wind:5, act:5, rec:12, dmg:9,  poise:10, reach:22, kb:1.6},
@@ -1546,7 +1550,10 @@ function playerUpdate(){
       pickups.splice(i,1);
     }
   }
-  if(shade && shade.room===G.room && rects(P,shade)){
+  // not on the frame you fell: die() drops the shade on your own hitbox from
+  // inside this same function, a few lines up, and without this guard you take
+  // it straight back and death costs nothing
+  if(shade && !P.dead && shade.room===G.room && rects(P,shade)){
     P.cowries += shade.amt; say("You take back what you dropped. +"+shade.amt,110);
     burst(shade.x,shade.y,20,C.gold,2,34); shade=null;
   }
@@ -5196,6 +5203,7 @@ function start(){ startNew(); }
 if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   get G(){return G}, get P(){return P}, get R(){return R},
   get enemies(){return enemies}, get boss(){return boss}, get shots(){return shots},
+  get shade(){return shade},
   get pickups(){return pickups}, get shrines(){return shrines},
   down, up, update, start, ROOMS, tileAt, RIDDLES, SPELLS, MIRRORS,
   saveGame, loadGame, hasSave, wipeSave, shopItems, resetPlayerAt,
