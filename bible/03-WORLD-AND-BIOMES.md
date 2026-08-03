@@ -2,13 +2,15 @@
 
 ## 3.1 The map, as built
 
-Ten rooms. Rooms are indexed 0–9 and **every index-keyed table must be updated together**
+Eleven rooms. Rooms are indexed 0–10 and **every index-keyed table must be updated together**
 when a room is added (see `09-TECHNICAL.md` §Adding a room).
 
 ```
                   [4 market] ── [5 water]
                        │             │
    [0 charm] ─ [1 path] ┴─ [2 shaft] ─┘
+        │
+  [10 ogilisi]
                              │
                         [3 Ogbunabali]
                              │
@@ -44,6 +46,42 @@ specified before a new biome is built.
 
 The moon is the single most important art decision in this room. It is the last sky the
 player sees until room 9, and it is why room 9 lands.
+
+### Room 10 — Ogilisi (the tree at the boundary) — **[BUILT]**
+| | |
+|---|---|
+| **Palette** | `#101710`. Green-black, a shade warmer than room 0. |
+| **Stone** | `STONE[10]` — dug earth with roots through it |
+| **Music** | `ogilisi` — room 0's scale, thinner than the shaft. The sparsest track in the game. |
+| **Ambient** | dust |
+| **Light** | none. The one room with no light source of its own. |
+| **Hazard** | none |
+| **Emotion** | the hole is smaller than you remember |
+
+A dead end off the **left** wall of room 0 — the direction the player has no reason to
+go. Nothing to fight, nothing to buy, no charm, no mirror. It exists to be looked at.
+
+**Eight mounds and a hole.** The hole is where the ninth would be, and nothing in the
+game says so; the codex entry counts the mounds and stops. This is the number-nine rule
+in 3.4 working exactly as written — a player who counts is rewarded and a player who
+does not feels a rhythm.
+
+The pit is **two tiles deep, not three.** Three was the first draft and it was wrong
+twice: it is a soft-lock risk at the far end of a dead-end room, and a hole you have to
+work to climb out of is not a hole that is smaller than you remember. There is a
+REGRESSION test that climbs out of it.
+
+**The hole had to be drawn, not left empty.** Bare tiles are not a hole — you see the
+parallax through the gap and it reads as a window cut in the wall. `drawProps` fills it
+with dug earth going black downwards, a lit lip where the spade went in, roots let
+through from the tree, and — the part that mattered most — a dark band over the tile
+underneath, because `drawTiles` lights the top edge of every solid tile and a lit surface
+at the bottom of a grave reads as a floor with a lamp on it.
+
+The tree is drawn **once, in the near plane**, at a size nothing else in the game
+reaches. The room is named for a single tree; twelve of them in parallax is a forest, and
+there is already a forest. The generic wooded parallax runs behind it, which is correct —
+it is a boundary, and there has to be something on the other side.
 
 ### Room 1 — Ọhịa (the path that watches)
 | | |
@@ -289,8 +327,7 @@ Ranked by value.
 1. **A village at dawn — playable prologue.** Ten minutes of ordinary life before the
    taking, with no combat. Would transform the ending. Highest narrative value in the
    entire wishlist.
-2. **The ogilisi tree** — a small shrine room off room 0, containing the actual hole.
-   Cheap, high resonance.
+2. ~~**The ogilisi tree**~~ — **[BUILT]** as room 10. See 3.2.
 3. **A second market level** — Ahịa Mmụọ is the game's best room and there is only one.
 4. **The river crossing** — Idemili's python, as an optional boss.
 5. **A collapsed dibia's compound** — books, chalk, tools, the man who buried your charm.

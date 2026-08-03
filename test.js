@@ -361,7 +361,8 @@ section('the static audit');
 // ═════════════════════════════════════════════════════════════════════════════
 section('world integrity');
 const ROOMS = api.ROOMS;
-check('ten rooms are authored', ROOMS.length === 10, 'rooms=' + ROOMS.length);
+const roomCountAtStart = ROOMS.length;
+check('eleven rooms are authored', ROOMS.length === 11, 'rooms=' + ROOMS.length);
 
 ROOMS.forEach((r, i) => {
   check('room ' + i + ' has a name', typeof r.name === 'string' && r.name.length > 0);
@@ -422,8 +423,14 @@ ROOMS.forEach((r, i) => {
 
 check('the checkpoint the game starts from is standable', standable(0, 9, 16));
 
-// Five tables are room-indexed (11.3) — they must all agree on the room count.
-check('the map layout table has one entry per room', api.ROOMS.length === 10);
+// Five tables are room-indexed (09-TECHNICAL §9.4) and they must all agree on the
+// room count. tools/audit.py checks this statically; this is the loaded copy,
+// and it used to just restate ROOMS.length, which proved nothing.
+[['MAPPOS', api.MAPPOS], ['ROOM_TRACK', api.ROOM_TRACK],
+ ['AMBIENT', api.AMBIENT], ['ROOM_STONE', api.ROOM_STONE]].forEach(([name, t]) => {
+  check(name + ' has one entry per room', !!t && t.length === ROOMS.length,
+    name + '=' + (t ? t.length : 'missing') + ' rooms=' + ROOMS.length);
+});
 
 // ═════════════════════════════════════════════════════════════════════════════
 section('mirrors and riddles');
@@ -2230,7 +2237,8 @@ section('saving and loading');
   check('the equipped word carried over', G().equipped === 'ala', G().equipped);
   check('the checkpoint carried over', G().checkpoint.room === 5, JSON.stringify(G().checkpoint));
   check('cowries carried over', P().cowries === 321, 'cowries=' + P().cowries);
-  check('a save round-trips without corrupting the room list', ROOMS.length === 10);
+  check('a save round-trips without corrupting the room list', ROOMS.length === roomCountAtStart,
+    'rooms=' + ROOMS.length + ' was ' + roomCountAtStart);
 })();
 (() => {
   // REGRESSION — colliding save slots. A speedrun must never overwrite a real save.
@@ -3184,6 +3192,101 @@ section('the people who are still here');
   check('before the killing he does not know the name', early.indexOf('Ogbunabali') < 0);
   check('after it he says the name aloud (§5.5)', late.indexOf('Ogbunabali') >= 0);
   check('he never recognises you', !/you were|my child|is it you/i.test(early + late));
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('Ogilisi, the shrine off the first room');
+(() => {
+  const R10 = ROOMS[10];
+  check('the room exists and is named for the tree', /Ogilisi/.test(R10.name), R10.name);
+  check('it is a shrine, not an arena — nothing spawns to fight',
+    !/[wltWrvakinqjsbpBXOUI]/.test(R10.map.join('')),
+    'map contains: ' + Array.from(new Set(R10.map.join(''))).join(''));
+
+  // The hole. Eight mounds are drawn and the ninth is this: 03-WORLD §3.4 says
+  // repeat the number nine and never explain it, so the count lives in the art
+  // and the codex, and the geometry only has to let you get down there and back.
+  let holeCols = [];
+  for (let x = 0; x < R10.w; x++) if (!SOL(api.tileAt(R10, x, 16))) holeCols.push(x);
+  check('there is a hole in the floor', holeCols.length > 0, 'floor row 16 is unbroken');
+  check('the hole is one opening, not several',
+    holeCols.length === holeCols[holeCols.length - 1] - holeCols[0] + 1, 'cols ' + holeCols.join(','));
+
+  (() => {
+    // REGRESSION: a pit you cannot climb out of is a soft-lock, and this one is
+    // at the far end of a dead-end room, so the only other way out would be
+    // death. Walk in, fall in, jump out.
+    at(10, holeCols[0] + 1, 18);
+    G().cheat = false;
+    const floorY = P().y;
+    check('the hole has a bottom to stand on', P().y > 16 * 16, 'y=' + floorY.toFixed(1));
+    api.down('ArrowRight');
+    let out = false;
+    for (let n = 0; n < 240; n++) {
+      if (n % 20 === 0) api.down('Space');
+      if (n % 20 === 6) api.up('Space');
+      tick(1);
+      if (P().y + P().h <= 16 * 16 + 1) { out = true; break; }
+    }
+    api.up('ArrowRight'); api.up('Space');
+    check('REGRESSION you can climb back out of the hole', out,
+      'started at y=' + floorY.toFixed(1) + ', got to y=' + P().y.toFixed(1) +
+      ' — floor level is ' + (16 * 16));
+  })();
+
+  (() => {
+    // Round trip through the new doorway, both ways, played rather than tabled.
+    at(0, 6, 16);
+    G().cheat = false; api.enemies.length = 0;
+    api.down('ArrowLeft');
+    for (let n = 0; n < 200 && G().room === 0; n++) { api.enemies.length = 0; tick(1); }
+    api.up('ArrowLeft');
+    check('walking left out of the first room reaches the shrine', G().room === 10, 'room=' + G().room);
+    if (G().room === 10) {
+      api.down('ArrowRight');
+      for (let n = 0; n < 200 && G().room === 10; n++) tick(1);
+      api.up('ArrowRight');
+      check('and walking right out of the shrine comes back', G().room === 0, 'room=' + G().room);
+    }
+  })();
+
+  (() => {
+    // The five room-indexed tables, for this room specifically. The audit counts
+    // lengths; this checks that room 10's entries are the ones intended, because
+    // a table that is long enough and wrong is the failure mode that survives it.
+    check('the shrine has its own arrangement', api.ROOM_TRACK[10] === 'ogilisi', api.ROOM_TRACK[10]);
+    check('the arrangement is authored', !!api.TRACKS.ogilisi);
+    check('and it is the sparsest thing in the game — thinner than the shaft',
+      api.TRACKS.ogilisi.udu.filter(Boolean).length < api.TRACKS.shaft.udu.filter(Boolean).length,
+      'ogilisi udu=' + api.TRACKS.ogilisi.udu.filter(Boolean).length +
+      ' shaft udu=' + api.TRACKS.shaft.udu.filter(Boolean).length);
+    check('it borrows the first room\'s scale, because it is the same air',
+      api.TRACKS.ogilisi.sc === api.TRACKS.night.sc, api.TRACKS.ogilisi.sc);
+    check('it has a bed', !!api.BEDS.ogilisi);
+    check('it has its own stone', api.ROOM_STONE[10] === 10, 'ROOM_STONE[10]=' + api.ROOM_STONE[10]);
+    check('it has a place on the map', !!api.MAPPOS[10]);
+    check('it has an ambient particle', !!api.AMBIENT[10]);
+  })();
+
+  (() => {
+    // The music is the one the room asks for, played, not tabled — reverting
+    // musicForRoom to a constant left every table assertion above green.
+    revive(); unlockAudio();
+    at(10, 20, 16);
+    tick(6);
+    check('standing in the shrine plays its arrangement', api.MUS_NAME() === 'ogilisi',
+      'playing ' + api.MUS_NAME());
+  })();
+
+  (() => {
+    // Lore unlocks by going there. Nothing to kill, nothing to buy.
+    const entry = api.LORE.filter(l => l.id === 'ogilisi')[0];
+    check('the tree has a codex entry', !!entry);
+    G().visited = {};
+    check('which is locked before you have been', !entry.when());
+    G().visited[10] = 1;
+    check('and open once you have', !!entry.when());
+  })();
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════

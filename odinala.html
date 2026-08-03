@@ -235,13 +235,14 @@ const ROOMS = [
   "#......................................#",
   "#......................................#",
   "#......................................#",
-  "#........S.............M...............E",
-  "#.............................K........E",
+  "E........S.............M...............E",
+  "E.............................K........E",
   "########################################",
   "########################################",
   "########################################",
   "########################################"],
-  exits:[{tx:39,ty:14,tw:1,th:2,to:1,sx:2,sy:16}] },
+  exits:[{tx:39,ty:14,tw:1,th:2,to:1,sx:2,sy:16},
+         {tx:0,ty:14,tw:1,th:2,to:10,sx:25,sy:16}] },
 
 { name:"Ọhịa — the path that watches", tint:'#0c130e',
   map:[
@@ -486,7 +487,31 @@ const ROOMS = [
   "####################........####################",
   "####################^^^^^^^^####################"],
   exits:[{tx:0,ty:14,tw:1,th:2,to:8,sx:53,sy:16},
-         {tx:47,ty:14,tw:1,th:2,to:7,sx:2,sy:16}] }
+         {tx:47,ty:14,tw:1,th:2,to:7,sx:2,sy:16}] },
+
+{ name:"Ogilisi \u2014 the tree at the boundary", tint:'#101710',
+  map:[
+  "############################",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................E",
+  "#..........................E",
+  "######......################",
+  "######......################",
+  "############################",
+  "############################"],
+  exits:[{tx:27,ty:14,tw:1,th:2,to:0,sx:2,sy:16}] }
 ];
 
 // normalise + index
@@ -860,7 +885,7 @@ function dropCowries(e){
 const HUDBTN=[];
 const decals=[];
 let amb=[];
-const AMBIENT=['dust','leaf','grit','ash','spark','bubble','ash','dust','spark','leaf'];
+const AMBIENT=['dust','leaf','grit','ash','spark','bubble','ash','dust','spark','leaf','dust'];
 function seedAmbient(){
   amb=[];
   const kind=AMBIENT[G.room]||'dust';
@@ -1039,6 +1064,7 @@ const BEDS = {
   sky:    {f:1900, q:0.5, g:0.011},   // thin high air
   boss:   {f:180,  q:0.8, g:0.010},
   ekwensu:{f:150,  q:0.9, g:0.012},   // lower than anything else: it is enormous
+  ogilisi:{f:560,  q:0.6, g:0.006},   // thinner and further off than room 0's
   onwe:   {f:420,  q:0.5, g:0.008}    // your own room's air, because that is the joke
 };
 
@@ -1107,6 +1133,17 @@ const TRACKS = {
            [0,0,0,0,0,0,0,0,0,0,0,0],
            [3,0,0,0,0,0,0,1,0,0,0,0] ] },
 
+  ogilisi:{ spb:.215, sc:'night',  mix:.62, pad:1,
+    bell:BELL_S,
+    udu: [1,0,0,0,0,0,0,0,0,0,0,0],
+    ekwe:[0,0,0,0,0,0,0,0,0,0,0,0],
+    shk: [0,0,0,0,0,0,0,0,0,0,0,0],
+    gtr: null,
+    opi: [ [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,1,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0] ] },
+
   market: { spb:.152, sc:'market', mix:1, pad:0,
     bell:BELL7,
     udu: [1,0,2,0,0,1,0,2,1,0,0,1],
@@ -1160,7 +1197,7 @@ const TRACKS = {
            [1,0,1,0,1,0,1,0,1,0,1,0],
            [0,0,0,0,0,0,5,0,4,0,2,0] ] }
 };
-const ROOM_TRACK = ['night','forest','shaft','boss','market','water','bone','night','fire','sky'];
+const ROOM_TRACK = ['night','forest','shaft','boss','market','water','bone','night','fire','sky','ogilisi'];
 // A boss with a theme of its own gets one; the rest take the house boss track.
 // Ekwensu is the largest thing in the game and has no trick: the arrangement is
 // the same honesty — everything on the beat, nothing hidden, the densest bell in
@@ -3360,7 +3397,7 @@ let bgLayers=null, bgRoom=-1;
 const LAYER_K=[0.16,0.30,0.48];
 function buildBackLayers(){
   bgLayers=[]; bgRoom=G.room;
-  const WOODED=(G.room===0||G.room===1), BONES=(G.room===6);
+  const WOODED=(G.room===0||G.room===1||G.room===10), BONES=(G.room===6);
   const keepSeed=G.seed;
   for(let layer=0;layer<3;layer++){
     const k=LAYER_K[layer];
@@ -3624,14 +3661,15 @@ const STONE=[
  {base:'#211a1e', lit:'#33272c', top:'#4a3730', side:'#291f24', fleck:'#2b2126', moss:'#4a3524'},
  {base:'#12222a', lit:'#1d3a44', top:'#2b5560', side:'#16262e', fleck:'#183038', moss:'#1f4a52'},
  {base:'#241310', lit:'#3a1d13', top:'#5e2c15', side:'#1a0d0a', fleck:'#301810', moss:'#7a3410'},
- {base:'#1e2430', lit:'#2e3648', top:'#4a5468', side:'#161b24', fleck:'#242b38', moss:'#3a4458'}
+ {base:'#1e2430', lit:'#2e3648', top:'#4a5468', side:'#161b24', fleck:'#242b38', moss:'#3a4458'},
+ {base:'#1d1a15', lit:'#2c2720', top:'#463c2c', side:'#241f19', fleck:'#2a241b', moss:'#3a3423'}
 ];
 // Which stone set each room is cut from. This was a nested ternary on the room
 // index, which meant it had a silent default: every room added past 9 would have
 // fallen through to the sky's pale blue and nobody would have seen it until the
 // screenshot. As a table it is the fifth entry on the five-table checklist and
 // tools/audit.py counts it against ROOMS like the other four.
-const ROOM_STONE=[2,3,4,5,6,7,0,1,8,9];
+const ROOM_STONE=[2,3,4,5,6,7,0,1,8,9,10];
 function drawTiles(){
   const P0=STONE[ROOM_STONE[G.room]]||STONE[2];
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
@@ -4006,6 +4044,64 @@ function drawProps(){
       idolStatue(bx, by, 5, {eye:'#a01c2c'});
     }
   }
+  if(G.room===10){
+    const fy=16*T-cam.y;
+    // The hole. Left as bare empty tiles it is not a hole at all — you see the
+    // parallax through it and it reads as a window cut in the wall. It has to be
+    // filled by hand: dug earth going black downwards, a cut lip where the
+    // spade went in, and roots let through from the tree above.
+    const hx=6*T-cam.x, hw=6*T, hy=fy, hh=2*T;
+    const dg=ctx.createLinearGradient(0,hy,0,hy+hh);
+    dg.addColorStop(0,'#1a150f'); dg.addColorStop(.45,'#0d0a07'); dg.addColorStop(1,'#040302');
+    // +2 so it covers the lit top edge drawTiles paints on the tile underneath:
+    // a bright surface at the bottom of a hole reads as a floor with a light on
+    // it, which is the one thing a grave must not look like.
+    ctx.fillStyle=dg; ctx.fillRect(hx,hy,hw,hh+2);
+    for(let i=0;i<14;i++){                       // spade marks down the walls
+      const sx2=hx+2+((i*37)%(hw-4));
+      ctx.globalAlpha=.5; pxf(sx2, hy+2+((i*13)%(hh-6)), .5, 3+((i*5)%5), '#231c13');
+    }
+    ctx.globalAlpha=.85; pxf(hx,hy,hw,1,'#2e2618');   // the cut lip, lit
+    ctx.globalAlpha=.35; pxf(hx,hy+1,hw,1,'#000');
+    ctx.globalAlpha=1;
+    for(let i=0;i<7;i++){                        // roots hanging in from above
+      const rx=hx+3+((i*29)%(hw-6)), rl=5+((i*11)%13);
+      ctx.strokeStyle='#241d14'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(rx,hy);
+      ctx.quadraticCurveTo(rx+Math.sin(G.t/70+i)*2, hy+rl*0.6, rx+Math.sin(G.t/52+i)*3, hy+rl);
+      ctx.stroke();
+    }
+    // Eight mounds. There is no ninth: the hole is where it would be, and the
+    // player who counts is the one this room is for. 03-WORLD §3.4.
+    for(const c of [2,4,13,15,17,19,21,23]){
+      const bx=c*T+8-cam.x;
+      if(bx<-30||bx>W+30) continue;
+      ctx.fillStyle='#171410';
+      ctx.beginPath(); ctx.ellipse(bx, fy, 11, 5, 0, 3.14159, 0); ctx.fill();
+      ctx.globalAlpha=.5; ctx.fillStyle='#2a2419';
+      ctx.beginPath(); ctx.ellipse(bx, fy-1, 9, 3.6, 0, 3.14159, 0); ctx.fill();
+      ctx.globalAlpha=1;
+      px(bx-1, fy-6, 2, 4, '#0d0b08');
+    }
+    // Nine strokes of nzu at the lip. Chalk is never decorative (03-WORLD §3.4):
+    // this is the mark a dibia leaves when a name has been written down.
+    for(let i=0;i<9;i++){
+      const cx2=12*T+4+i*4-cam.x;
+      ctx.globalAlpha=.78-(i%3)*.10;
+      pxf(cx2, fy-5-((i*5)%3), 1, 4, '#d8d0b6');
+    }
+    ctx.globalAlpha=1;
+    // The tree itself, planted over the hole. An ogilisi is grown from a cut
+    // stake pushed into the ground, which is why it is the tree people use for
+    // boundaries: it survives being moved. That is also the joke.
+    const tx2=9*T-cam.x*1.06;
+    if(tx2>-200 && tx2<W+200)
+      treeShape(tx2, fy+2, 168, {
+        seed:4,
+        bark:['#241d14','#161009','#080502'],
+        leaf:['#101b12','#16261a','#0a120c'],
+        rim:'#2c4826' });
+  }
   if(G.room===4){
     for(let i=0;i<5;i++){
       const bx=((i*181+40)%(R.w*T))-cam.x, by=16*T-cam.y;
@@ -4022,7 +4118,7 @@ function drawForeground(){
   const k=1.5;
 
   // branches reaching in from the top of the frame
-  if(G.room===0||G.room===1||G.room===6){
+  if(G.room===0||G.room===1||G.room===6||G.room===10){
     ctx.globalAlpha=.95;
     for(let i=0;i<5;i++){
       const bx=((i*263+G.room*91)%(R.w*T)) - cam.x*(k*0.9);
@@ -6226,6 +6322,10 @@ const LORE=[
   "The ninth child. The one that did go back, nine times over, and was still going when you stopped going.",
   "It has no moveset of its own. Everything it does it does because it watched you do it first, which is why it is exactly as quick as you are and exactly as good.",
   "A thing that can only copy has a problem if it is given nothing to copy."]},
+ {id:'ogilisi', t:'OGILISI', when:()=>!!G.visited[10], b:[
+  "The tree people plant to say where one thing ends and another begins \u2014 a compound boundary, a shrine, a grave. It is not sown. A cut stake is pushed into the ground and agrees to go on living there, which is exactly why it is the tree for boundaries: it survives being moved.",
+  "Eight mounds under it, in a row, and a hole at the end of the row.",
+  "You are not going to find anything down there. You already took it."]},
  {id:'alusi', t:'ALUSI', when:()=>true, b:[
   "The deities, each with ground of their own. Ala holds the earth and the law that comes with it. Amadioha is lightning and the judgement inside it. Idemili is the water that stands up. Ikenga is the right hand and everything it has earned.",
   "They are carved, fed, consulted and \u2014 if they fail \u2014 put outside in the rain. A relationship, not a worship."]},
@@ -6597,7 +6697,7 @@ function renderInv(){
 }
 
 // -- the map -----------------------------------------------------------------
-const MAPPOS=[[10,74],[92,74],[196,60],[236,176],[188,10],[292,10],[352,176],[300,132],[352,74],[400,132]];
+const MAPPOS=[[10,74],[92,74],[196,60],[236,176],[188,10],[292,10],[352,176],[300,132],[352,74],[400,132],[10,132]];
 function mapUpdate(){
   if(tap('KeyM')||tap('Tab')||tap('KeyX')||tap('Escape')) G.mode='play';
 }
@@ -6612,6 +6712,7 @@ function renderMap(){
     ctx.beginPath(); ctx.moveTo(pa[0]+ROOMS[a].w, pa[1]+ROOMS[a].h);
     ctx.lineTo(pb[0]+ROOMS[b].w, pb[1]+ROOMS[b].h); ctx.stroke(); };
   link(0,1); link(1,2); link(2,3); link(1,4); link(4,5); link(5,2); link(3,6); link(6,8); link(8,9); link(9,7);
+  link(0,10);
   for(let i=0;i<ROOMS.length;i++){
     if(!G.visited[i]) continue;
     const r=ROOMS[i], p=MAPPOS[i]||[0,0];
@@ -6769,6 +6870,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS,
   ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C, get flames(){return flames}, bossIsGated,
   TRACKS, SCALES, BEDS, ROOM_TRACK, BOSS_TRACK, retrograde, bossCard,
+  MAPPOS, AMBIENT, ROOM_STONE,
   MUS_NAME:()=>{ for(const k in TRACKS) if(TRACKS[k]===MUS.track) return k; return null; },
   MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
   CHM_SEL:()=>CHM.sel

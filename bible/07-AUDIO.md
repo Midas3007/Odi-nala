@@ -54,6 +54,7 @@ music. A track in 16 steps is a different genre.
 | Track | Rooms | Scale | Tempo | Character |
 |---|---|---|---|---|
 | `night` | 0, 7 | A minor pentatonic | 0.195 | Sparse bell, no shaker. Almost silence. |
+| `ogilisi` | 10 | A minor pentatonic | 0.215 | **The sparsest track in the game.** One pot a bar, one note, no answer. |
 | `forest` | 1 | D minor pentatonic | 0.168 | Full seven-stroke, shaker running |
 | `shaft` | 2 | E minor, low | 0.235 | Slowest. Almost no percussion. |
 | `bone` | 6 | C minor pentatonic | 0.180 | Dry and walking. **No pad** — the one track with nothing under it. |
