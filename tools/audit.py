@@ -44,13 +44,18 @@ def main(path):
 
     # ---- 1. every index-keyed table must be as long as ROOMS -----------------
     n = len(rooms)
-    for table in ('MAPPOS', 'ROOM_TRACK', 'AMBIENT'):
+    for table in ('MAPPOS', 'ROOM_TRACK', 'AMBIENT', 'ROOM_STONE'):
         m = re.search(r'const\s+' + table + r'\s*=\s*\[(.*?)\];', s, re.S)
         if not m:
             problems.append(f'{table}: not found')
             continue
         body = m.group(1)
-        count = body.count('[') if table == 'MAPPOS' else len(re.findall(r"'", body)) // 2
+        if table == 'MAPPOS':
+            count = body.count('[')
+        elif table == 'ROOM_STONE':
+            count = len(re.findall(r'\d+', body))
+        else:
+            count = len(re.findall(r"'", body)) // 2
         if count < n:
             problems.append(
                 f'{table} has {count} entries but there are {n} rooms — '
@@ -87,6 +92,45 @@ def main(path):
                 problems.append(
                     f'room {i} -> room {to} lands at ({sx},{sy}) with no floor '
                     f"(tile '{floor}') — the player will fall on arrival")
+
+    # ---- 3b. exit rects and E tiles must agree exactly ----------------------
+    # An exit is a rect tested against the player's body, and the E tile is what
+    # paints the doorway — in the world and as a gold square on the map. Nothing
+    # ties them together, so they drift. Room 3's way out of the first boss room
+    # had no E tile at all: the trigger worked and the doorway was invisible.
+    # Rooms 0 and 6 had the opposite drift, their rects sitting one column past
+    # the doorway on tiles that padEnd() had filled with rock; both fired only
+    # because the player's body overlapped the rect by a single pixel before
+    # collision stopped it. Require the two to line up exactly, both ways.
+    for i, r in enumerate(rooms):
+        rows = r['rows']
+        w = max(len(row) for row in rows)
+        padded = [row.ljust(w, '#') for row in rows]
+        ragged = [y for y, row in enumerate(rows) if len(row) != w]
+        if ragged:
+            problems.append(
+                f'room {i} has short map rows {ragged} — they are padded with '
+                f'rock, which silently turns whatever should be at the end of '
+                f'those rows into wall')
+        covered = set()
+        for tx, ty, tw, th, to in re.findall(
+                r'\{tx:(\d+),ty:(\d+),tw:(\d+),th:(\d+),to:(\d+)', r['exits']):
+            tx, ty, tw, th, to = int(tx), int(ty), int(tw), int(th), int(to)
+            for y in range(ty, ty + th):
+                for x in range(tx, tx + tw):
+                    covered.add((x, y))
+                    ch = at(padded, x, y)
+                    if ch != 'E':
+                        problems.append(
+                            f"room {i} exit -> room {to}: rect tile ({x},{y}) is "
+                            f"'{ch}', not 'E' — the trigger and the doorway art "
+                            f"are in different places")
+        for y, row in enumerate(padded):
+            for x, ch in enumerate(row):
+                if ch == 'E' and (x, y) not in covered:
+                    problems.append(
+                        f'room {i} has an E tile at ({x},{y}) that no exit rect '
+                        f'covers — a doorway the player can walk into forever')
 
     # ---- 4. every room except 0 must be reachable ---------------------------
     reach = set()

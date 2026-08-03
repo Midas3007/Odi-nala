@@ -183,6 +183,33 @@ hole you dug.
 - The player is 10×18px and jumps ~3.7 tiles high, ~3.5 tiles across. **No gap wider
   than 3 tiles without a dash unlock. No ledge higher than 3 tiles without a route.**
 
+### Doorways: the rect and the `E` tile must be the same tiles
+
+An exit is **two things that nothing ties together**: an `exits` record, which is a
+rectangle tested against the player's body, and `E` tiles in the map, which are what
+paint the doorway — the gold-lit gap in the world, and the gold square on the map screen
+whose legend promises "gold squares are doorways".
+
+**Every tile inside an exit rect must be `E`, and every `E` tile must be inside an exit
+rect.** `tools/audit.py` fails on either, and `test.js` walks into every side doorway to
+prove the rect is reachable — a check the audit structurally cannot do.
+
+Three exits were wrong when this rule was written, all of them shipped and all of them
+working, which is why nobody had noticed:
+
+- **Room 3 → the bone road** had *no `E` tile at all*. The way out of the first boss room
+  was an invisible trigger in open air, and the map screen showed the boss room with one
+  doorway when it has two.
+- **Rooms 0 → 1 and 6 → 8** had rects sitting one column past their doorway art, on tiles
+  that `padEnd()` had quietly filled with rock. Both fired anyway, because the player's
+  body overlapped the rect by a single pixel before collision stopped it. Room 6's is the
+  gate to the forge — the whole back half of the game was reachable through a one-pixel
+  accident.
+
+**Map rows must also be the same length.** A short row is padded with `#`, so a doorway
+authored at the end of a short row silently becomes wall. That is what happened to rooms
+0 and 6, and the audit now fails on ragged rows for that reason.
+
 ### Tile vocabulary
 | Char | Meaning |
 |---|---|

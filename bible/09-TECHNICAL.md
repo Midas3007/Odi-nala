@@ -131,8 +131,17 @@ a silent wrong-palette or a crash:
 2. `MAPPOS` — thumbnail position on the map screen
 3. `ROOM_TRACK` — which music track
 4. `AMBIENT` — which particle
-5. The `STONE[]` index expression in `drawTiles`
+5. `ROOM_STONE` — which stone set the room is cut from
 Plus: `link()` calls in `renderMap`, and a `LORE` entry if it matters.
+
+All five are counted against `ROOMS` by `tools/audit.py`, so missing one is a red gate
+rather than a wrong palette three rooms later. Item 5 used to be a nested ternary on the
+room index with a silent `else` — every room added past 9 would have been painted in the
+sky's pale blue, and the audit could not see it. It is a table now for exactly that
+reason: **a lookup with a default is not a table, it is a bug with a fallback.**
+
+The room's `E` tiles and its `exits` rects must also agree exactly — see
+`03-WORLD-AND-BIOMES.md` §3.3, "Doorways". Three shipped exits did not.
 
 ### Adding an enemy
 `mkThing()` builder → `enemyUpdate` branch → `drawEnemy` branch → spawn char in
@@ -187,7 +196,7 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **1,291 assertions, headless Node, no dependencies**, about 30 seconds.
+`test.js` — **1,327 assertions, headless Node, no dependencies**, about 30 seconds.
 
 `node test.js --quick` skips the two soaks and runs in about 7 seconds. That is the
 inner loop only — **it is not the gate**, it says so in its own output, and what you run

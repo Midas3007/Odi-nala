@@ -636,6 +636,64 @@ section('arriving through every exit');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('every doorway can be walked into');
+(() => {
+  // The block above proves you can walk away from where a doorway drops you.
+  // This one proves you can walk *into* one. They are different failures: an
+  // exit rect sitting one column past its E tile still fired, but only because
+  // the player's body overlapped it by a single pixel before collision stopped
+  // it — the trigger and the doorway art were in different places, and the room
+  // 3 exit had no doorway art at all. tools/audit.py now fails on the mismatch
+  // statically; this is the played half.
+  ROOMS.forEach((r, i) => r.exits.forEach(ex => {
+    // Side doorways only. The one floor exit (5 -> 2) is a drop through a
+    // cracked floor and needs Ala's Fall, which is a different test.
+    if (ex.th < 2) return;
+    const right = ex.tx > r.w / 2;
+    // Not every doorway is on the floor — room 1's way up to the market sits on
+    // a platform at row 4, five tiles short of which is thin air over the lower
+    // platform. Step outward from the door until there is something to stand on
+    // at roughly the doorway's own height, which is what walking into one means.
+    let start = -1, stand = -1;
+    for (let d = 2; d <= 6 && stand < 0; d++) {
+      const col = right ? ex.tx - d : ex.tx + d;
+      if (col < 1 || col >= r.w - 1) continue;
+      for (let y = ex.ty; y <= ex.ty + 3 && y < r.h; y++) {
+        const c = api.tileAt(r, col, y);
+        if ((c === '#' || c === 'c' || c === '-') &&
+            !SOL(api.tileAt(r, col, y - 1)) && !SOL(api.tileAt(r, col, y - 2))) {
+          start = col; stand = y; break;
+        }
+      }
+    }
+    if (!check('room ' + i + ': there is somewhere to stand beside the doorway to room ' + ex.to,
+        stand >= 0, 'no footing within 6 tiles of rect tx=' + ex.tx + ' ty=' + ex.ty)) return;
+    // Set these before arriving: spawnRoom() reads G.slain, so a boss cleared
+    // afterwards is already standing in the room and already gating the door.
+    api.unlockAll();
+    G().slain = { ogbunabali: 1, ekwensu: 1, uzu: 1, ikuku: 1, onwe: 1 };
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1, exec: 1, bound: 1 };
+    at(i, start, stand);
+    api.enemies.length = 0; G().mode = 'play';
+    const key = right ? 'ArrowRight' : 'ArrowLeft';
+    api.down(key);
+    let arrived = false;
+    for (let n = 0; n < 200; n++) {
+      P().inv = 9999; G().hitstop = 0; G().slow = 0;
+      api.enemies.length = 0;             // a spawn in the way is not this test
+      tick(1);
+      if (G().room !== i) { arrived = true; break; }
+    }
+    api.up(key);
+    check('room ' + i + ': walking into the doorway to room ' + ex.to + ' goes there',
+      arrived && G().room === ex.to,
+      'started at tile ' + start + ' row ' + stand + ', walked ' + (right ? 'right' : 'left') +
+      ' toward rect tx=' + ex.tx + ', ended in room ' + G().room);
+  }));
+  G().cheat = false;
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the soft-lock safety net');
 (() => {
   // Bug B, solved as a class. Nothing should ever put the player inside rock,
