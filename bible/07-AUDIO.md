@@ -57,6 +57,7 @@ music. A track in 16 steps is a different genre.
 | `ogilisi` | 10 | A minor pentatonic | 0.215 | **The sparsest track in the game.** One pot a bar, one note, no answer. |
 | `forest` | 1 | D minor pentatonic | 0.168 | Full seven-stroke, shaker running |
 | `shaft` | 2 | E minor, low | 0.235 | Slowest. Almost no percussion. |
+| `ulo` | 12 | E minor, low | 0.225 | The market's **guitar** in the shaft's key, stopping mid-phrase. |
 | `bone` | 6 | C minor pentatonic | 0.180 | Dry and walking. **No pad** — the one track with nothing under it. |
 | `market` | 4 | C major-ish | **0.152** | **Highlife** — guitar, full rattle, fastest |
 | `elu` | 11 | C major-ish | 0.172 | The same highlife one floor up. Guitar carries, **rattle does not**. |

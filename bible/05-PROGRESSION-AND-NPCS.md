@@ -222,14 +222,35 @@ That is the entire design. Do not give her a line that only makes sense if she k
 **There are no quests and there probably should not be many.** This game is 90 minutes
 long and structured as a descent. A quest log would be a lie about its scale.
 
-What can exist instead — **[PROPOSED]**:
+What exists instead:
 
-**Standing requests, not quests.** The dibia mentions he lost his chalk in the shaft.
-There is chalk in the shaft. Bring it back and he tells you something. No log, no
-marker, no completion sound. The player either notices or doesn't.
+**Standing requests, not quests.** There is chalk at the foot of the shaft. Take it to
+the dibia and he tells you something. No log, no marker, no completion sound beyond the
+one every found thing gets. The player either notices or doesn't.
+
+### The dibia's chalk — **[BUILT]**
+
+`x` in room 12, the collapsed compound off the bottom of the shaft. Picking it up sets
+`G.chalk`; giving it back sets `G.gaveChalk`; both are saved, because a thread that
+resets when you quit is not a thread.
+
+While you are carrying it, `beats()` returns a different conversation — he asks where it
+was, and the answer is the only time in the game he says something about himself that he
+would rather not have said. Afterwards he goes back to his usual conversation. **He does
+not take it back.**
+
+Two rules the implementation had to obey:
+
+- **`beats()` must not have side effects.** It is asked what the NPC *would* say; that is
+  not the same as saying it. Consuming the chalk in `beats()` meant merely reading his
+  dialogue spent the thread. There is an optional **`after()`** hook on an NPC now, run
+  once between reading the conversation and saving, and that is where state changes go.
+- **`after()` must check.** Setting `G.gaveChalk` unconditionally means talking to him
+  *before* you find the chalk burns the thread and it can never fire. There is a
+  REGRESSION test for exactly that.
 
 Three such threads, maximum:
-1. The dibia's chalk — rewards lore.
+1. ~~The dibia's chalk~~ — **[BUILT]**, rewards lore.
 2. The market woman's story — rewards nothing but itself, and unlocks the final codex
    entry.
 3. **[PROPOSED]** Nine graves. Somewhere in the world, nine small mounds. Standing at

@@ -362,7 +362,7 @@ section('the static audit');
 section('world integrity');
 const ROOMS = api.ROOMS;
 const roomCountAtStart = ROOMS.length;
-check('twelve rooms are authored', ROOMS.length === 12, 'rooms=' + ROOMS.length);
+check('thirteen rooms are authored', ROOMS.length === 13, 'rooms=' + ROOMS.length);
 
 ROOMS.forEach((r, i) => {
   check('room ' + i + ' has a name', typeof r.name === 'string' && r.name.length > 0);
@@ -1806,7 +1806,14 @@ section('Ikuku — the fight in the vertical');
     const b = scene();
     const seen = {};
     P().inv = 9999;
-    for (let i = 0; i < 1400; i++) {
+    // Pin the RNG. Which attack a boss picks comes off the one global LCG that
+    // every other system also draws from, so this block's result depended on
+    // where in that stream the suite happened to arrive — adding a room earlier
+    // in the file shifted it and Ụzụ produced eight white tells in a row and no
+    // gold. The boss was fine; the test was reading an accident. Seeding here
+    // makes the sample the boss's own behaviour and nothing else's.
+    G().seed = 20260803;
+    for (let i = 0; i < 2600; i++) {
       P().x = SAFE(b.x); P().hp = G().maxHP; P().inv = 9999;
       G().hitstop = 0; G().slow = 0; tick(1);
       if (b.tell) seen[b.tell] = (seen[b.tell] || 0) + 1;
@@ -1981,7 +1988,14 @@ section('Ụzụ Ọkụ — the guard that reforges');
     const b = scene();
     const seen = {};
     P().inv = 9999;
-    for (let i = 0; i < 1200; i++) {
+    // Pin the RNG. Which attack a boss picks comes off the one global LCG that
+    // every other system also draws from, so this block's result depended on
+    // where in that stream the suite happened to arrive — adding a room earlier
+    // in the file shifted it and Ụzụ produced eight white tells in a row and no
+    // gold. The boss was fine; the test was reading an accident. Seeding here
+    // makes the sample the boss's own behaviour and nothing else's.
+    G().seed = 20260803;
+    for (let i = 0; i < 2600; i++) {
       P().x = b.x - 48; P().y = b.y; P().hp = G().maxHP;
       G().hitstop = 0; G().slow = 0; tick(1);
       if (b.tell) seen[b.tell] = (seen[b.tell] || 0) + 1;
@@ -3379,6 +3393,112 @@ section('Ahịa Elu, the roofs above the market');
     revive(); unlockAudio();
     at(11, 20, 16); tick(6);
     check('the roofs play their own arrangement', api.MUS_NAME() === 'elu', 'playing ' + api.MUS_NAME());
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('Ụlọ Dibia, the compound that fell in');
+(() => {
+  const R12 = ROOMS[12];
+  check('the room exists', /Dibia/.test(R12.name), R12.name);
+  check('it hangs off the bottom of the shaft',
+    ROOMS[2].exits.some(e => e.to === 12), JSON.stringify(ROOMS[2].exits.map(e => e.to)));
+  check('the guitar is in it — the instrument that means somebody lived here',
+    !!(api.TRACKS.ulo.gtr && api.TRACKS.ulo.gtr.some(v => v)));
+  check('played in the shaft\'s key, not the market\'s',
+    api.TRACKS.ulo.sc === api.TRACKS.shaft.sc, api.TRACKS.ulo.sc);
+  check('and the phrase stops rather than finishing',
+    api.TRACKS.ulo.gtr.slice(6).every(v => !v), api.TRACKS.ulo.gtr.join(''));
+  check('it has a bed, a stone, a map place and a particle',
+    !!api.BEDS.ulo && api.ROOM_STONE[12] === 12 && !!api.MAPPOS[12] && !!api.AMBIENT[12]);
+
+  (() => {
+    // Round trip through the new doorway at the bottom of the shaft.
+    api.unlockAll();
+    at(2, 4, 35);
+    G().cheat = false; api.enemies.length = 0; G().mode = 'play';
+    api.down('ArrowLeft');
+    for (let n = 0; n < 200 && G().room === 2; n++) { api.enemies.length = 0; tick(1); }
+    api.up('ArrowLeft');
+    check('walking west at the foot of the shaft reaches the compound', G().room === 12, 'room=' + G().room);
+    if (G().room === 12) {
+      api.down('ArrowRight');
+      for (let n = 0; n < 400 && G().room === 12; n++) { api.enemies.length = 0; tick(1); }
+      api.up('ArrowRight');
+      check('and walking back east returns to the shaft', G().room === 2, 'room=' + G().room);
+    }
+  })();
+
+  // ── the chalk: 05-PROGRESSION §5.6's standing request, end to end ──────────
+  (() => {
+    G().chalk = 0; G().gaveChalk = 0;
+    // Not on tile 3 — that is where the chalk is, and arriving on top of it
+    // collects it inside at() before this block has looked at anything.
+    at(12, 20, 16);
+    G().cheat = false; api.enemies.length = 0;
+    const lying = api.pickups.filter(p => p.kind === 'chalk');
+    if (check('the chalk is lying in the compound', lying.length === 1, 'found ' + lying.length)) {
+      P().x = lying[0].x - 4; P().y = lying[0].y - 8;
+      for (let n = 0; n < 60 && !G().chalk; n++) { api.enemies.length = 0; tick(1); }
+      check('walking over it picks it up', !!G().chalk, 'G.chalk=' + G().chalk);
+    }
+
+    // and it does not respawn
+    at(12, 20, 16);
+    check('and it is not lying there a second time',
+      api.pickups.filter(p => p.kind === 'chalk').length === 0);
+  })();
+
+  (() => {
+    // The dibia has something to say only while you are carrying it, and only
+    // once. There is no log, no marker and no completion sound — the player
+    // either takes it to him or never does.
+    const d = api.NPCS.dibia;
+    G().slain = {}; G().chalk = 0; G().gaveChalk = 0;
+    const before = JSON.stringify(d.beats().map(b => b.text));
+    G().chalk = 1;
+    const carrying = d.beats();
+    check('carrying it changes what he says', JSON.stringify(carrying.map(b => b.text)) !== before);
+    check('and he asks where it was', carrying.some(b => /Where/.test(b.text)),
+      carrying.map(b => b.text).join(' | ').slice(0, 120));
+
+    d.after();
+    check('handing it over is recorded', !!G().gaveChalk);
+    check('and afterwards he is back to his usual conversation',
+      JSON.stringify(d.beats().map(b => b.text)) === before);
+
+    // REGRESSION: after() must not consume anything when there is nothing to
+    // consume, or the thread is spent by talking to him before you find it.
+    G().chalk = 0; G().gaveChalk = 0;
+    d.after();
+    check('REGRESSION talking to him before you find it does not spend the thread',
+      !G().gaveChalk);
+  })();
+
+  (() => {
+    // Both flags survive a save, or the thread resets every time you quit.
+    G().chalk = 1; G().gaveChalk = 1;
+    api.saveGame();
+    G().chalk = 0; G().gaveChalk = 0;
+    api.loadGame();
+    check('the chalk survives a save', !!G().chalk);
+    check('and so does having given it away', !!G().gaveChalk);
+    G().chalk = 0; G().gaveChalk = 0; api.saveGame();
+  })();
+
+  (() => {
+    const entry = api.LORE.filter(l => l.id === 'compound')[0];
+    check('the compound has a codex entry', !!entry);
+    G().visited = {};
+    check('locked until you have been down there', !entry.when());
+    G().visited[12] = 1;
+    check('and open once you have', !!entry.when());
+  })();
+
+  (() => {
+    revive(); unlockAudio();
+    at(12, 20, 16); tick(6);
+    check('the compound plays its own arrangement', api.MUS_NAME() === 'ulo', 'playing ' + api.MUS_NAME());
   })();
 })();
 

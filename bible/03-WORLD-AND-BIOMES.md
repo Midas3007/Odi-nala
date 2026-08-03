@@ -2,15 +2,15 @@
 
 ## 3.1 The map, as built
 
-Twelve rooms. Rooms are indexed 0–11 and **every index-keyed table must be updated together**
+Thirteen rooms. Rooms are indexed 0–12 and **every index-keyed table must be updated together**
 when a room is added (see `09-TECHNICAL.md` §Adding a room).
 
 ```
                   [4 market] ── [5 water]
                        │             │
    [0 charm] ─ [1 path] ┴─ [2 shaft] ─┘
-        │            │
-  [10 ogilisi]   [11 market roofs]
+        │            │        │
+  [10 ogilisi]   [11 roofs]  [12 compound]
                              │
                         [3 Ogbunabali]
                              │
@@ -111,6 +111,35 @@ unfulfilled dread is correct.
 
 Tall room (40 tiles). The only vertical space in the game. The chalk stone with
 Ogbunabali's name is here and the room's whole job is to make sure you walk past it.
+
+### Room 12 — Ụlọ Dibia (the compound that fell in) — **[BUILT]**
+| | |
+|---|---|
+| **Palette** | `#14120d`. Dry brown-black. |
+| **Stone** | `STONE[12]` — plastered mud wall, cracked |
+| **Music** | `ulo` — the palm-wine guitar in the shaft's low minor, stopping mid-phrase |
+| **Ambient** | grit |
+| **Light** | none |
+| **Hazard** | none |
+| **Emotion** | somebody worked here and it did not save them |
+
+West off the **foot of the shaft**, beside the mirror — so it is found at the bottom of
+the longest descent in the game, at the moment the player has just stopped falling.
+
+**The guitar is the argument.** It is the market's instrument and the roofs' — the sound
+of somewhere people live. Down here it plays the shaft's key and stops in the middle of
+the phrase. That is the room in one line, and it is why `ulo` carries a `gtr` at all when
+nothing else underground does.
+
+The walls are **nzu in nines**. §3.4 sets the rule — four strokes is a greeting, nine is
+a name written down where the spirits can read it — so a wall of names is groups of nine
+and nothing else. It was authored in twos and threes first and read as tally marks.
+
+Idols stand in it as **props, not enemies**. A dibia's compound has arụsị the way a house
+has doors. That also means this is the one other room in the game where a mimic would be
+legal (04-COMBAT §4.7) — there is nothing here that needs one.
+
+**It holds the dibia's chalk.** See `05-PROGRESSION.md` §5.6.
 
 ### Room 3 — Ebe Ọchịchịrị (where he keeps the dark)
 | | |
@@ -291,6 +320,7 @@ authored at the end of a short row silently becomes wall. That is what happened 
 | `M` | mirror |
 | `h` | heart shard |
 | `F` | weapon pickup |
+| `x` | the dibia's chalk |
 | `w l t W v a k i` | walker, lunger, thrower, warden, horned, ember, crawler, effigy |
 | `B X O` | Ogbunabali, Ekwensu, Onwe |
 | `K` | the chalk masquerade (tutorial) |
@@ -360,4 +390,4 @@ Ranked by value.
 2. ~~**The ogilisi tree**~~ — **[BUILT]** as room 10. See 3.2.
 3. ~~**A second market level**~~ — **[BUILT]** as room 11. See 3.2.
 4. **The river crossing** — Idemili's python, as an optional boss.
-5. **A collapsed dibia's compound** — books, chalk, tools, the man who buried your charm.
+5. ~~**A collapsed dibia's compound**~~ — **[BUILT]** as room 12. See 3.2.

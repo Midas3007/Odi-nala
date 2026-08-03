@@ -66,6 +66,22 @@ Gold does double duty (danger-you-can't-parry and safety-you-can-rest-at) and th
 works because the two never appear in the same context — one is on an enemy mid-swing,
 the other is on a static object. **Do not add a third meaning for gold.**
 
+### Pickups obey the contract too
+
+`drawPickups` had one unconditional branch under the cowrie: a red halo and a red body.
+That is the heart shard's look, and it was therefore *every* pickup's look — the
+firebrand lying in the forge and the dibia's chalk both glowed like blood, which the
+table above reserves for fire and for damage. Three branches now:
+
+| Pickup | Reads as |
+|---|---|
+| Heart shard | red — it is a piece of you |
+| Weapon | gold — it is a thing worth having |
+| Chalk | bone-white in grey cloth — it is nzu, and nzu is never decorative |
+
+**A new pickup kind needs a branch here.** Falling through is not a default, it is a
+claim that the thing is made of blood.
+
 ## 6.5 Character art standards
 
 ### The player

@@ -305,15 +305,16 @@ const ROOMS = [
   "#..............................#",
   "#..............................#",
   "#..............................E",
-  "#..............................E",
-  "#....M.........................#",
+  "E..............................E",
+  "E....M.........................#",
   "##############cccc##############",
   "#########..........#############",
   "#########....h.....#############",
   "#########..........#############",
   "################################"],
   exits:[{tx:0,ty:2,tw:1,th:2,to:1,sx:45,sy:16},
-         {tx:31,ty:32,tw:1,th:2,to:3,sx:3,sy:14}] },
+         {tx:31,ty:32,tw:1,th:2,to:3,sx:3,sy:14},
+         {tx:0,ty:33,tw:1,th:2,to:12,sx:37,sy:16}] },
 
 { name:"Ebe Ọchịchịrị — where he keeps the dark", tint:'#0d0a0e',
   map:[
@@ -536,7 +537,31 @@ const ROOMS = [
   "############################################",
   "############################################",
   "############################################"],
-  exits:[{tx:0,ty:4,tw:1,th:2,to:4,sx:44,sy:4}] }
+  exits:[{tx:0,ty:4,tw:1,th:2,to:4,sx:44,sy:4}] },
+
+{ name:"\u1ee4l\u1ecd Dibia \u2014 the compound that fell in", tint:'#14120d',
+  map:[
+  "########################################",
+  "#......................................#",
+  "#......................................#",
+  "#......................................#",
+  "#......................................#",
+  "#......................................#",
+  "#......................................#",
+  "#.........------.......................#",
+  "#......................................#",
+  "#......................................#",
+  "#........................------........#",
+  "#......................................#",
+  "#......................................#",
+  "#.....####.............................#",
+  "#.....####...i..............i..........E",
+  "#..x..####..........k..................E",
+  "########################################",
+  "########################################",
+  "########################################",
+  "########################################"],
+  exits:[{tx:39,ty:14,tw:1,th:2,to:2,sx:2,sy:35}] }
 ];
 
 // normalise + index
@@ -593,7 +618,8 @@ function saveGame(){
     maxHP:G.maxHP, cowries:P.cowries, checkpoint:G.checkpoint, visited:G.visited,
     mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped, met:G.met, spared:G.spared,
     charms:G.charms, worn:G.worn,
-    storyDone:G.storyDone, tutDone:G.tutDone, cheat:G.cheat, taken:ROOMS.map(r=>!!r.taken), taught:G.taught };
+    storyDone:G.storyDone, tutDone:G.tutDone, cheat:G.cheat, taken:ROOMS.map(r=>!!r.taken), taught:G.taught,
+    chalk:G.chalk, gaveChalk:G.gaveChalk };
   const where=store(slot(), JSON.stringify(d));
   G.note = where==='disk' ? 'Saved.' : 'Saved for this session only.';
   G.noteT=110;
@@ -611,6 +637,7 @@ function loadGame(){
   G.visited=d.visited||{}; G.mirrors=d.mirrors||{}; G.met=d.met||{};
   G.spared=(d.spared==null?1:d.spared);
   G.charms=d.charms||{}; G.worn=(d.worn||[]).filter(k=>CHARMS[k]).slice(0,CHARM_SLOTS); G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
+  G.chalk=!!d.chalk; G.gaveChalk=!!d.gaveChalk;
   G.spells=Object.assign(G.spells,d.spells||{}); G.skills=Object.assign(G.skills,d.skills||{});
   G.equipped=d.equipped||'amadioha'; G.taught=d.taught||{};
   if(d.taken) d.taken.forEach((t,i)=>{ if(ROOMS[i]) ROOMS[i].taken=t; });
@@ -737,6 +764,7 @@ function spawnRoom(){
     if(ch==='S') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'rest'});
     if(ch==='N') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'name'});
     if(ch==='h' && !R.taken) pickups.push({x:x*T+4,y:y*T+4,w:8,h:8,kind:'heart',t:0});
+    if(ch==='x' && !G.chalk) pickups.push({x:x*T+4,y:y*T+4,w:8,h:8,kind:'chalk',t:0});
     if(ch==='M') shrines.push({x:x*T,y:y*T+8,w:16,h:24,kind:'mirror',id:G.room});
     if(NPC_BY_CH[ch]) shrines.push({x:x*T,y:y*T+8,w:16,h:24,kind:'npc',id:NPC_BY_CH[ch]});
     if(ch==='K' && !G.tutDone) enemies.push(mkChalk(x,y));
@@ -910,7 +938,7 @@ function dropCowries(e){
 const HUDBTN=[];
 const decals=[];
 let amb=[];
-const AMBIENT=['dust','leaf','grit','ash','spark','bubble','ash','dust','spark','leaf','dust','spark'];
+const AMBIENT=['dust','leaf','grit','ash','spark','bubble','ash','dust','spark','leaf','dust','spark','grit'];
 function seedAmbient(){
   amb=[];
   const kind=AMBIENT[G.room]||'dust';
@@ -1094,6 +1122,7 @@ const BEDS = {
   boss:   {f:180,  q:0.8, g:0.010},
   ekwensu:{f:150,  q:0.9, g:0.012},   // lower than anything else: it is enormous
   elu:    {f:900,  q:1.2, g:0.009},   // the same crowd, one floor further away
+  ulo:    {f:300,  q:0.8, g:0.010},   // a closed room with fallen earth in it
   ogilisi:{f:560,  q:0.6, g:0.006},   // thinner and further off than room 0's
   onwe:   {f:420,  q:0.5, g:0.008}    // your own room's air, because that is the joke
 };
@@ -1162,6 +1191,17 @@ const TRACKS = {
            [0,0,0,0,2,0,0,0,0,0,0,0],
            [0,0,0,0,0,0,0,0,0,0,0,0],
            [3,0,0,0,0,0,0,1,0,0,0,0] ] },
+
+  ulo:    { spb:.225, sc:'shaft',  mix:.68, pad:1,
+    bell:BELL_S,
+    udu: [1,0,0,0,0,0,1,0,0,0,0,0],
+    ekwe:[0,0,0,0,2,0,0,0,0,0,0,0],
+    shk: [0,0,0,0,0,0,0,0,0,0,0,0],
+    gtr: [2,0,1,0,0,0,0,0,0,0,0,0],
+    opi: [ [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,1,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0] ] },
 
   ogilisi:{ spb:.215, sc:'night',  mix:.62, pad:1,
     bell:BELL_S,
@@ -1238,7 +1278,7 @@ const TRACKS = {
            [1,0,1,0,1,0,1,0,1,0,1,0],
            [0,0,0,0,0,0,5,0,4,0,2,0] ] }
 };
-const ROOM_TRACK = ['night','forest','shaft','boss','market','water','bone','night','fire','sky','ogilisi','elu'];
+const ROOM_TRACK = ['night','forest','shaft','boss','market','water','bone','night','fire','sky','ogilisi','elu','ulo'];
 // A boss with a theme of its own gets one; the rest take the house boss track.
 // Ekwensu is the largest thing in the game and has no trick: the arrangement is
 // the same honesty — everything on the beat, nothing hidden, the densest bell in
@@ -1940,6 +1980,12 @@ function playerUpdate(){
     if(rects(P,pk)){
       if(pk.kind==='heart'){ G.maxHP+=30; P.hp=G.maxHP; R.taken=true; S.heal();
         say("A shard of your own heart, returned.",180); burst(pk.x,pk.y,26,C.blood,2.4,40); shake(4); saveGame(); }
+      // 05-PROGRESSION §5.6: a standing request, not a quest. No log, no
+      // marker, no completion sound beyond the one every found thing gets.
+      // The player either takes it to him or never does.
+      if(pk.kind==='chalk'){ G.chalk=1; S.name();
+        say("A stick of nzu in a cloth that used to be white. Somebody came back for this and did not find it.",240);
+        burst(pk.x,pk.y,22,C.chalk,2,44); saveGame(); }
       pickups.splice(i,1);
     }
   }
@@ -1988,6 +2034,10 @@ function playerUpdate(){
           // is the first one, and an NPC who has said everything can return
           // nothing and simply not respond
           const b=n.beats();
+          // after() runs between reading the conversation and saving, so an
+          // NPC can consume what you brought without beats() having to mutate
+          // state as a side effect of being asked what it would say.
+          if(n.after) n.after();
           G.met[sh.id]=(G.met[sh.id]||0)+1;
           saveGame();
           if(b && b.length){ playCut(b); return; }
@@ -3704,20 +3754,21 @@ const STONE=[
  {base:'#241310', lit:'#3a1d13', top:'#5e2c15', side:'#1a0d0a', fleck:'#301810', moss:'#7a3410'},
  {base:'#1e2430', lit:'#2e3648', top:'#4a5468', side:'#161b24', fleck:'#242b38', moss:'#3a4458'},
  {base:'#1d1a15', lit:'#2c2720', top:'#463c2c', side:'#241f19', fleck:'#2a241b', moss:'#3a3423'},
- {base:'#241a1a', lit:'#372626', top:'#553a2c', side:'#2b1e1e', fleck:'#2f2220', moss:'#5a3a20'}
+ {base:'#241a1a', lit:'#372626', top:'#553a2c', side:'#2b1e1e', fleck:'#2f2220', moss:'#5a3a20'},
+ {base:'#232019', lit:'#353026', top:'#5a5138', side:'#2a2620', fleck:'#302b22', moss:'#48412c'}
 ];
 // Which stone set each room is cut from. This was a nested ternary on the room
 // index, which meant it had a silent default: every room added past 9 would have
 // fallen through to the sky's pale blue and nobody would have seen it until the
 // screenshot. As a table it is the fifth entry on the five-table checklist and
 // tools/audit.py counts it against ROOMS like the other four.
-const ROOM_STONE=[2,3,4,5,6,7,0,1,8,9,10,11];
+const ROOM_STONE=[2,3,4,5,6,7,0,1,8,9,10,11,12];
 function drawTiles(){
   const P0=STONE[ROOM_STONE[G.room]]||STONE[2];
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
     const ch=tileAt(R,x,y);
-    if('.wltWKBSNMhrvXOakiFdmoynqjsbpUI'.indexOf(ch)>=0) continue;
+    if('.wltWKBSNMhrvXOakiFdmoynqjsbpUIx'.indexOf(ch)>=0) continue;
     const sx=x*T-cam.x, sy=y*T-cam.y;
 
     if(ch==='E'){
@@ -4144,6 +4195,43 @@ function drawProps(){
         leaf:['#101b12','#16261a','#0a120c'],
         rim:'#2c4826' });
   }
+  if(G.room===12){
+    const fy=16*T-cam.y;
+    // Arụsị, still standing where they were planted. They are props here, not
+    // enemies — a compound has them the way a house has doors — and they are the
+    // reason 04-COMBAT allows a mimic in this room later if anyone wants one.
+    for(let i=0;i<6;i++){
+      const bx=((i*151+40)%(R.w*T))-cam.x;
+      if(bx<-40||bx>W+40) continue;
+      idolStatue(bx, fy, 5.5+((i*5)%3), {eye:'#7a6a48', chalk:i%3===0});
+    }
+    // The roof, on the floor. Beams at the angle they came down at.
+    for(let i=0;i<7;i++){
+      const bx=((i*97+18)%(R.w*T))-cam.x;
+      if(bx<-50||bx>W+50) continue;
+      ctx.save(); ctx.translate(bx, fy-2); ctx.rotate(-0.42+((i*7)%5)*0.16);
+      px(0,-2,34+((i*11)%16),4,'#1d1710'); pxf(0,-2,34+((i*11)%16),1,'#2e2415');
+      ctx.restore();
+    }
+    // Broken pots. Nobody swept up.
+    for(let i=0;i<9;i++){
+      const bx=((i*73+9)%(R.w*T))-cam.x;
+      if(bx<-20||bx>W+20) continue;
+      px(bx, fy-4, 5, 4, '#2a2018');
+      pxf(bx+((i*3)%4), fy-1, 2, 1, '#3a2d20');
+    }
+    // Nzu on what is left of the back wall: names, written down where the
+    // spirits can read them. Chalk is never decorative (03-WORLD §3.4) — this
+    // is the man's actual work, and it is the only thing in here still legible.
+    for(let i=0;i<13;i++){
+      const cx2=((i*61+11)%(R.w*T))-cam.x*0.94, cy2=fy-30-((i*23)%44);
+      if(cx2<-24||cx2>W+24) continue;
+      ctx.globalAlpha=.26+((i*7)%5)*.05;
+      for(let b=0;b<9;b++) pxf(cx2+b*2.2, cy2-((b===8)?1:0), .5, 5, '#cfc6ad');
+      if(i%4===0){ ctx.globalAlpha=.18; pxf(cx2-1, cy2+7, 19, .5, '#cfc6ad'); }
+    }
+    ctx.globalAlpha=1;
+  }
   if(G.room===11){
     const fy=16*T-cam.y;
     // The lit seam where the roof meets the street. It is the only place in the
@@ -4241,6 +4329,13 @@ function drawForeground(){
     else if(G.room===4){
       px(bx,by+8,16,26,'#06070a'); px(bx-2,by+6,20,3,'#080a0d');
       for(let b=0;b<5;b++) pxf(bx-1+b*4, by+9, 2, 4+((i+b)%5), '#06070a');
+    }
+    else if(G.room===12){
+      // splintered roof timber across the front of the frame
+      ctx.save(); ctx.translate(bx, by+18); ctx.rotate(-0.5+((i*5)%4)*0.28);
+      ctx.fillStyle='#050706'; ctx.fillRect(-2,-2,40+((i*9)%22),5);
+      for(let b=0;b<4;b++) ctx.fillRect(6+b*9,-6-((i+b)%5),2,6);
+      ctx.restore();
     }
     else if(G.room===11){
       // cloth hung out on a line, moving with the same gust as everything else
@@ -4493,6 +4588,23 @@ function drawPickups(){
       continue;
     }
     const x=p.x-cam.x, y=p.y-cam.y+Math.sin((G.t+p.t)/22)*2;
+    // Red is the heart shard's colour and it was every pickup's colour, because
+    // this used to be one unconditional branch. 03-WORLD §3.4 gives glow a
+    // meaning, so a stick of chalk and a weapon both reading as blood is a lie
+    // about what they are.
+    if(p.kind==='chalk'){
+      ctx.globalAlpha=.26; ctx.fillStyle=C.chalk;
+      ctx.beginPath(); ctx.arc(x+4,y+4,9,0,7); ctx.fill(); ctx.globalAlpha=1;
+      px(x+1,y+2,6,4,'#6b6155');                 // the cloth, long past white
+      px(x+2,y,3,3,C.chalk); px(x+2,y+6,3,1,'#9e968a');
+      continue;
+    }
+    if(p.kind==='weapon'){
+      ctx.globalAlpha=.26; ctx.fillStyle=C.gold;
+      ctx.beginPath(); ctx.arc(x+4,y+4,10,0,7); ctx.fill(); ctx.globalAlpha=1;
+      px(x+3,y-1,2,8,C.bone); px(x+1,y+6,6,2,'#6b5a3a'); px(x+3,y+8,2,2,'#3a2f20');
+      continue;
+    }
     ctx.globalAlpha=.3; ctx.fillStyle=C.blood; ctx.beginPath(); ctx.arc(x+4,y+4,9,0,7); ctx.fill(); ctx.globalAlpha=1;
     px(x+1,y+1,6,6,C.blood); px(x+2,y+2,2,2,'#e6706a');
   }
@@ -5732,7 +5844,16 @@ const ON_OUT=[
 // you, you were three days old and dying.
 const NPCS = {
   dibia: { ch:'d', room:4, voice:'dibia', prompt:'E  speak',
+    after(){ if(G.chalk && !G.gaveChalk) G.gaveChalk=1; },
     beats(){
+      if(G.chalk && !G.gaveChalk) return [
+       {art:'charm', voice:'you',   text:"You put the chalk on the mat. The cloth is stiff with age."},
+       {art:'charm', voice:'dibia', text:"\"Ah.\" He does not pick it up. \"Where.\""},
+       {art:'dark',  voice:'you',   text:"You tell him where."},
+       {art:'dark',  voice:'dibia', text:"\"That was a compound. There were people in it when it went.\""},
+       {art:'dark',  voice:'dibia', text:"\"I went back down for the nzu. I did not go back down for them.\""},
+       {art:'idols', voice:'dibia', text:"\"Keep it. I have not needed it in a long time and I am not starting now.\""}
+      ];
       if(G.slain.ogbunabali) return [
        {art:'dark',  voice:'dibia', text:"\"Something went quiet in the night. I felt the market lean.\""},
        {art:'dark',  voice:'dibia', text:"\"Ogbunabali. There. I said it and nothing came for me.\""},
@@ -5809,7 +5930,7 @@ for(const k in NPCS) NPC_BY_CH[NPCS[k].ch]=k;
 // pickups, then enemy spawns, then whatever the NPC table declares. One source
 // of truth — the test suite reads this rather than keeping its own copy, so a
 // new spawn char cannot be added without the maps being checked against it.
-const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakinqjsbp'+'UI' + Object.keys(NPC_BY_CH).join('');
+const TILE_CHARS = '#-.cE^ ' + 'SNMhFx' + 'KBXO' + 'wltWrvakinqjsbp'+'UI' + Object.keys(NPC_BY_CH).join('');
 
 function cutArt(name,cx,cy){
   if(name==='bones'){
@@ -6402,6 +6523,10 @@ const LORE=[
   "The tree people plant to say where one thing ends and another begins \u2014 a compound boundary, a shrine, a grave. It is not sown. A cut stake is pushed into the ground and agrees to go on living there, which is exactly why it is the tree for boundaries: it survives being moved.",
   "Eight mounds under it, in a row, and a hole at the end of the row.",
   "You are not going to find anything down there. You already took it."]},
+ {id:'compound', t:'THE COMPOUND THAT FELL IN', when:()=>!!G.visited[12], b:[
+  "A dibia works out of his own compound: idols planted at the boundary, chalk on the wall, and a shelf of things that are only tools if you know what they are for.",
+  "The wall is still readable. It is a list of names, written where the spirits can read them, and it is a long list.",
+  "Nobody has been down here since the earth took it. The chalk was left because whoever came back for it was in a hurry."]},
  {id:'alusi', t:'ALUSI', when:()=>true, b:[
   "The deities, each with ground of their own. Ala holds the earth and the law that comes with it. Amadioha is lightning and the judgement inside it. Idemili is the water that stands up. Ikenga is the right hand and everything it has earned.",
   "They are carved, fed, consulted and \u2014 if they fail \u2014 put outside in the rain. A relationship, not a worship."]},
@@ -6773,7 +6898,7 @@ function renderInv(){
 }
 
 // -- the map -----------------------------------------------------------------
-const MAPPOS=[[10,74],[92,74],[196,60],[236,176],[188,10],[292,10],[352,176],[300,132],[352,74],[400,132],[10,132],[96,10]];
+const MAPPOS=[[10,74],[92,74],[196,60],[236,176],[188,10],[292,10],[352,176],[300,132],[352,74],[400,132],[10,132],[96,10],[100,124]];
 function mapUpdate(){
   if(tap('KeyM')||tap('Tab')||tap('KeyX')||tap('Escape')) G.mode='play';
 }
@@ -6788,7 +6913,7 @@ function renderMap(){
     ctx.beginPath(); ctx.moveTo(pa[0]+ROOMS[a].w, pa[1]+ROOMS[a].h);
     ctx.lineTo(pb[0]+ROOMS[b].w, pb[1]+ROOMS[b].h); ctx.stroke(); };
   link(0,1); link(1,2); link(2,3); link(1,4); link(4,5); link(5,2); link(3,6); link(6,8); link(8,9); link(9,7);
-  link(0,10); link(4,11);
+  link(0,10); link(4,11); link(2,12);
   for(let i=0;i<ROOMS.length;i++){
     if(!G.visited[i]) continue;
     const r=ROOMS[i], p=MAPPOS[i]||[0,0];
