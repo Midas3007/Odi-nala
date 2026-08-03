@@ -504,7 +504,7 @@ const G = {
   knowsName:false, hasSlam:false, bossDead:false, maxHP:100, taught:{},
   slain:{}, seen:{}, deaths:0, ending:0, playT:0,
   checkpoint:{room:0, tx:9, ty:16},
-  visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0, met:{},
+  visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0, met:{}, spared:1,
   spells:{amadioha:1, ala:0, idemili:0, ikenga:0},
   skills:{riposte:0, swift:0, charm:0, flasks:3, heartUps:0},
   equipped:'amadioha', weapons:{mma:1}, weapon:'mma', storyDone:false, tutDone:false, cheat:false, sel:0, sub:0, note:'', noteT:0
@@ -527,7 +527,7 @@ function saveGame(){
   const d={ v:1, knowsName:G.knowsName, hasSlam:G.hasSlam, bossDead:G.bossDead,
     slain:G.slain, seen:G.seen, deaths:G.deaths, ending:G.ending, playT:G.playT,
     maxHP:G.maxHP, cowries:P.cowries, checkpoint:G.checkpoint, visited:G.visited,
-    mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped, met:G.met,
+    mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped, met:G.met, spared:G.spared,
     storyDone:G.storyDone, tutDone:G.tutDone, cheat:G.cheat, taken:ROOMS.map(r=>!!r.taken), taught:G.taught };
   const where=store(slot(), JSON.stringify(d));
   G.note = where==='disk' ? 'Saved.' : 'Saved for this session only.';
@@ -543,7 +543,8 @@ function loadGame(){
   G.slain=d.slain||{}; G.seen=d.seen||{}; G.deaths=d.deaths||0; G.ending=d.ending||0; G.playT=d.playT||0;
   if(G.bossDead) G.slain.ogbunabali=1;
   G.maxHP=d.maxHP||100; G.checkpoint=d.checkpoint||{room:0,tx:9,ty:16};
-  G.visited=d.visited||{}; G.mirrors=d.mirrors||{}; G.met=d.met||{}; G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
+  G.visited=d.visited||{}; G.mirrors=d.mirrors||{}; G.met=d.met||{};
+  G.spared=(d.spared==null?1:d.spared); G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
   G.spells=Object.assign(G.spells,d.spells||{}); G.skills=Object.assign(G.skills,d.skills||{});
   G.equipped=d.equipped||'amadioha'; G.taught=d.taught||{};
   if(d.taken) d.taken.forEach((t,i)=>{ if(ROOMS[i]) ROOMS[i].taken=t; });
@@ -641,7 +642,12 @@ function spawnRoom(){
     if(ch==='K' && !G.tutDone) enemies.push(mkChalk(x,y));
     if(ch==='B' && !G.slain.ogbunabali) boss = mkBoss(x,y,'ogbunabali');
     if(ch==='X' && !G.slain.ekwensu)     boss = mkBoss(x,y,'ekwensu');
-    if(ch==='O' && !G.slain.onwe)        boss = mkBoss(x,y,'onwe');
+    if(ch==='O' && !G.slain.onwe){
+      boss = mkBoss(x,y,'onwe');
+      // Ending C. It fights with your moveset, and you have not used one. There
+      // is nothing in you for it to copy, so it never puts its hands up.
+      if(G.spared){ boss.lowered=999999; boss.standdown=1; }
+    }
     if(ch==='U' && !G.slain.uzu)         boss = mkBoss(x,y,'uzu');
     if(ch==='I' && !G.slain.ikuku)       boss = mkBoss(x,y,'ikuku');
   }
@@ -719,6 +725,10 @@ function mkBoss(x,y,who){
   const b=base(x,y,stat[0],stat[1],stat[2],stat[3]);
   b.kind='boss'; b.who=who; b.bound=(who==='ogbunabali')?0:9999;
   b.cd=90; b.phase=1; b.lineT=0; b.line=''; b.said=0; b.mirrorT=0;
+  // Onwe's two refusal endings live on these. Undefined would make every
+  // `lowered<=0` test quietly false, so they are declared here rather than
+  // sprung into existence by the first branch that happens to write one.
+  b.lowered=0; b.standdown=0;
   return b;
 }
 
@@ -1669,6 +1679,18 @@ function playerUpdate(){
   // not on the frame you fell: die() drops the shade on your own hitbox from
   // inside this same function, a few lines up, and without this guard you take
   // it straight back and death costs nothing
+  // The two endings you reach by not fighting. Both are the same gesture: it has
+  // its hands down and you walk into it rather than swinging.
+  if(boss && !boss.dead && boss.who==='onwe' && boss.lowered>0 && !G.outroT && rects(P,boss)){
+    G.ending = boss.standdown ? 3 : 2;
+    G.outroT = 120; G.outroWho='onwe';
+    boss.dead = true; G.slain.onwe = (G.slain.onwe||0)+1;
+    P.st='idle'; P.t=0; P.inv=200; P.vx=0;
+    G.flash=14; shake(4); S.name&&S.name();
+    burst(boss.x+boss.w/2, boss.y+boss.h/2, 46, C.chalk, 2.6, 60);
+    saveGame();
+    return;
+  }
   if(shade && !P.dead && shade.room===G.room && rects(P,shade)){
     P.cowries += shade.amt; say("You take back what you dropped. +"+shade.amt,110);
     burst(shade.x,shade.y,20,C.gold,2,34); shade=null;
@@ -1798,6 +1820,9 @@ function damage(e,amt,dir,kb,muffled,poiseDmg){
     shake(e.kind==='boss'?10:3); stop(e.kind==='boss'?26:6);
     if(e.kind!=='boss') S.hit(); else S.die();
     G.slain[e.kind==='boss'?e.who:e.kind] = (G.slain[e.kind==='boss'?e.who:e.kind]||0)+1;
+    // Ending C asks that you put down nothing you did not have to. Bosses are
+    // gated and the chalk teacher comes apart either way, so neither counts.
+    if(e.kind!=='boss' && !e.trainer) G.spared = 0;
     if(e.kind==='boss'){
       if(e.who==='ogbunabali'){
         G.bossDead=true; G.hasSlam=true; G.outroT=110; G.outroWho='ogbunabali';
@@ -2744,7 +2769,32 @@ function onweUpdate(b){
     b.phase=3; b.stagger=26; shake(10); G.flash=16;
     say("It stops copying you. It starts remembering you.",170);
   }
-  if(b.broken>0){ b.broken--; if(b.broken===0){ b.poise=b.poiseMax; b.stagger=Math.max(b.stagger,14); b.st='idle'; b.t=0; } }
+  if(b.broken>0){
+    b.broken--;
+    if(b.broken===0){
+      b.poise=b.poiseMax; b.stagger=Math.max(b.stagger,14); b.st='idle'; b.t=0;
+      // Ending B. You broke its guard and let the window run out without taking
+      // the opening. It reads that as an answer, because it is one.
+      //
+      // An execution cannot reach here: startExec's boss branch sets broken to 0
+      // outright, so the decrement above never runs and this never fires for a
+      // player who did take the opening. If you ever change the execution to wind
+      // broken down instead of zeroing it, this needs a guard — there is a
+      // REGRESSION test on exactly that behaviour.
+      if(b.lowered<=0){
+        b.lowered=420;
+        say("\"You had it. You did not take it.\"  It lowers its hands. [walk in]",300);
+        G.flash=8; S.name&&S.name();
+      }
+    }
+  }
+  if(b.lowered>0){
+    // it will not fight while its hands are down; it waits, and then picks them
+    // back up, because it is you and you would have
+    b.lowered--; b.tell=''; b.vx*=0.9; b.vy=Math.min(b.vy+0.46,9); moveEnt(b);
+    if(b.lowered===0 && !b.standdown) say("It picks its hands back up. You had a moment and you spent it.",190);
+    if(b.lowered>0) return;
+  }
   if(b.stagger>0 || b.broken>0){
     b.stagger=Math.max(0,b.stagger-1);
     b.vx*=0.88; b.vy=Math.min(b.vy+0.46,9); b.tell=''; moveEnt(b); return;
@@ -2869,7 +2919,10 @@ function update(){
     if(who==='ekwensu') playCut(EK_OUT);
     else if(who==='uzu') playCut(UZ_OUT);
     else if(who==='ikuku') playCut(IK_OUT);
-    else if(who==='onwe') playCut(ON_OUT, ()=>{ G.mode='ending'; ENDW.t=0; });
+    else if(who==='onwe'){
+      const beats = G.ending===3 ? ON_OUT_C : (G.ending===2 ? ON_OUT_B : ON_OUT);
+      playCut(beats, ()=>{ G.mode='ending'; ENDW.t=0; });
+    }
     else playCut(BOSS_OUT);
     return; } }
   if(tap('KeyM')||tap('Tab')){ G.mode='map'; return; }
@@ -5149,6 +5202,28 @@ const ON_IN=[
 // It reframes the room rather than the player. Igwe's horror is that there is a
 // sunset hundreds of feet underground and nobody remarks on it; Ikuku is the
 // answer, and says so in its first line without being asked.
+// Ending B \u2014 Nl\u1ecdghachi, the going back. The cruellest one and the most loving.
+// It is not played for horror: she is simply returned to a morning, and she will
+// do all of it again, and the player picked that for her.
+const ON_OUT_B=[
+ {art:'twin',   voice:'boss', text:"\"There. That was all it wanted. You only had to stop.\""},
+ {art:'twin',   voice:'narr', text:"It lowers its hands and waits, the way somebody waits who has done this before."},
+ {art:'ash',    voice:'you',  text:"You walk into yourself. It is not a fight. It was never going to be one."},
+ {art:'moon',   voice:'narr', text:"The bargain closes over the pair of you the way water closes over a dropped stone."},
+ {art:'burial', voice:'narr', text:"Your mother is standing in a yard, before any of it, holding a child that is going to die."},
+ {art:'burial', voice:'narr', text:"She does not remember the nine. She will bury nine more. You chose that for her."},
+ {art:'child',  voice:'you',  text:"You are the tenth now. There will be an eleventh. That is what going back means."}
+];
+// Ending C \u2014 Onye \u1eccma, the one who did not. It cannot fight you because it
+// fights the way you fight, and you did not.
+const ON_OUT_C=[
+ {art:'twin',   voice:'boss', text:"\"I have been waiting to see what you would do with your hands.\""},
+ {art:'twin',   voice:'boss', text:"\"They are clean. There is nothing here for me to be.\""},
+ {art:'twin',   voice:'narr', text:"It wears your face and cannot hold it. There is nothing in you it can copy."},
+ {art:'ash',    voice:'narr', text:"It comes apart without being struck, which is the only way it was ever going to."},
+ {art:'dawn',   voice:'you',  text:"You walked the whole country of the dead and left everything in it standing."},
+ {art:'dawn',   voice:'narr', text:"Nobody will know. There is nobody down here to tell, and the ones above will not ask."}
+];
 const IK_IN=[
  {art:'dawn', voice:'boss', text:"\"There you are. Under my sky, walking about like it is weather.\""},
  {art:'dawn', voice:'you',  text:"There is a sunset here. You are hundreds of feet under the ground. You had not let yourself notice."},
@@ -5792,6 +5867,10 @@ const LORE=[
   "A diviner, a healer, and the person a family calls when the same child keeps arriving and leaving. Not a priest. Closer to a doctor who is also expected to argue with the spirit world on your behalf.",
   "Finding an iyi-uwa is his work. He asks the child where it is, and the child, being small and not yet careful, tells him.",
   "The one in the night market did that for a family with nine graves behind the compound. He has told the story so many times that it has stopped being about anybody."]},
+ {id:'onwe', t:'ONWE', when:()=>!!(G.seen&&G.seen.boss_onwe), b:[
+  "The ninth child. The one that did go back, nine times over, and was still going when you stopped going.",
+  "It has no moveset of its own. Everything it does it does because it watched you do it first, which is why it is exactly as quick as you are and exactly as good.",
+  "A thing that can only copy has a problem if it is given nothing to copy."]},
  {id:'alusi', t:'ALUSI', when:()=>true, b:[
   "The deities, each with ground of their own. Ala holds the earth and the law that comes with it. Amadioha is lightning and the judgement inside it. Idemili is the water that stands up. Ikenga is the right hand and everything it has earned.",
   "They are carved, fed, consulted and \u2014 if they fail \u2014 put outside in the rain. A relationship, not a worship."]},
@@ -6031,6 +6110,12 @@ function renderPause(){
   ctx.textAlign='left';
 }
 
+// title, then the line under it. Ending A keeps the wording it shipped with.
+const ENDING_NAME={
+  1:['NKW\u1ee4GHACHI', 'the return'],
+  2:['NL\u1eccGHACHI',  'the going back'],
+  3:['ONYE \u1eccMA',    'the one who did not']
+};
 const ENDW={t:0};
 function endingUpdate(){
   ENDW.t++;
@@ -6045,8 +6130,17 @@ function renderEnding(){
   ctx.textAlign='center';
   ctx.font='22px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone;
   ctx.fillText('\u1eccD\u1eaeNALA', W/2, 54);
-  ctx.font='8px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
-  ctx.fillText('the \u1ecdgbanje who would not go back', W/2, 68);
+  // the Igbo leads and the English sits under it, which is the register the rest
+  // of the game keeps; the card is the one place a gloss belongs at all
+  if(ENDING_NAME[G.ending]){
+    ctx.font='10px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone;
+    ctx.fillText(ENDING_NAME[G.ending][0], W/2, 69);
+    ctx.font='8px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
+    ctx.fillText(ENDING_NAME[G.ending][1], W/2, 80);
+  } else {
+    ctx.font='8px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
+    ctx.fillText('the \u1ecdgbanje who would not go back', W/2, 68);
+  }
   glyph(W/2-92,60,7,C.gold,G.t/70); glyph(W/2+92,60,7,C.gold,-G.t/70);
   ctx.globalAlpha=1;
 
@@ -6061,12 +6155,13 @@ function renderEnding(){
       ['cowries kept',      String(P.cowries)],
       ['bestiary',          beastOpen().length+' of '+BEASTS.length],
       ['lore recovered',    loreOpen().length+' of '+LORE.length],
-      ['ground walked',     Object.keys(G.visited).length+' of 8'],
-      ['mirrors opened',    Object.keys(G.mirrors).filter(k=>G.mirrors[k]).length+' of 6']
+      ['ground walked',     Object.keys(G.visited).length+' of '+ROOMS.length],
+      ['mirrors opened',    Object.keys(G.mirrors).filter(k=>G.mirrors[k]).length+' of '+Object.keys(MIRRORS).length],
+      ['left standing',     G.spared ? 'everything' : 'no']
     ];
     ctx.font='8px ui-sans-serif,system-ui';
     for(let i=0;i<rows.length;i++){
-      const y=100+i*15;
+      const y=98+i*14;
       ctx.textAlign='right'; ctx.fillStyle=C.chalkDim; ctx.fillText(rows[i][0], W/2-8, y);
       ctx.textAlign='left';  ctx.fillStyle=C.bone;     ctx.fillText(rows[i][1], W/2+8, y);
     }
@@ -6312,7 +6407,8 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   startSpeedrun, unlockAll, relock, titleOpts, PAUSE_SEL:()=>PAUSE.sel,
   PAUSE_LABEL:()=>pauseLabel(pauseRows()[PAUSE.sel]), LORE_OPEN:loreOpen, BEAST_OPEN:beastOpen,
   CDX:()=>CDX, storyProgress, LORE, BEASTS, openCodex, BG_ROOM:()=>bgRoom,
-  WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS
+  WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS,
+  ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C
 });
 cvs.focus();
 requestAnimationFrame(frame);

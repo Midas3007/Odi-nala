@@ -170,8 +170,8 @@ Full biome treatment is in `03-WORLD-AND-BIOMES.md`. Narrative significance only
 
 ## 2.7 Endings
 
-Currently **one ending** is implemented (`G.ending === 1`). The flag exists to support
-more. Here is the full design.
+**All three endings are implemented.** `G.ending` is 1, 2 or 3, saved, and named on the
+stats card.
 
 ### Ending A — "Nkwụghachi" (the return) — **BUILT**
 The player kills Onwe. The contract is void because one of the two parties is dead.
@@ -182,7 +182,7 @@ The stats card follows: deaths, kills, lore recovered, time.
 Tone: not triumphant. Quiet. *"Now you can die properly, someday, which is all you
 ever wanted and not at all what you came for."*
 
-### Ending B — "Nlọghachi" (the going back) — **[NOT BUILT]**
+### Ending B — "Nlọghachi" (the going back) — **BUILT**
 At the moment Onwe's guard breaks, do not press Z. Wait. The prompt fades. Onwe lowers
 its hands. The player may walk into it.
 
@@ -190,14 +190,37 @@ The player accepts the arrangement: goes back, becomes the tenth child, the cycl
 resumes, the mother is returned to the moment before the taking, and remembers none of
 it. She will bury nine more children. The player chose that.
 
-Tone: the cruellest ending and the most loving one. Implementation: an `ending===2`
-branch and a different final cutscene. Roughly 80 lines of code.
+Tone: the cruellest ending and the most loving one.
 
-### Ending C — "Onye Ọma" (the one who did not) — **[NOT BUILT, PROPOSED]**
+*As built:* when Onwe's broken window **runs out without being spent**, it lowers its
+hands for 420 frames and says so. Walk into it and you get ending 2. Stand there and the
+window closes — it picks its hands back up, tells you that you spent the moment, and the
+fight resumes. The offer is repeatable on the next break.
+
+**An execution can never trigger it**, because `startExec`'s boss branch sets `broken`
+to 0 outright and the decrement path is what opens the offer. That is implicit, so if
+you ever change the execution to wind `broken` down rather than zero it, this needs a
+guard — there is a REGRESSION test on it. An earlier `execUsed` flag was written for
+this and deleted once mutation testing proved it never affected anything.
+
+### Ending C — "Onye Ọma" (the one who did not) — **BUILT**
 Reach Onwe having killed nothing that was avoidable — every optional enemy left alive.
-Track a `G.spared` counter. Onwe cannot fight you, because it is you, and you did not.
-A third cutscene. This one requires real discipline and should be undiscoverable
-without the codex hinting at it.
+Onwe cannot fight you, because it is you, and you did not. This one requires real
+discipline and should be undiscoverable without the codex hinting at it.
+
+*As built:* Onwe spawns with its hands already down and never raises them. Walk into it
+for ending 3. The codex hint is the `ONWE` lore entry, which opens once you have seen
+it and ends "a thing that can only copy has a problem if it is given nothing to copy" —
+oblique enough not to instruct.
+
+**`G.spared` is a flag, not a counter, and that is a deliberate deviation.** Enemies
+respawn every time you enter a room, so a tally of spared creatures is not well defined
+— you could farm it. A tally of *avoidable kills* is well defined, so `G.spared` starts
+at 1 and drops to 0 the first time anything that is not a boss and not the chalk teacher
+dies. Bosses are all gated and therefore unavoidable; the teacher comes apart whether you
+fight it or skip it.
+
+The stats card carries a `left standing` row so the run tells you which way it went.
 
 ### What all endings share
 - No credits crawl. A stats card, the title, silence.

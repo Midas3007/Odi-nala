@@ -29,7 +29,7 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 | 2.2 | ~~Boss in room 9~~ | **Done.** Ikuku, named by Midas. Never lands; sweeps you up, stoops you off. Gates room 7. |
 | 2.3 | ~~Boss in room 8~~ | **Done.** Ụzụ Ọkụ. Poise refills 7× faster than a normal enemy. Gates room 9. |
 | 2.4 | ~~Six enemies~~ | **Done.** healer, mimic, grappler, pair, swimmer, wall-crawler. Roster is nine → fifteen. |
-| 2.5 | Endings B and C | `G.ending` already exists |
+| 2.5 | ~~Endings B and C~~ | **Done.** Nlọghachi by refusing the execution, Onye Ọma by killing nothing avoidable. |
 | 2.6 | Weapon-specific heavy shapes | Highest-value combat addition |
 | 2.7 | Charms — 2–3 passive slots | |
 | 2.8 | Bone road music; Ekwensu and Onwe themes | Onwe's theme = the opening theme in retrograde |
