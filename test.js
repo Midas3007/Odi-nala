@@ -622,12 +622,20 @@ section('arriving through every exit');
       finite(P().x) && finite(settled) && settled >= 0 && settled < ROOMS[ex.to].h * 16,
       'arrival (' + ex.sx + ',' + ex.sy + ') settled at x=' + P().x.toFixed(1) + ' y=' + settled.toFixed(1) +
       ', room is ' + (ROOMS[ex.to].h * 16) + 'px tall');
-    hold('ArrowRight', 60); release('ArrowRight', 2);
-    const movedRight = Math.abs(P().x - x0);
+    // Stop as soon as they have moved: the assertion is "moved at all", and
+    // sixty frames each way for every doorway in the game was the largest cost
+    // in the suite outside the soaks.
+    const walk = (key) => {
+      api.down(key);
+      let moved = 0;
+      for (let n = 0; n < 60; n++) { tick(1); moved = Math.abs(P().x - x0); if (moved > 0.5) break; }
+      api.up(key); tick(2);
+      return moved;
+    };
+    const movedRight = walk('ArrowRight');
     at(ex.to, ex.sx, ex.sy);
     tick(30);
-    hold('ArrowLeft', 60); release('ArrowLeft', 2);
-    const movedLeft = Math.abs(P().x - x0);
+    const movedLeft = walk('ArrowLeft');
     // Both directions, 60 frames each. A buried arrival moves 0px either way:
     // moveEnt() blocks x and y when the body already overlaps solid, so the
     // player is pinned and it reads as a hang rather than a bug.

@@ -5808,6 +5808,76 @@ function drawBossCard(){
   ctx.globalAlpha=1; ctx.textAlign='left';
 }
 
+// 3.5. Iyi Idemili's floor is wet stone, so it holds what stands on it. The
+// reflection is the player and the enemies drawn again, upside down, under the
+// tile they are standing on, at low alpha and wobbling — cheap, because it is
+// the same painters called a second time inside a flip, and it is the only
+// place in the game where the floor tells you something.
+function drawWet(){
+  if(G.room!==5) return;
+  const wob=Math.sin(G.t/23)*0.6;
+  const floorOf=(ent)=>{
+    let ty=Math.floor((ent.y+ent.h+1)/T);
+    for(let k=0;k<3 && !SOLID(tileAt(R,Math.floor((ent.x+ent.w/2)/T),ty));k++) ty++;
+    return ty*T;
+  };
+  const one=(fn,ent)=>{
+    const fw=floorOf(ent);
+    if(fw-(ent.y+ent.h) > T*1.2) return;        // in the air: nothing to reflect in
+    const fy=fw-cam.y;
+    ctx.save();
+    // Clipped to a shallow band. Unclipped it ran the full height of whatever
+    // it was reflecting and read as a hole in the floor rather than a shine on
+    // it — a wet floor holds an inch of you, not all of you.
+    ctx.beginPath(); ctx.rect(0, fy, W, 15); ctx.clip();
+    ctx.globalAlpha=.14;
+    ctx.translate(0, 2*fy);
+    ctx.scale(1,-1);
+    ctx.translate(wob*((Math.round(ent.x)%7)-3)*0.25, 0);
+    try{ fn(ent); }catch(e){}
+    ctx.restore();
+  };
+  for(const e of enemies) if(!e.dead) one(drawEnemy, e);
+  if(!P.dead) one(()=>drawPlayer(), P);
+}
+
+// 3.6. The fire room had a heat gradient breathing over the whole screen, which
+// is a tint, not a shimmer. This is the real thing: the lower half of the frame
+// is taken in horizontal strips and put back a pixel or two sideways, so edges
+// actually bend. Strips are 4px so the whole effect is sixteen drawImage calls,
+// and it only runs in room 8 — measured before it was kept (09-TECHNICAL §9.5).
+// 3.6. The fire room had a heat gradient breathing over the whole screen, which
+// is a tint, not a shimmer. This is the real thing: the lower half of the frame
+// is put back in horizontal strips, each nudged sideways, so edges actually
+// bend.
+//
+// The first version read each strip straight off the canvas it was drawing
+// into. That measured at 92.7 ms a frame against 21.9 without it — every
+// drawImage from the live canvas forces a flush, and there were sixteen of
+// them. It copies the band once into a scratch canvas and takes the strips from
+// there: one readback instead of sixteen. 09-TECHNICAL §9.5 says measure before
+// optimising; this is the case for measuring before *keeping*.
+let shimCv=null, shimCx=null;
+function drawShimmer(){
+  if(G.room!==8 || OPT.calm) return;
+  const y0=Math.round(H*0.42), hh=H-y0, band=5;
+  try{
+    if(!shimCv || shimCv.width!==Math.round(W*SC) || shimCv.height!==Math.round(hh*SC)){
+      shimCv=document.createElement('canvas');
+      shimCv.width=Math.round(W*SC); shimCv.height=Math.round(hh*SC);
+      shimCx=shimCv.getContext('2d');
+      if(!shimCx) { shimCv=null; return; }
+      shimCx.imageSmoothingEnabled=false;
+    }
+    shimCx.clearRect(0,0,shimCv.width,shimCv.height);
+    shimCx.drawImage(cvs, 0, y0*SC, W*SC, hh*SC, 0, 0, W*SC, hh*SC);
+    for(let y=0;y<hh;y+=band){
+      const amp=y/hh;                                  // nothing up top, most at the lava
+      const dx=(Math.sin(G.t/13 + y*0.22)*1.6 + Math.sin(G.t/29 + y*0.07)*1.1)*amp;
+      ctx.drawImage(shimCv, 0, y*SC, W*SC, band*SC, dx, y0+y, W, band);
+    }
+  }catch(e){ shimCv=null; }
+}
 function drawVignette(){
   const g=ctx.createRadialGradient(W/2,H/2,60,W/2,H/2,W*0.62);
   g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.72)');
@@ -5820,11 +5890,13 @@ function render(){
   drawBG(); drawTiles(); drawProps(); drawDecals(); drawShrines(); drawPickups(); drawShade(); drawShadows(); drawFlames();
   for(const e of enemies) drawEnemy(e);
   if(boss) drawBoss(boss);
+  drawWet();
   drawShots(); drawPlayer(); drawParts();
   drawAmbient(true);
   drawForeground();
   drawLights();
   ctx.restore();
+  drawShimmer();
   drawVignette(); drawGrain(); drawTutorial();
   drawBossCard();
   // ...and the edge of the world lights while any gold is in the air
@@ -7469,7 +7541,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   savePrefs, loadPrefs, PREFKEY,
   tellCol, txtScale, FIXED,
   GRAVES, GRAVE_LINES, gravesStood, graveTick,
-  nightPhase, deepNight, NIGHT_TURN,
+  nightPhase, deepNight, NIGHT_TURN, drawWet, drawShimmer,
   MODES, MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
   CHM_SEL:()=>CHM.sel
 });

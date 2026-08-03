@@ -48,8 +48,8 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 | 3.2 | ~~Accessibility: parry assist, text size, reduced motion, reduced flashing, colourblind tells~~ | **Done.** All five, on one screen, reachable from the title. |
 | 3.3 | ~~Codex expansion; nine graves thread~~ | **Done.** The row in room 10; the entry grows as you walk it. |
 | 3.4 | ~~Day/night cycle~~ | **Done, deliberately narrowed.** The night turns; it never becomes day. See 03-WORLD §3.6 for why. |
-| 3.5 | Water surface, ripples, reflections in Iyi Idemili |
-| 3.6 | Heat shimmer as real distortion in the fire room |
+| 3.5 | ~~Water surface, ripples, reflections in Iyi Idemili~~ | **Done.** The wet floor holds what stands on it. |
+| 3.6 | ~~Heat shimmer as real distortion in the fire room~~ | **Done.** Real strip distortion, 1.4 ms after a rewrite from 92.7. |
 | 3.7 | Logo lockup and title key art |
 | 3.8 | Boss rush from the codex |
 | 3.9 | Photo mode |
