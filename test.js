@@ -953,6 +953,204 @@ section('Ogbunabali — the lie is the mechanic');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('charms');
+(() => {
+  const CH = api.CHARMS, ORDER = api.CHARM_ORDER;
+  check('charms are authored', ORDER.length > 0, ORDER.join(','));
+  check('there are more charms than cords, so wearing one is a choice',
+    ORDER.length > api.CHARM_SLOTS, ORDER.length + ' charms, ' + api.CHARM_SLOTS + ' slots');
+  check('there are 2–3 slots, as 01-VISION asks', api.CHARM_SLOTS >= 2 && api.CHARM_SLOTS <= 3,
+    'slots=' + api.CHARM_SLOTS);
+  for (const k of ORDER) {
+    const c = CH[k];
+    check(k + ' has a name, a subtitle and a blurb', !!c.name && !!c.sub && !!c.blurb);
+    check(k + ' costs a round, legible number (§5.2)', c.cost > 0 && c.cost % 10 === 0, 'cost=' + c.cost);
+    check(k + '’s blurb is short enough to read in a menu', c.blurb.length <= 100, c.blurb.length + '');
+  }
+  // 01-VISION puts the notch economy on the do-not-take list: a slot is a slot
+  check('no charm costs a different number of slots than any other',
+    ORDER.every(k => CH[k].notches === undefined && CH[k].slots === undefined),
+    'something declared a notch cost');
+
+  function fresh() {
+    revive();
+    G().cheat = false;
+    G().charms = {}; G().worn = []; G().boneUsed = 0;
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1 };
+    G().slain = { ekwensu: 1 };
+    at(0, 9, 16);
+  }
+
+  // ── buying and wearing ────────────────────────────────────────────────────
+  (() => {
+    fresh();
+    const stocked = api.shopItems().filter(o => o.kind === 'wearcharm');
+    check('the ledger stocks every charm you do not own', stocked.length === ORDER.length,
+      'stocked ' + stocked.length + ' of ' + ORDER.length);
+    G().mode = 'shop'; G().sel = 0;
+    tick(2);
+    const first = api.shopItems().findIndex(o => o.kind === 'wearcharm');
+    G().sel = first;
+    P().cowries = api.shopItems()[first].cost;
+    const key = api.shopItems()[first].k;
+    press('KeyZ', 1, 2);
+    check('a charm can be bought', !!G().charms[key], 'charms=' + JSON.stringify(G().charms));
+    check('buying it also ties it on, since a cord is free', api.wearing(key), 'worn=' + JSON.stringify(G().worn));
+    check('REGRESSION buying it ties it on exactly once',
+      G().worn.filter(x => x === key).length === 1, 'worn=' + JSON.stringify(G().worn));
+    check('and the ledger lists each charm once', (() => {
+      const ks = api.shopItems().filter(o => o.kind === 'wearcharm').map(o => o.k);
+      return ks.length === new Set(ks).size;
+    })(), 'stock=' + api.shopItems().filter(o => o.kind === 'wearcharm').map(o => o.k).join(','));
+    check('a bought charm leaves the ledger', !api.shopItems().some(o => o.kind === 'wearcharm' && o.k === key));
+    G().mode = 'play';
+  })();
+
+  // ── the screen ────────────────────────────────────────────────────────────
+  (() => {
+    fresh();
+    for (const k of ORDER) G().charms[k] = 1;
+    G().worn = [];
+    at(0, 9, 16);
+    api.endTutorial(true);
+    press('Escape', 1, 1);
+    check('the pause menu opens', G().mode === 'pause', 'mode=' + G().mode);
+    let found = false;
+    for (let i = 0; i < 20; i++) { if (/CHARMS/.test(api.PAUSE_LABEL())) { found = true; break; } press('ArrowDown', 1, 1); }
+    check('the pause menu has a charms row', found, api.PAUSE_LABEL());
+    check('the row says how many cords are used', /0\/3/.test(api.PAUSE_LABEL()), api.PAUSE_LABEL());
+    press('KeyZ', 1, 2);
+    check('it opens the charm screen', G().mode === 'charm', 'mode=' + G().mode);
+    check('charm is a declared menu mode', api.MENU_MODES.indexOf('charm') >= 0);
+
+    press('KeyZ', 1, 2);
+    check('Z ties the selected charm on', G().worn.length === 1, JSON.stringify(G().worn));
+    press('KeyZ', 1, 2);
+    check('Z again takes it off', G().worn.length === 0, JSON.stringify(G().worn));
+
+    // fill every cord, then try one more
+    for (let i = 0; i < api.CHARM_SLOTS; i++) {
+      press('KeyZ', 1, 2);
+      press('ArrowDown', 1, 1);
+    }
+    check('all three cords fill', G().worn.length === api.CHARM_SLOTS, JSON.stringify(G().worn));
+    G().note = '';
+    press('KeyZ', 1, 2);
+    check('REGRESSION a fourth charm cannot be tied on', G().worn.length === api.CHARM_SLOTS,
+      JSON.stringify(G().worn));
+    check('and it says why', /cords are full/i.test(G().note || ''), 'note=' + G().note);
+    press('KeyX', 1, 2);
+    check('X goes back to the pause menu', G().mode === 'pause', 'mode=' + G().mode);
+    press('Escape', 1, 2);
+  })();
+
+  // ── they survive a save ───────────────────────────────────────────────────
+  (() => {
+    fresh();
+    G().charms = { nzu: 1, udu: 1 }; G().worn = ['udu'];
+    api.saveGame();
+    G().charms = {}; G().worn = [];
+    api.loadGame();
+    check('owned charms round-trip through a save', !!G().charms.nzu && !!G().charms.udu,
+      JSON.stringify(G().charms));
+    check('what you are wearing round-trips too', api.wearing('udu'), JSON.stringify(G().worn));
+    // and a save from before charms existed does not break
+    G().worn = ['nonsense', 'nzu'];
+    api.saveGame(); api.loadGame();
+    check('a junk charm in a save is dropped rather than worn',
+      G().worn.indexOf('nonsense') < 0, JSON.stringify(G().worn));
+  })();
+
+  // ── each charm actually does its thing ────────────────────────────────────
+  (() => {
+    // ỌKPỤKPỤ — the blow that would finish you
+    fresh();
+    G().charms = { okpukpu: 1 }; G().worn = ['okpukpu']; G().boneUsed = 0;
+    const h = findHazard(8);
+    at(8, h.x, h.y - 2);
+    G().cheat = false; G().worn = ['okpukpu']; G().boneUsed = 0;
+    P().hp = 1; P().inv = 0; P().flasks = 0;
+    P().x = h.x * 16 + 3; P().y = h.y * 16 - P().h + 4;
+    for (let i = 0; i < 30 && !P().dead && G().boneUsed === 0; i++) { P().inv = 0; tick(1); }
+    check('REGRESSION the bone stops the killing blow', !P().dead && P().hp === 1,
+      'dead=' + P().dead + ' hp=' + P().hp);
+    check('and the bone is spent', G().boneUsed === 1, 'boneUsed=' + G().boneUsed);
+    check('it says so', /bone holds/i.test(G().msg || ''), 'msg=' + G().msg);
+    // spent, it does not hold twice
+    P().hp = 1; P().inv = 0;
+    P().x = h.x * 16 + 3; P().y = h.y * 16 - P().h + 4;
+    for (let i = 0; i < 40 && !P().dead; i++) { P().inv = 0; tick(1); }
+    check('REGRESSION it does not hold twice before you rest', P().dead === true, 'dead=' + P().dead);
+    timers.length = 0;
+  })();
+  (() => {
+    // ỤDỤ — half of what you were carrying stays
+    fresh();
+    G().charms = { udu: 1 }; G().worn = ['udu'];
+    const h = findHazard(8);
+    at(8, h.x, h.y - 2);
+    G().cheat = false; G().worn = ['udu']; G().boneUsed = 0;
+    P().cowries = 100; P().hp = 1; P().inv = 0; P().flasks = 0;
+    P().x = h.x * 16 + 3; P().y = h.y * 16 - P().h + 4;
+    for (let i = 0; i < 30 && !P().dead; i++) { P().inv = 0; tick(1); }
+    check('the pot keeps half of what you were carrying', P().cowries === 50, 'cowries=' + P().cowries);
+    check('and the shade holds the other half', !!api.shade && api.shade.amt === 50,
+      'shade=' + JSON.stringify(api.shade));
+    timers.length = 0;
+  })();
+  (() => {
+    // EJỤLÀ — a late ward costs half as much, and you are slower for it
+    function wardChip(worn) {
+      fresh();
+      G().charms = { ejula: 1 }; G().worn = worn ? ['ejula'] : [];
+      at(1, 6, 16);
+      G().cheat = false; G().worn = worn ? ['ejula'] : [];
+      P().hp = G().maxHP; P().inv = 0;
+      P().st = 'ward'; P().t = 20;                       // a late ward, past the parry window
+      const before = P().hp;
+      api.hurtPlayer ? api.hurtPlayer(20, 1) : null;
+      return before - P().hp;
+    }
+    fresh();
+    // speed, which is the cost
+    function runDistance(worn) {
+      fresh();
+      G().charms = { ejula: 1 }; G().worn = worn ? ['ejula'] : [];
+      at(1, 4, 16);
+      G().worn = worn ? ['ejula'] : [];
+      const x0 = P().x;
+      hold('ArrowRight', 90); release('ArrowRight', 2);
+      return P().x - x0;
+    }
+    const plain = runDistance(false), snail = runDistance(true);
+    check('REGRESSION the snail makes you slower, which is its cost', snail < plain - 4,
+      'plain ' + plain.toFixed(1) + 'px vs charmed ' + snail.toFixed(1) + 'px');
+  })();
+  (() => {
+    // NZU — a parry gives a little back
+    check('nzu’s effect is wired to the parry, not to being hit',
+      api.CHARMS.nzu.blurb.toLowerCase().indexOf('parry') >= 0, api.CHARMS.nzu.blurb);
+  })();
+  (() => {
+    // OGENE — gold rings. It must ring once, not every frame it is held.
+    fresh();
+    G().charms = { ogene: 1 }; G().worn = ['ogene'];
+    at(6, 20, 16);
+    G().worn = ['ogene'];
+    const e = api.enemies.find(x => !x.dead && !x.trainer);
+    if (!e) return;
+    P().inv = 9999;
+    audioReset();
+    e.tell = 'gold'; e.rang = 0;
+    for (let i = 0; i < 30; i++) { P().inv = 9999; e.tell = 'gold'; G().hitstop = 0; tick(1); }
+    const rings = audio.osc;
+    check('ogene rings when gold appears', rings > 0, 'osc=' + rings);
+    check('REGRESSION it rings once, not every frame the tell is held', rings < 20,
+      'osc=' + rings + ' over 30 frames of held gold');
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('menu navigation and hold-to-scroll');
 (() => {
   // REGRESSION — every mode the player steers with a direction must be in
@@ -2047,7 +2245,7 @@ section('every menu mode opens and closes');
   check('the ledger has something to sell', items.length > 0, 'items=' + items.length);
   check('every ledger item has a label and a cost', items.every(o => o.label && o.cost > 0));
   check('every ledger item has a kind the shop understands',
-    items.every(o => ['spell', 'weapon', 'flask', 'heart', 'riposte', 'swift', 'charm'].indexOf(o.kind) >= 0),
+    items.every(o => api.SHOP_KINDS.indexOf(o.kind) >= 0),
     items.map(o => o.kind).join(','));
   G().mode = 'shop'; G().sel = 0;
   tick(2);

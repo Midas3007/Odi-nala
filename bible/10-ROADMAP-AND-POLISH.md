@@ -31,7 +31,7 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 | 2.4 | ~~Six enemies~~ | **Done.** healer, mimic, grappler, pair, swimmer, wall-crawler. Roster is nine → fifteen. |
 | 2.5 | ~~Endings B and C~~ | **Done.** Nlọghachi by refusing the execution, Onye Ọma by killing nothing avoidable. |
 | 2.6 | ~~Weapon-specific heavy shapes~~ | **Done.** lunge / flurry / sweep / slam-with-burning-ground. |
-| 2.7 | Charms — 2–3 passive slots | |
+| 2.7 | ~~Charms~~ | **Done.** Three cords, five charms, bought at the ledger, worn from the pause menu. |
 | 2.8 | Bone road music; Ekwensu and Onwe themes | Onwe's theme = the opening theme in retrograde |
 | 2.9 | Three rooms: ogilisi tree, second market, dibia's compound | |
 | 2.10 | Ambient beds per room | |

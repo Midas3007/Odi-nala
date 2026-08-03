@@ -95,7 +95,7 @@ const keys = {}, pressed = {};
 // touch stick falls through to its *play* branch, which re-presses the direction
 // on every pointermove — the codex was doing exactly that, and holding the stick
 // machine-gunned the list past everything you were trying to read.
-const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut','codex'];
+const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut','codex','charm'];
 // hold-to-scroll, per mode: [frames before it starts repeating, frames between].
 // The codex is slower on purpose. Its rows are things you read, not things you
 // count past, and its entries are long enough that overshooting costs a re-read.
@@ -521,7 +521,7 @@ const G = {
   visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0, met:{}, spared:1,
   spells:{amadioha:1, ala:0, idemili:0, ikenga:0},
   skills:{riposte:0, swift:0, charm:0, flasks:3, heartUps:0},
-  equipped:'amadioha', weapons:{mma:1}, weapon:'mma', storyDone:false, tutDone:false, cheat:false, sel:0, sub:0, note:'', noteT:0
+  equipped:'amadioha', weapons:{mma:1}, weapon:'mma', charms:{}, worn:[], boneUsed:0, storyDone:false, tutDone:false, cheat:false, sel:0, sub:0, note:'', noteT:0
 };
 
 // -- persistence -------------------------------------------------------------
@@ -542,6 +542,7 @@ function saveGame(){
     slain:G.slain, seen:G.seen, deaths:G.deaths, ending:G.ending, playT:G.playT,
     maxHP:G.maxHP, cowries:P.cowries, checkpoint:G.checkpoint, visited:G.visited,
     mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped, met:G.met, spared:G.spared,
+    charms:G.charms, worn:G.worn,
     storyDone:G.storyDone, tutDone:G.tutDone, cheat:G.cheat, taken:ROOMS.map(r=>!!r.taken), taught:G.taught };
   const where=store(slot(), JSON.stringify(d));
   G.note = where==='disk' ? 'Saved.' : 'Saved for this session only.';
@@ -558,7 +559,8 @@ function loadGame(){
   if(G.bossDead) G.slain.ogbunabali=1;
   G.maxHP=d.maxHP||100; G.checkpoint=d.checkpoint||{room:0,tx:9,ty:16};
   G.visited=d.visited||{}; G.mirrors=d.mirrors||{}; G.met=d.met||{};
-  G.spared=(d.spared==null?1:d.spared); G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
+  G.spared=(d.spared==null?1:d.spared);
+  G.charms=d.charms||{}; G.worn=(d.worn||[]).filter(k=>CHARMS[k]).slice(0,CHARM_SLOTS); G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
   G.spells=Object.assign(G.spells,d.spells||{}); G.skills=Object.assign(G.skills,d.skills||{});
   G.equipped=d.equipped||'amadioha'; G.taught=d.taught||{};
   if(d.taken) d.taken.forEach((t,i)=>{ if(ROOMS[i]) ROOMS[i].taken=t; });
@@ -583,6 +585,31 @@ const SPELLS = {
     lv:[{mult:1.6,dur:330},{mult:1.9,dur:420},{mult:2.4,dur:540}] }
 };
 const SPELL_ORDER=['amadioha','ala','idemili','ikenga'];
+
+// ── charms ───────────────────────────────────────────────────────────────────
+// Three slots and five charms, so wearing one is always a decision. Explicitly
+// **not** Hollow Knight's notch economy — 01-VISION lists that on the do-not-take
+// side. A slot is a slot; nothing costs a different number of them.
+//
+// Every charm changes how you fight, not how much damage you do. A charm that is
+// only a bigger number is a stat increase wearing a necklace.
+const CHARM_SLOTS = 3;
+const CHARMS = {
+  nzu:     { key:'nzu',     name:'NZU',      cost:150, sub:'chalk in water',
+             blurb:'A turned blade gives a little back. Four life on every parry.' },
+  okpukpu: { key:'okpukpu', name:'\u1eccKP\u1ee4KP\u1ee4', cost:220,
+             sub:'a bone that has already been buried once',
+             blurb:'The blow that would finish you leaves you at one instead. Once between charms.' },
+  ogene:   { key:'ogene',   name:'OGENE',    cost:120, sub:'the iron bell',
+             blurb:'Gold rings before it lands, and the edge of the world lights with it.' },
+  ejula:   { key:'ejula',   name:'EJ\u1ee4L\u00c0', cost:180, sub:'a snail, which is in no hurry',
+             blurb:'A late ward costs you half as much. You walk slower for it, always.' },
+  udu:     { key:'udu',     name:'\u1ee4D\u1ee4', cost:200, sub:'a clay pot holds what it is given',
+             blurb:'Half of what you were carrying stays with you when you fall.' }
+};
+const CHARM_ORDER=['nzu','okpukpu','ogene','ejula','udu'];
+function wearing(k){ return G.worn.indexOf(k)>=0; }
+function ownedCharms(){ return CHARM_ORDER.filter(k=>G.charms[k]); }
 function spellLv(k){ return G.spells[k]||0; }
 function spellStat(k){ const l=spellLv(k); return l>0 ? SPELLS[k].lv[l-1] : null; }
 function ownedSpells(){ return SPELL_ORDER.filter(k=>spellLv(k)>0); }
@@ -1420,7 +1447,8 @@ function playerUpdate(){
   }
 
   // ---- run ----
-  const acc = P.onGround?0.55:0.34, max = P.charge>0 ? 1.05 : 1.75;
+  const acc = P.onGround?0.55:0.34;
+  const max = (P.charge>0 ? 1.05 : 1.75) * (wearing('ejula') ? 0.8 : 1);
   if(!busy){
     if(LEFT()){ P.vx-=acc; P.face=-1; }
     if(RIGHT()){ P.vx+=acc; P.face=1; }
@@ -1760,6 +1788,7 @@ function playerUpdate(){
       if(sh.kind==='rest'){
         if(tap('ArrowDown')||tap('KeyS')){
           P.hp=G.maxHP; P.flasks=G.skills.flasks; P.ofo=0;
+          G.boneUsed=0;
           G.checkpoint={room:G.room, tx:Math.floor(sh.x/T), ty:Math.floor((sh.y+sh.h)/T)};
           spawnRoom(); say("You press your palm to the charm. It remembers you.",150);
           S.heal(); burst(sh.x+8,sh.y+8,22,C.gold,1.8,40); saveGame();
@@ -1926,10 +1955,10 @@ function hurtPlayer(dmg,dir,unblockable){
 
   // late ward = a block: cheaper than a hit, but you eat chip and keep the stun
   if(P.st==='ward' && P.t>9 && !unblockable){
-    P.hp -= Math.max(1, Math.round(dmg*0.3));
+    P.hp -= Math.max(1, Math.round(dmg*(wearing('ejula')?0.15:0.3)));
     P.vx = dir*1.7; P.inv=22; shake(2.6); stop(5); S.block();
     burst(P.x+5+P.face*8, P.y+9, 9, C.gold, 2.2, 20);
-    if(P.hp<=0 && !P.dead) die();
+    playerDown();
     return;
   }
 
@@ -1944,13 +1973,28 @@ function hurtPlayer(dmg,dir,unblockable){
   shake(5); stop(8); G.flash=6; S.hurt();
   burst(P.x+5,P.y+8,14,C.blood,2.6,28);
   decal(P.x+5, P.y+P.h);
-  if(P.hp<=0 && !P.dead) die();
+  playerDown();
+}
+
+// hurtPlayer has two exits and the bone has to cover both, so the killing blow
+// resolves in exactly one place.
+function playerDown(){
+  if(P.dead || P.hp>0) return;
+  if(wearing('okpukpu') && !G.boneUsed){
+    G.boneUsed=1; P.hp=1; P.inv=Math.max(P.inv,70);
+    G.flash=12; shake(6); stop(10); S.brk&&S.brk();
+    say("The bone holds. It will not hold twice before you rest.",180);
+    burst(P.x+5,P.y+8,24,C.bone,2.6,40);
+    return;
+  }
+  die();
 }
 
 function die(){
   P.dead=true; P.st='dead'; S.die(); G.deaths++;
-  shade = {room:G.room, x:P.x, y:P.y+6, w:10, h:12, amt:P.cowries, t:0};
-  P.cowries=0;
+  const kept = wearing('udu') ? Math.floor(P.cowries/2) : 0;
+  shade = {room:G.room, x:P.x, y:P.y+6, w:10, h:12, amt:P.cowries-kept, t:0};
+  P.cowries=kept;
   say("You die again. You have always died again.",180);
   setTimeout(()=>{
     const c=G.checkpoint;
@@ -1978,6 +2022,7 @@ function tryParry(e,fromX,unblockable){
     }
   }
   if(e.kind==='boss' && e.bound>0){ e.bound = Math.min(900, e.bound+140); }
+  if(wearing('nzu') && P.hp<G.maxHP){ P.hp=Math.min(G.maxHP,P.hp+4); burst(P.x+5,P.y+8,6,C.chalk,1.4,22); }
   stop(13); shake(6); G.slow=14; G.flash=9; S.parry();
   burst(P.x+P.face*10+5,P.y+8,22,C.chalk,3.4,30);
   burst(P.x+P.face*10+5,P.y+8,10,C.gold,2.6,26);
@@ -2002,6 +2047,13 @@ function enemyUpdate(e){
     if(e.burn%12===0){ e.hp -= 3; e.flash=3;
       burst(e.x+e.w/2, e.y+e.h*0.4, 2, '#e8862a', 1.2, 18);
       if(e.hp<=0){ damage(e, 0.01, 1, 0, false, 0); } }
+  }
+
+  // ogene rings once as a gold tell begins — once, on the frame it starts, never
+  // every frame it is held, which would be unbearable
+  if(wearing('ogene')){
+    if(e.tell==='gold' && !e.rang){ e.rang=1; tone(880,.09,'square',.03,1320); tone(1320,.06,'triangle',.02,1760); }
+    if(e.tell!=='gold') e.rang=0;
   }
 
   if(e.broken>0){
@@ -5157,6 +5209,18 @@ function render(){
   drawLights();
   ctx.restore();
   drawVignette(); drawGrain(); drawTutorial();
+  // ...and the edge of the world lights while any gold is in the air
+  if(wearing('ogene')){
+    let gold=false;
+    for(const e of enemies) if(!e.dead && e.tell==='gold'){ gold=true; break; }
+    if(boss && !boss.dead && boss.tell==='gold') gold=true;
+    if(gold){
+      ctx.globalAlpha=.16+Math.sin(G.t/4)*.08; ctx.fillStyle=C.gold;
+      ctx.fillRect(0,0,W,3); ctx.fillRect(0,H-3,W,3);
+      ctx.fillRect(0,0,3,H); ctx.fillRect(W-3,0,3,H);
+      ctx.globalAlpha=1;
+    }
+  }
   if(G.flash>0){ ctx.globalAlpha=G.flash/22; ctx.fillStyle=C.chalk; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
   if(G.fade>0){ ctx.globalAlpha=G.fade; ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
   drawHUD();
@@ -5739,6 +5803,57 @@ function mirrorInfo(id){
   }
   return {room:id, tx:tx, ty:ty, name:(r?r.name:'The glass'), fallback:true};
 }
+const CHM={sel:0};
+function openCharms(){ G.mode='charm'; CHM.sel=0; tone(500,.07,'triangle',.03,700); }
+function charmUpdate(){
+  const own=ownedCharms();
+  if(tap('KeyX')||tap('Escape')){ G.mode='pause'; return; }
+  if(!own.length) return;
+  if(CHM.sel>=own.length) CHM.sel=0;
+  if(tap('ArrowUp')||tap('KeyW')){ CHM.sel=(CHM.sel-1+own.length)%own.length; tone(540,.05,'square',.02); }
+  if(tap('ArrowDown')||tap('KeyS')){ CHM.sel=(CHM.sel+1)%own.length; tone(540,.05,'square',.02); }
+  if(tap('KeyZ')||tap('Enter')){
+    const k=own[CHM.sel], at=G.worn.indexOf(k);
+    if(at>=0){ G.worn.splice(at,1); tone(300,.08,'triangle',.03,200); }
+    else if(G.worn.length<CHARM_SLOTS){ G.worn.push(k); S.pick(); }
+    else { G.note='All three cords are full.'; G.noteT=90; tone(130,.2,'sawtooth',.04,90); return; }
+    saveGame();
+  }
+}
+function renderCharm(){
+  ctx.globalAlpha=.93; px(0,0,W,H,'#06070b'); ctx.globalAlpha=1;
+  ctx.textAlign='center'; ctx.font='9px ui-sans-serif,system-ui'; ctx.fillStyle=C.goldDim;
+  ctx.fillText('WHAT YOU HAVE TIED ON', W/2, 22);
+  for(let i=0;i<CHARM_SLOTS;i++){
+    const cx=W/2-34+i*34, filled=G.worn[i];
+    ctx.globalAlpha=.5; pxf(cx-1,30,2,10,'#3b3226'); ctx.globalAlpha=1;
+    px(cx-7,40,16,14, filled?'#2a2118':'#141414');
+    pxf(cx-7,40,16,1, filled?'#5a4632':'#242424');
+    if(filled){ pxf(cx-3,45,6,5,C.bone); pxf(cx-2,46,4,3,'#8e8474'); }
+  }
+  ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim;
+  ctx.fillText(G.worn.length+' of '+CHARM_SLOTS+' cords used', W/2, 64);
+  ctx.textAlign='left';
+  const own=ownedCharms();
+  if(!own.length){
+    ctx.textAlign='center'; ctx.fillStyle=C.chalkDim; ctx.font='8px ui-serif,Georgia,serif';
+    ctx.fillText('You are carrying none. Ala keeps some at her ledger.', W/2, 104);
+    ctx.textAlign='left';
+  }
+  for(let i=0;i<own.length;i++){
+    const k=own[i], c=CHARMS[k], y=84+i*22, on=i===CHM.sel, tied=wearing(k);
+    if(on){ ctx.globalAlpha=.16; px(24,y-9,W-48,20,C.gold); ctx.globalAlpha=1; }
+    ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle= tied?C.bone:C.chalkDim;
+    ctx.fillText((tied?'\u25b8 ':'  ')+c.name, 30, y);
+    ctx.textAlign='right'; ctx.fillStyle= tied?C.gold:'#4a453c';
+    ctx.fillText(tied?'tied on':'in the bag', W-30, y); ctx.textAlign='left';
+    ctx.font='7px ui-serif,Georgia,serif'; ctx.fillStyle='#5b554a';
+    ctx.fillText(c.blurb, 38, y+9);
+  }
+  ctx.textAlign='center'; ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim;
+  ctx.fillText('\u2191 \u2193  choose      Z  tie on / take off      X  back', W/2, H-14);
+  ctx.textAlign='left';
+}
 const TRV={sel:0};
 function openTravel(){
   const keys=Object.keys(G.mirrors).filter(k=>G.mirrors[k]);
@@ -5781,6 +5896,9 @@ function renderTravel(){
 }
 
 // -- the ledger (spend cowries) ----------------------------------------------
+// Every kind shopUpdate knows how to buy. One declaration, so the suite does not
+// keep a second copy that goes stale the moment a new line of stock appears.
+const SHOP_KINDS = ['spell','weapon','flask','heart','riposte','swift','charm','wearcharm'];
 function shopItems(){
   const it=[];
   for(const k of SPELL_ORDER){
@@ -5801,6 +5919,10 @@ function shopItems(){
     label:'RIPOSTE', desc:'A turned blade answers on its own. Parries strike back.'});
   if(!G.skills.swift) it.push({kind:'swift', cost:230,
     label:'SWIFT HAND', desc:'Recover from every swing a quarter faster.'});
+  for(const ck of CHARM_ORDER){
+    if(!G.charms[ck]) it.push({kind:'wearcharm', k:ck, cost:CHARMS[ck].cost,
+      label:'CHARM  '+CHARMS[ck].name+'  \u2014 '+CHARMS[ck].sub, desc:CHARMS[ck].blurb});
+  }
   if(!G.skills.charm) it.push({kind:'charm', cost:160,
     label:'COWRIE CHARM', desc:'The dead drop half again as much.'});
   return it;
@@ -5823,6 +5945,7 @@ function shopUpdate(){
     if(o.kind==='riposte') G.skills.riposte=1;
     if(o.kind==='swift') G.skills.swift=1;
     if(o.kind==='charm') G.skills.charm=1;
+    if(o.kind==='wearcharm'){ G.charms[o.k]=1; if(G.worn.length<CHARM_SLOTS) G.worn.push(o.k); }
     S.name(); G.flash=8; saveGame();
     G.sel=Math.min(G.sel, Math.max(0,shopItems().length-1));
   }
@@ -6142,7 +6265,7 @@ function storyProgress(){
 const PAUSE={sel:0};
 function openPause(){ G.mode='pause'; PAUSE.sel=0; tone(420,.07,'triangle',.03,620); }
 function pauseRows(){
-  const r=['resume','weapon','spell','inventory','codex','map','sound','cheat','save','title'];
+  const r=['resume','weapon','spell','charms','inventory','codex','map','sound','cheat','save','title'];
   if(TUT.on) r.splice(1,0,'skiptut');
   return r;
 }
@@ -6152,6 +6275,7 @@ function pauseLabel(k){
   if(k==='skiptut') return 'SKIP THE TEACHING';
   if(k==='spell'){ const e=G.equipped, lv=spellLv(e);
     return '\u1eccF\u1eccC  '+SPELLS[e].name+(lv?'  '+'I'.repeat(lv):'  (unlearned)'); }
+  if(k==='charms') return 'CHARMS   '+G.worn.length+'/'+CHARM_SLOTS+' tied on';
   if(k==='inventory') return 'WHAT YOU CARRY';
   if(k==='codex'){ const p=storyProgress(); return 'THE CODEX   ('+(loreOpen().length+beastOpen().length)+' entries, '+p.pct+'% told)'; }
   if(k==='map') return 'MAP';
@@ -6178,6 +6302,7 @@ function pauseUpdate(){
   if(tap('KeyZ')||tap('Enter')||tap('Space')){
     if(k==='resume'){ G.mode='play'; }
     else if(k==='skiptut'){ endTutorial(true); G.mode='play'; }
+    else if(k==='charms'){ openCharms(); }
     else if(k==='inventory'){ G.mode='inv'; }
     else if(k==='codex'){ openCodex('pause'); }
     else if(k==='map'){ G.mode='map'; }
@@ -6431,6 +6556,7 @@ function frameBody(now){
       case 'pause':  G.t++; pauseUpdate();  break;
       case 'inv':    G.t++; invUpdate();    break;
       case 'codex':  G.t++; codexUpdate();  break;
+      case 'charm':  G.t++; charmUpdate();  break;
       case 'ending': G.t++; endingUpdate(); break;
       default:
         // presses survive hitstop and slow-mo: a tap during a freeze frame still
@@ -6452,6 +6578,7 @@ function frameBody(now){
     else if(G.mode==='pause') renderPause();
     else if(G.mode==='inv') renderInv();
     else if(G.mode==='codex') renderCodex();
+    else if(G.mode==='charm') renderCharm();
     else if(G.mode==='ending') renderEnding();
   }
   if(G.crashed) drawCrashNotice();
@@ -6513,7 +6640,8 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   CDX:()=>CDX, storyProgress, LORE, BEASTS, openCodex, BG_ROOM:()=>bgRoom,
   WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS,
   ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C, get flames(){return flames}, bossIsGated,
-  MENU_MODES, MENU_REPEAT
+  MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
+  CHM_SEL:()=>CHM.sel
 });
 cvs.focus();
 requestAnimationFrame(frame);

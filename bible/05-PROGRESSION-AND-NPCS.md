@@ -80,6 +80,35 @@ This punishment is exactly right: it costs a walk, not a run. Never make it hars
 The ten riddles are real traditional forms. If you add more, they must be real. Do not
 invent riddles and present them as traditional.
 
+## 5.3b Charms — **[BUILT]**
+
+**Three cords, five charms.** More charms than slots, so wearing one is always a
+decision. Explicitly **not** Hollow Knight's notch economy — 01-VISION puts that on the
+do-not-take side — so a slot is a slot and nothing costs a different number of them.
+
+Every charm changes *how* you fight. A charm that is only a bigger number is a stat
+increase wearing a necklace.
+
+| Charm | Cost | What it does | What it costs you |
+|---|---|---|---|
+| **NZU** — chalk in water | 150 | Four life back on every parry | Nothing but the cord |
+| **ỌKPỤKPỤ** — a bone already buried once | 220 | The blow that would finish you leaves you at 1 | Spent until you rest at a charm |
+| **OGENE** — the iron bell | 120 | Gold rings once as it begins, and the screen edge lights | Nothing but the cord |
+| **EJỤLÀ** — a snail, in no hurry | 180 | A late ward costs half as much | **You walk 20% slower, always** |
+| **ỤDỤ** — a clay pot holds what it is given | 200 | Half your cowries stay with you when you fall | Nothing but the cord |
+
+Bought at Ala's Ledger, worn from a `charm` screen off the pause menu (Z ties on and takes
+off, X back). Buying one ties it on if a cord is free. `G.charms` is what you own, `G.worn`
+is what is tied on; both are saved, and a junk key in an old save is dropped rather than
+worn.
+
+`playerDown()` exists because `hurtPlayer` has **two** exits — the late-ward branch and the
+ordinary one — and the bone has to cover both. The killing blow resolves in exactly one
+place.
+
+**Ogene must ring on the frame a gold tell begins and not while it is held.** Ringing every
+frame is unbearable; `e.rang` is what stops it, and there is a REGRESSION test.
+
 ## 5.4 The tutorial — "The Teaching"
 
 After the opening cutscene, a masquerade of chalk stands up in the clearing and drills
