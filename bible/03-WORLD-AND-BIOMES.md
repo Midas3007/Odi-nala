@@ -2,15 +2,15 @@
 
 ## 3.1 The map, as built
 
-Eleven rooms. Rooms are indexed 0–10 and **every index-keyed table must be updated together**
+Twelve rooms. Rooms are indexed 0–11 and **every index-keyed table must be updated together**
 when a room is added (see `09-TECHNICAL.md` §Adding a room).
 
 ```
                   [4 market] ── [5 water]
                        │             │
    [0 charm] ─ [1 path] ┴─ [2 shaft] ─┘
-        │
-  [10 ogilisi]
+        │            │
+  [10 ogilisi]   [11 market roofs]
                              │
                         [3 Ogbunabali]
                              │
@@ -139,6 +139,36 @@ information, not positioning.
 
 This room exists to be a break. It is the only warm, busy, almost-cheerful place in the
 game and it must stay that way. Do not put a boss here. Do not make it scary later.
+
+### Room 11 — Ahịa Elu (the roofs above the market) — **[BUILT]**
+| | |
+|---|---|
+| **Palette** | `#181016`. Warm purple-black, one shade drier than the street. |
+| **Stone** | `STONE[11]` — mud brick and thatch |
+| **Music** | `elu` — the market's own scale and guitar, slower, **no rattle** |
+| **Ambient** | lantern sparks |
+| **Light** | **the street, from below.** |
+| **Hazard** | none |
+| **Emotion** | the party is downstairs |
+
+Reached by four awnings up the far right of the market, stacked three tiles apart —
+directly over the way to the water room, so the player walks under the climb every time
+they go past. **They must be three tiles or fewer.** They were authored at four by
+accident and the room was unreachable while every table in the game still agreed with
+itself; a per-rung regression test is what found it, and it is what will find it again.
+
+**The light comes from underneath.** Every other warm light in the game hangs above the
+player. Here the street's lamps sit at the floor line and throw up, and a lit seam runs
+along the player's feet. That is the whole room: it tells you which floor you are on
+without a word, and it is the only place in the game that does it that way.
+
+The arrangement is the same argument in sound. Same scale, same palm-wine guitar, and
+**the shaker is gone** — the melody carries up to a roof and the rattle does not. Slower,
+too, because you have stepped out of it.
+
+It carries the **first rest charm in the warm half of the game**. The market had a mirror
+and no charm, which meant the ledger was unreachable anywhere near the game's one
+cheerful room. That is a fix disguised as a room.
 
 ### Room 5 — Iyi Idemili (the water that remembers)
 | | |
@@ -328,6 +358,6 @@ Ranked by value.
    taking, with no combat. Would transform the ending. Highest narrative value in the
    entire wishlist.
 2. ~~**The ogilisi tree**~~ — **[BUILT]** as room 10. See 3.2.
-3. **A second market level** — Ahịa Mmụọ is the game's best room and there is only one.
+3. ~~**A second market level**~~ — **[BUILT]** as room 11. See 3.2.
 4. **The river crossing** — Idemili's python, as an optional boss.
 5. **A collapsed dibia's compound** — books, chalk, tools, the man who buried your charm.

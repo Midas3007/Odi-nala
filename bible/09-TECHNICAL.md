@@ -18,7 +18,7 @@
 | 1. Shell | Canvas, `SC` transform, `fit()`, `toLogical()`, `px`/`pxf`, input tables, `CODES`, `MENU_MODES`, `menuRepeat()` |
 | 2. Persistence | `store` / `load` / `saveGame` / `loadGame` / `slot()`, two save slots |
 | 3. Audio | `initAudio`, `tone`, `nz`, `S`, the music sequencer, `VOICE`, `voiceBlip` |
-| 4. Data | `ROOMS` (11 ASCII maps), `WEAPONS`, `SPELLS`, `RIDDLES`, `MIRRORS`, `LORE`, `BEASTS`, `STORY` and cutscene beats |
+| 4. Data | `ROOMS` (12 ASCII maps), `WEAPONS`, `SPELLS`, `RIDDLES`, `MIRRORS`, `LORE`, `BEASTS`, `STORY` and cutscene beats |
 | 5. State | `G` (global), `P` (player), `R` (current room), `cam`, `enemies`, `boss`, `shots`, `parts`, `pickups`, `shrines`, `decals`, `amb` |
 | 6. Entities | Builders, `enemyUpdate`, `bossUpdate`, `playerUpdate`, `swing`, `damage`, `hurtPlayer`, `tryParry` |
 | 7. Systems | Tutorial, riddles, mirrors, ledger, codex, map, pause, inventory, ending |
@@ -196,7 +196,7 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **1,382 assertions, headless Node, no dependencies**, about 30 seconds.
+`test.js` — **1,429 assertions, headless Node, no dependencies**, about 30 seconds.
 
 `node test.js --quick` skips the two soaks and runs in about 7 seconds. That is the
 inner loop only — **it is not the gate**, it says so in its own output, and what you run

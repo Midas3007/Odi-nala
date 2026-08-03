@@ -155,7 +155,10 @@ def main(path):
                         problems.append(
                             f"room {i}: ceiling-dweller 'b' at ({x},{y}) has no ceiling above it "
                             f"(tile is '{at(r['rows'], x, y - 1)}') — it would hang in mid-air")
-                elif ch in 'wltWvakirKBXOhF' + NPC_CHARS:
+                # n q j s p are the six added in 2c and U I the two bosses added
+                # in 2b; none of them were in this string, so half the roster
+                # could sit inside rock and the audit would have said nothing.
+                elif ch in 'wltWvakirnqjspKBXOUIhF' + NPC_CHARS:
                     if at(r['rows'], x, y) in SOLID or at(r['rows'], x, y - 1) in SOLID:
                         problems.append(
                             f"room {i}: spawn '{ch}' at ({x},{y}) is embedded in solid")

@@ -2,7 +2,7 @@
 
 ## 10.1 Where the project stands
 
-Shipping. Eleven rooms, five bosses, fifteen enemy types, four NPCs, four weapons, four spells, a
+Shipping. Twelve rooms, five bosses, fifteen enemy types, four NPCs, four weapons, four spells, a
 tutorial, a codex, an ending, fast travel, two save slots, a speedrun mode, and a
 test suite. Roughly 90 minutes for a first completion.
 
@@ -33,7 +33,7 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 | 2.6 | ~~Weapon-specific heavy shapes~~ | **Done.** lunge / flurry / sweep / slam-with-burning-ground. |
 | 2.7 | ~~Charms~~ | **Done.** Three cords, five charms, bought at the ledger, worn from the pause menu. |
 | 2.8 | ~~Bone road music; Ekwensu and Onwe themes~~ | **Done.** `bone` is its own track. Onwe's theme is the opening theme in retrograde, built by a function so it cannot drift. |
-| 2.9 | Three rooms: ~~ogilisi tree~~, second market, dibia's compound | Ogilisi done as room 10. Two to go. |
+| 2.9 | Three rooms: ~~ogilisi tree~~, ~~second market~~, dibia's compound | Rooms 10 and 11. One to go. |
 | 2.10 | ~~Ambient beds per room~~ | **Done.** One looping noise source per track, filter and gain only. |
 | 2.11 | ~~Per-boss title cards~~ | **Done.** Name and epithet, read out of the bestiary, over a struck-bell stinger. Cheap, big perceived-quality win. |
 

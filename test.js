@@ -362,7 +362,7 @@ section('the static audit');
 section('world integrity');
 const ROOMS = api.ROOMS;
 const roomCountAtStart = ROOMS.length;
-check('eleven rooms are authored', ROOMS.length === 11, 'rooms=' + ROOMS.length);
+check('twelve rooms are authored', ROOMS.length === 12, 'rooms=' + ROOMS.length);
 
 ROOMS.forEach((r, i) => {
   check('room ' + i + ' has a name', typeof r.name === 'string' && r.name.length > 0);
@@ -3286,6 +3286,99 @@ section('Ogilisi, the shrine off the first room');
     check('which is locked before you have been', !entry.when());
     G().visited[10] = 1;
     check('and open once you have', !!entry.when());
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('Ahịa Elu, the roofs above the market');
+(() => {
+  const R11 = ROOMS[11];
+  check('the room exists', /Elu/.test(R11.name), R11.name);
+  check('it shares the market\'s scale — it is the same music one floor up',
+    api.TRACKS.elu.sc === api.TRACKS.market.sc, api.TRACKS.elu.sc);
+  check('but the rattle does not carry up',
+    api.TRACKS.elu.shk.every(v => !v) && api.TRACKS.market.shk.some(v => v),
+    'elu shk=' + api.TRACKS.elu.shk.join('') + ' market shk=' + api.TRACKS.market.shk.join(''));
+  check('and the guitar does', api.TRACKS.elu.gtr && api.TRACKS.elu.gtr.some(v => v));
+  check('it is slower than the street', api.TRACKS.elu.spb > api.TRACKS.market.spb,
+    'elu=' + api.TRACKS.elu.spb + ' market=' + api.TRACKS.market.spb);
+  check('it has a bed, a stone, a place on the map and a particle',
+    !!api.BEDS.elu && api.ROOM_STONE[11] === 11 && !!api.MAPPOS[11] && !!api.AMBIENT[11]);
+
+  check('the warm half of the game finally has a rest charm',
+    R11.map.join('').indexOf('S') >= 0, 'no S tile in room 11');
+
+  (() => {
+    // REGRESSION 03-WORLD §3.4: the mimic is drawn by idolStatue with a cyan
+    // halo, so it only disappears in a room that already has idols standing in
+    // it. Anywhere else it is a lone cyan glow in a warm room, which both gives
+    // it away and breaks the hard rule that cyan means a mirror and mirrors are
+    // safe. Room 11 nearly shipped with one.
+    const idolRooms = [7];
+    ROOMS.forEach((r, i) => {
+      if (r.map.join('').indexOf('q') < 0) return;
+      check('the mimic in room ' + i + ' has idols to hide among',
+        idolRooms.indexOf(i) >= 0,
+        'room ' + i + ' (' + r.name + ') has no idol props for it to be mistaken for');
+    });
+  })();
+
+  (() => {
+    // Played: climb room 4's right edge and go up through the new doorway. Four
+    // awnings three tiles apart — the jump reaches 3.7, so a four-tile step
+    // would leave the room unreachable and every table above would still pass.
+    // One hop at a time, so a rung that is a tile too high says which rung it is
+    // rather than just "did not arrive". The jump clears 3.7 tiles, so every step
+    // has to be 3 or fewer and the last one has to reach the doorway.
+    api.unlockAll();
+    G().slain = { ogbunabali: 1 };
+    [[44, 16, 13], [44, 13, 10], [45, 10, 7], [45, 7, 4]].forEach(([tx, from, to]) => {
+      at(4, tx, from);
+      G().cheat = false; api.enemies.length = 0; G().mode = 'play';
+      const y0 = P().y;
+      api.down('Space');
+      let landed = -1;
+      for (let n = 0; n < 90; n++) {
+        api.enemies.length = 0; P().inv = 9999; G().hitstop = 0;
+        if (n === 16) api.up('Space');
+        tick(1);
+        // onGround, not vy===0: vy passes through zero at the apex of the jump
+        // too, and checking that made every rung report the top of its arc.
+        if (n > 16 && P().onGround && P().y < y0 - 8) { landed = P().y; break; }
+      }
+      api.up('Space');
+      check('room 4 climb: the awning at row ' + to + ' is reachable from row ' + from,
+        landed >= 0 && Math.abs((landed + P().h) - to * 16) <= 2,
+        'from y=' + y0.toFixed(1) + ' came to rest at ' +
+        (landed < 0 ? 'nowhere higher' : 'y=' + landed.toFixed(1)) +
+        ' — standing on row ' + to + ' is y=' + (to * 16 - 18));
+    });
+    at(4, 45, 4);
+    G().cheat = false; api.enemies.length = 0; G().mode = 'play';
+    api.down('ArrowRight');
+    let up = false;
+    for (let n = 0; n < 120; n++) { api.enemies.length = 0; tick(1); if (G().room === 11) { up = true; break; } }
+    api.up('ArrowRight');
+    check('REGRESSION walking off the top awning reaches the roofs', up,
+      'ended in room ' + G().room + ' at y=' + P().y.toFixed(1));
+  })();
+
+  (() => {
+    // And back down. The doorway is on the left at the height of the ledge you
+    // arrive on, so this is the return trip the player actually makes.
+    at(11, 3, 5);
+    G().cheat = false; api.enemies.length = 0; G().mode = 'play';
+    api.down('ArrowLeft');
+    for (let n = 0; n < 200 && G().room === 11; n++) { api.enemies.length = 0; tick(1); }
+    api.up('ArrowLeft');
+    check('and stepping off the ledge to the left comes back down to the market',
+      G().room === 4, 'room=' + G().room);
+  })();
+
+  (() => {
+    revive(); unlockAudio();
+    at(11, 20, 16); tick(6);
+    check('the roofs play their own arrangement', api.MUS_NAME() === 'elu', 'playing ' + api.MUS_NAME());
   })();
 })();
 

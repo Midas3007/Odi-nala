@@ -216,6 +216,16 @@ Ranked by what the roster is missing mechanically:
    unreadable — it always stands up first. Awake it stays awake, splits open and lights
    from inside, so the second one you meet is a read rather than another ambush. Two are
    placed for exactly that reason.
+
+   **The mimic may only be placed in a room that already has idols standing in it.** Its
+   whole design is that it is drawn by the same call as the props around it; in a room
+   with no idols it is a lone carving nobody put there, and it gives itself away before
+   it moves. Worse, its sleeping form carries a cyan halo, and 03-WORLD §3.4 makes cyan
+   mean *mirror*, which means safe. A cyan glow that is actually an ambush breaks the
+   rule that lets a player read a dark screen at a glance. Room 11 was authored with one
+   and it was caught in the first browser pass; there is now a test that fails if a `q`
+   is placed anywhere but Ala Mmụọ. **Adding one elsewhere means giving that room idols
+   first, or giving the mimic that room's own prop to be.**
 5. ~~**A swimmer.**~~ **[BUILT]** `s`, Azụ Iyi, in Iyi Idemili. It returns before the
    shared gravity line in `enemyUpdate`, so it is the one enemy with no relationship to
    the floor at all: it holds a slow figure-of-eight lane, coils white, and darts along

@@ -59,6 +59,7 @@ music. A track in 16 steps is a different genre.
 | `shaft` | 2 | E minor, low | 0.235 | Slowest. Almost no percussion. |
 | `bone` | 6 | C minor pentatonic | 0.180 | Dry and walking. **No pad** — the one track with nothing under it. |
 | `market` | 4 | C major-ish | **0.152** | **Highlife** — guitar, full rattle, fastest |
+| `elu` | 11 | C major-ish | 0.172 | The same highlife one floor up. Guitar carries, **rattle does not**. |
 | `water` | 5 | A minor, +8ve | 0.205 | Airy, bells, delay-heavy |
 | `fire` | 8 | C# minor | 0.146 | Hot, close, dense ekwe |
 | `sky` | 9 | G major | 0.230 | Open, high, spacious |

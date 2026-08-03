@@ -343,17 +343,17 @@ const ROOMS = [
   "################################################",
   "#..............................................#",
   "#..............................................#",
-  "#..............................................#",
-  "#..............................................#",
+  "#..............................................E",
+  "#.........................................-----E",
   "#...................------.....................#",
   "#..............................................#",
-  "#..............................................#",
+  "#.........................................-----#",
   "#.................t...............------.......#",
   "#...............-----..........................#",
-  "#..............................................#",
+  "#.........................................-----#",
   "#..............................................#",
   "#.......-----.............-----................#",
-  "#...........###................................#",
+  "#...........###...........................-----#",
   "E....M......###..d......m.....####.............E",
   "E.........w.###......t......W.####....w.....l..E",
   "################################################",
@@ -361,7 +361,8 @@ const ROOMS = [
   "################################################",
   "################################################"],
   exits:[{tx:0,ty:14,tw:1,th:2,to:1,sx:44,sy:4},
-         {tx:47,ty:14,tw:1,th:2,to:5,sx:2,sy:16}] },
+         {tx:47,ty:14,tw:1,th:2,to:5,sx:2,sy:16},
+         {tx:47,ty:3,tw:1,th:2,to:11,sx:3,sy:5}] },
 
 { name:"Iyi Idemili — the water that remembers", tint:'#08131a',
   map:[
@@ -511,7 +512,31 @@ const ROOMS = [
   "######......################",
   "############################",
   "############################"],
-  exits:[{tx:27,ty:14,tw:1,th:2,to:0,sx:2,sy:16}] }
+  exits:[{tx:27,ty:14,tw:1,th:2,to:0,sx:2,sy:16}] },
+
+{ name:"Ah\u1ecba Elu \u2014 the roofs above the market", tint:'#181016',
+  map:[
+  "############################################",
+  "#..........................................#",
+  "#..........................................#",
+  "#..........................................#",
+  "E..........................................#",
+  "E------....................................#",
+  "#..........................................#",
+  "#..........................................#",
+  "#...................------.................#",
+  "#..........................................#",
+  "#..........................................#",
+  "#.......------...................------....#",
+  "#..........................................#",
+  "#............####..............####........#",
+  "#..S.........####....w.........####...t....#",
+  "#............####..k...........####........#",
+  "############################################",
+  "############################################",
+  "############################################",
+  "############################################"],
+  exits:[{tx:0,ty:4,tw:1,th:2,to:4,sx:44,sy:4}] }
 ];
 
 // normalise + index
@@ -885,7 +910,7 @@ function dropCowries(e){
 const HUDBTN=[];
 const decals=[];
 let amb=[];
-const AMBIENT=['dust','leaf','grit','ash','spark','bubble','ash','dust','spark','leaf','dust'];
+const AMBIENT=['dust','leaf','grit','ash','spark','bubble','ash','dust','spark','leaf','dust','spark'];
 function seedAmbient(){
   amb=[];
   const kind=AMBIENT[G.room]||'dust';
@@ -939,6 +964,10 @@ function roomLights(){
     else L.push({x:sh.x+8,y:sh.y+9,r:26,c:'232,226,208',i:.22});
   }
   if(G.room===4) for(let i=0;i<6;i++) L.push({x:80+i*120, y:96+((i*37)%40), r:44, c:'214,120,52', i:.26});
+  // The street is still burning away below the roof you are standing on, so
+  // its lamps sit at the floor line and throw upward. Every other warm light
+  // in the game hangs above the player; this is the one room lit from under.
+  if(G.room===11) for(let i=0;i<7;i++) L.push({x:40+i*112, y:16*T+7, r:52, c:'214,120,52', i:.30});
   if(G.room===3) L.push({x:cam.x+W/2, y:cam.y+H/2, r:120, c:'140,30,40', i:.10});
   if(G.room===5) for(let i=0;i<4;i++) L.push({x:110+i*150, y:70+((i*53)%60), r:52, c:'90,190,205', i:.16});
   return L;
@@ -1064,6 +1093,7 @@ const BEDS = {
   sky:    {f:1900, q:0.5, g:0.011},   // thin high air
   boss:   {f:180,  q:0.8, g:0.010},
   ekwensu:{f:150,  q:0.9, g:0.012},   // lower than anything else: it is enormous
+  elu:    {f:900,  q:1.2, g:0.009},   // the same crowd, one floor further away
   ogilisi:{f:560,  q:0.6, g:0.006},   // thinner and further off than room 0's
   onwe:   {f:420,  q:0.5, g:0.008}    // your own room's air, because that is the joke
 };
@@ -1155,6 +1185,17 @@ const TRACKS = {
            [0,0,2,0,3,0,0,4,0,0,0,0],
            [5,0,4,0,3,0,2,0,1,0,0,0] ] },
 
+  elu:    { spb:.172, sc:'market', mix:.72, pad:1,
+    bell:BELL_S,
+    udu: [1,0,0,0,0,1,0,0,1,0,0,0],
+    ekwe:[0,0,0,2,0,0,0,0,0,2,0,0],
+    shk: [0,0,0,0,0,0,0,0,0,0,0,0],
+    gtr: [1,0,3,0,0,0,3,0,1,0,0,0],
+    opi: [ [0,0,0,0,4,0,0,0,0,2,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,2,0,0,0,3,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0] ] },
+
   water:  { spb:.205, sc:'water',  mix:.8, pad:1,
     bell:BELL_S,
     udu: [1,0,0,0,0,0,1,0,0,0,0,0],
@@ -1197,7 +1238,7 @@ const TRACKS = {
            [1,0,1,0,1,0,1,0,1,0,1,0],
            [0,0,0,0,0,0,5,0,4,0,2,0] ] }
 };
-const ROOM_TRACK = ['night','forest','shaft','boss','market','water','bone','night','fire','sky','ogilisi'];
+const ROOM_TRACK = ['night','forest','shaft','boss','market','water','bone','night','fire','sky','ogilisi','elu'];
 // A boss with a theme of its own gets one; the rest take the house boss track.
 // Ekwensu is the largest thing in the game and has no trick: the arrangement is
 // the same honesty — everything on the beat, nothing hidden, the densest bell in
@@ -3662,14 +3703,15 @@ const STONE=[
  {base:'#12222a', lit:'#1d3a44', top:'#2b5560', side:'#16262e', fleck:'#183038', moss:'#1f4a52'},
  {base:'#241310', lit:'#3a1d13', top:'#5e2c15', side:'#1a0d0a', fleck:'#301810', moss:'#7a3410'},
  {base:'#1e2430', lit:'#2e3648', top:'#4a5468', side:'#161b24', fleck:'#242b38', moss:'#3a4458'},
- {base:'#1d1a15', lit:'#2c2720', top:'#463c2c', side:'#241f19', fleck:'#2a241b', moss:'#3a3423'}
+ {base:'#1d1a15', lit:'#2c2720', top:'#463c2c', side:'#241f19', fleck:'#2a241b', moss:'#3a3423'},
+ {base:'#241a1a', lit:'#372626', top:'#553a2c', side:'#2b1e1e', fleck:'#2f2220', moss:'#5a3a20'}
 ];
 // Which stone set each room is cut from. This was a nested ternary on the room
 // index, which meant it had a silent default: every room added past 9 would have
 // fallen through to the sky's pale blue and nobody would have seen it until the
 // screenshot. As a table it is the fifth entry on the five-table checklist and
 // tools/audit.py counts it against ROOMS like the other four.
-const ROOM_STONE=[2,3,4,5,6,7,0,1,8,9,10];
+const ROOM_STONE=[2,3,4,5,6,7,0,1,8,9,10,11];
 function drawTiles(){
   const P0=STONE[ROOM_STONE[G.room]]||STONE[2];
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
@@ -4102,6 +4144,31 @@ function drawProps(){
         leaf:['#101b12','#16261a','#0a120c'],
         rim:'#2c4826' });
   }
+  if(G.room===11){
+    const fy=16*T-cam.y;
+    // The lit seam where the roof meets the street. It is the only place in the
+    // game where the bright edge is at the player's feet rather than over their
+    // head, and it is what tells you which floor you are on without a word.
+    const sg=ctx.createLinearGradient(0,fy-9,0,fy+1);
+    sg.addColorStop(0,'rgba(214,120,52,0)'); sg.addColorStop(1,'rgba(214,120,52,0.20)');
+    ctx.fillStyle=sg; ctx.fillRect(0,fy-9,W,10);
+    ctx.globalAlpha=.5; pxf(0,fy,W,.5,'#d6783a'); ctx.globalAlpha=1;
+    // thatch ridges along the roofline
+    for(let i=0;i<20;i++){
+      const bx=((i*67)%(R.w*T))-cam.x;
+      if(bx<-20||bx>W+20) continue;
+      ctx.globalAlpha=.7;
+      for(let b=0;b<5;b++) pxf(bx+b*2, fy-3-((i+b)%3), 1, 3, '#3a2a1c');
+      ctx.globalAlpha=1;
+    }
+    // pots and a covered basket left up here to dry
+    for(let i=0;i<5;i++){
+      const bx=((i*173+50)%(R.w*T))-cam.x;
+      if(bx<-30||bx>W+30) continue;
+      px(bx, fy-7, 7, 7, '#241a14'); pxf(bx, fy-7, 7, 1, '#3d2b1c');
+      px(bx+2, fy-9, 3, 2, '#1a120d');
+    }
+  }
   if(G.room===4){
     for(let i=0;i<5;i++){
       const bx=((i*181+40)%(R.w*T))-cam.x, by=16*T-cam.y;
@@ -4174,6 +4241,15 @@ function drawForeground(){
     else if(G.room===4){
       px(bx,by+8,16,26,'#06070a'); px(bx-2,by+6,20,3,'#080a0d');
       for(let b=0;b<5;b++) pxf(bx-1+b*4, by+9, 2, 4+((i+b)%5), '#06070a');
+    }
+    else if(G.room===11){
+      // cloth hung out on a line, moving with the same gust as everything else
+      for(let b=0;b<4;b++){
+        const sw=Math.sin(G.t/40+i+b*0.8)*2.2, cw=7+((i*b*3)%6);
+        px(bx+b*11+sw, by-6, cw, 16+((i+b*5)%12), '#0a0709');
+        pxf(bx+b*11+sw, by-6, cw, 1, '#120d10');
+      }
+      pxf(bx-4, by-7, 48, .5, '#0d0a0c');
     }
     else if(G.room===6){
       // ribs and shards standing out of the bone road
@@ -6697,7 +6773,7 @@ function renderInv(){
 }
 
 // -- the map -----------------------------------------------------------------
-const MAPPOS=[[10,74],[92,74],[196,60],[236,176],[188,10],[292,10],[352,176],[300,132],[352,74],[400,132],[10,132]];
+const MAPPOS=[[10,74],[92,74],[196,60],[236,176],[188,10],[292,10],[352,176],[300,132],[352,74],[400,132],[10,132],[96,10]];
 function mapUpdate(){
   if(tap('KeyM')||tap('Tab')||tap('KeyX')||tap('Escape')) G.mode='play';
 }
@@ -6712,7 +6788,7 @@ function renderMap(){
     ctx.beginPath(); ctx.moveTo(pa[0]+ROOMS[a].w, pa[1]+ROOMS[a].h);
     ctx.lineTo(pb[0]+ROOMS[b].w, pb[1]+ROOMS[b].h); ctx.stroke(); };
   link(0,1); link(1,2); link(2,3); link(1,4); link(4,5); link(5,2); link(3,6); link(6,8); link(8,9); link(9,7);
-  link(0,10);
+  link(0,10); link(4,11);
   for(let i=0;i<ROOMS.length;i++){
     if(!G.visited[i]) continue;
     const r=ROOMS[i], p=MAPPOS[i]||[0,0];
