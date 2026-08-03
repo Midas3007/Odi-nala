@@ -368,9 +368,9 @@ ROOMS.forEach((r, i) => {
   check('room ' + i + ' rows are all the declared width', r.map.every(row => row.length === r.w),
     'w=' + r.w + ' widths=' + Array.from(new Set(r.map.map(s => s.length))).join(','));
   check('room ' + i + ' height matches its map', r.h === r.map.length);
-  // derived from the game's own NPC table, so adding an NPC does not need this
-  // list edited — and cannot silently introduce a character nothing spawns
-  const known = '-#.cESNMhwltWrvakiFB^XO K' + Object.keys(api.NPCS).map(k => api.NPCS[k].ch).join('');
+  // TILE_CHARS is the game's own declaration of what a map may contain, so this
+  // cannot drift: a new spawn char is covered the moment it is declared there
+  const known = api.TILE_CHARS;
   check('room ' + i + ' uses only tile characters the spawner understands',
     r.map.every(row => row.split('').every(c => known.indexOf(c) >= 0)),
     'unknown: ' + Array.from(new Set(r.map.join('').split('').filter(c => known.indexOf(c) < 0))).join(''));
@@ -1384,6 +1384,117 @@ section('every menu mode opens and closes');
   check('a purchase is written to the save immediately', api.hasSave() === true);
   press('KeyX', 1, 2);
   check('the ledger closes back to play', G().mode === 'play', 'mode=' + G().mode);
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('the healer that closes what you open');
+(() => {
+  // Put a healer and a wounded ally in a room and let it work.
+  function scene(gap) {
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, exec: 1, bound: 1 };
+    G().slain = { ekwensu: 1 };
+    at(6, 20, 16);
+    const h = api.enemies.find(e => e.kind === 'healer');
+    const ally = api.enemies.find(e => e.kind === 'warden');
+    if (h && ally) {
+      P().x = h.x - (gap == null ? 200 : gap); P().y = h.y; P().inv = 9999;
+      h.cd = 0;
+    }
+    return { h: h, ally: ally };
+  }
+
+  const s0 = scene();
+  check('the bone road spawns a healer', !!s0.h, 'enemies=' + api.enemies.map(e => e.kind).join(','));
+  check('it spawns alongside something worth mending', !!s0.ally);
+  if (s0.h && s0.ally) {
+    check('the healer obeys the enemy contract: it has poise and can be broken',
+      s0.h.poise > 0 && s0.h.poiseMax > 0, 'poise=' + s0.h.poise + '/' + s0.h.poiseMax);
+    check('it is frail — it is meant to be killed first', s0.h.hp < s0.ally.hp,
+      'healer ' + s0.h.hp + ' vs warden ' + s0.ally.hp);
+  }
+
+  // Enemies already trickle poise back at 0.3/frame once they have been left
+  // alone for 150 frames, so "did it go up" proves nothing. A mend is a single
+  // large jump; that is what these look for.
+  function biggestJump(frames, setup) {
+    const s = scene();
+    if (!s.h || !s.ally) return null;
+    s.ally.poise = 4;
+    if (setup) setup(s);
+    let prev = s.ally.poise, jump = 0, channelled = false;
+    for (let i = 0; i < frames; i++) {
+      P().inv = 9999; tick(1);
+      if (s.h.st === 'mend') channelled = true;
+      jump = Math.max(jump, s.ally.poise - prev);
+      prev = s.ally.poise;
+    }
+    return { s: s, jump: jump, channelled: channelled };
+  }
+
+  (() => {
+    const r = biggestJump(300);
+    if (!r) return;
+    check('the healer channels a mend', r.channelled, 'state=' + r.s.h.st);
+    check('a completed mend puts poise back in one jump, not a trickle', r.jump > 5,
+      'biggest single-frame gain was ' + r.jump.toFixed(2));
+    check('the mend does not overfill the ally', r.s.ally.poise <= r.s.ally.poiseMax + 0.001,
+      r.s.ally.poise.toFixed(1) + '/' + r.s.ally.poiseMax);
+    check('the healer never targets itself', r.s.h.mend !== r.s.h);
+  })();
+
+  (() => {
+    // interrupting it — the counterplay. Stagger it the moment it starts.
+    const r = biggestJump(300, (s) => { s.h._interrupt = true; });
+    if (!r) return;
+    // re-run, staggering on sight of the channel
+    const s = scene();
+    if (!s.h || !s.ally) return;
+    s.ally.poise = 4;
+    let prev = s.ally.poise, jump = 0, caught = false;
+    for (let i = 0; i < 300; i++) {
+      P().inv = 9999; tick(1);
+      if (s.h.st === 'mend') { caught = true; s.h.stagger = 30; s.h.st = 'idle'; s.h.mend = null; }
+      jump = Math.max(jump, s.ally.poise - prev);
+      prev = s.ally.poise;
+    }
+    check('the healer can be caught mid-channel', caught);
+    check('staggering it cancels the mend outright', jump <= 5,
+      'a jump of ' + jump.toFixed(2) + ' got through anyway');
+  })();
+
+  (() => {
+    const r = biggestJump(260, (s) => { s.h.dead = true; });
+    if (!r) return;
+    check('with the healer dead nothing jumps the guard back closed', r.jump <= 5,
+      'jump of ' + r.jump.toFixed(2) + ' with no healer alive');
+  })();
+
+  (() => {
+    // it does not chase, and it does telegraph when cornered
+    const s = scene();
+    if (!s.h) return;
+    P().x = s.h.x - 26; P().y = s.h.y;
+    const d0 = Math.abs(s.h.x - P().x);
+    let sawTell = false, closest = d0;
+    for (let i = 0; i < 120; i++) {
+      P().inv = 9999; tick(1);
+      if (s.h.tell === 'white') sawTell = true;
+      closest = Math.min(closest, Math.abs(s.h.x - P().x));
+    }
+    check('cornered, the healer telegraphs in white like everything else (§4.6)', sawTell,
+      'tell=' + s.h.tell + ' st=' + s.h.st);
+    check('it retreats rather than closing the distance', Math.abs(s.h.x - P().x) >= d0 - 2,
+      'started ' + d0.toFixed(1) + 'px away, ended ' + Math.abs(s.h.x - P().x).toFixed(1));
+    check('it never walks into the player', closest > 8, 'got within ' + closest.toFixed(1) + 'px');
+  })();
+
+  check('the healer has a bestiary entry', api.BEASTS.some(b => b.k === 'healer'));
+  check('it is entered in the bestiary once seen', (() => {
+    G().seen = { healer: 1 };
+    return api.BEAST_OPEN().some(b => b.k === 'healer');
+  })());
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════

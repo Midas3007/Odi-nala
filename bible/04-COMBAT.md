@@ -139,7 +139,7 @@ Rules:
 5. It occupies a distinct *range band* — melee, mid, ranged, aerial.
 6. Its death drops cowries.
 
-### The nine
+### The ten
 
 | Enemy | HP / Poise | Range | Idea | Tell |
 |---|---|---|---|---|
@@ -152,13 +152,18 @@ Rules:
 | **Ember** (`a`) | 30 / 20 | **aerial** | Hovers above you, then falls. Gold gather, then dive. | **gold** |
 | **Crawler** (`k`) | 34 / 26 | melee | Fast, low, bites twice | white |
 | **Effigy** (`i`) | 66 / **96** | ranged | Rooted. Three-shot aimed volley. High poise — must be broken. | white |
+| **Healer** (`n`) | 30 / 24 | mid | Restores an ally's poise and closes a broken guard. Retreats; will not chase. | white |
 
 ### Enemy roster gaps — **[NOT BUILT]**
 Ranked by what the roster is missing mechanically:
 
-1. **A healer / buffer.** Nothing currently supports other enemies. A masked figure that
-   restores an ally's poise would force target prioritisation — the single biggest
-   missing pressure.
+1. ~~**A healer / buffer.**~~ **[BUILT]** `n`, Onye Mmezi. Stands off, picks the nearest
+   ally that is missing poise or already broken, and channels for 72 frames; on
+   completion it returns 55% of that ally's poise and shuts a broken guard early. A gold
+   thread names the target the whole time it is working, so the decision is always
+   legible. Staggering it cancels the channel outright — that is the counterplay, and it
+   is why it is frail (30 HP against the warden's 78). It retreats from the player and
+   only swings, white-telegraphed, when cornered.
 2. **A grappler.** Something that grabs and must be broken out of. Adds a real fear.
 3. **A shield-and-spear pair that fights as a unit.**
 4. **A mimic prop** — a skull or idol that is an enemy. The prop vocabulary already

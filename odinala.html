@@ -395,7 +395,7 @@ const ROOMS = [
   "#.......-----.............-----.............-----......#",
   "#......................................................#",
   "E......M....##................##......................E#",
-  "E...S.....r..#........W.......#.v.......r........X....E",
+  "E...S.....r..#........W..n....#.v.......r........X....E",
   "########################################################",
   "########################################################",
   "########################################################",
@@ -622,6 +622,7 @@ function spawnRoom(){
     if(ch==='a') enemies.push(mkEmber(x,y));
     if(ch==='k') enemies.push(mkCrawler(x,y));
     if(ch==='i') enemies.push(mkEffigy(x,y));
+    if(ch==='n') enemies.push(mkHealer(x,y));
     if(ch==='F' && !G.weapons.oku) pickups.push({kind:'weapon', w:'oku', x:x*T+2, y:y*T+4, t:0});
     if(ch==='S') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'rest'});
     if(ch==='N') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'name'});
@@ -661,6 +662,9 @@ function mkEmber  (x,y){ const e=base(x,y,12,12,30,20); e.kind='ember';  e.cd=40
 function mkCrawler(x,y){ const e=base(x,y,16,11,34,26); e.kind='crawler'; e.cd=20; e.home=e.x; return e; }
 function mkEffigy (x,y){ const e=base(x,y,16,24,66,96); e.kind='effigy';  e.cd=70; return e; }
 function mkHorned(x,y){ const e=base(x,y,22,26,110,86); e.kind='horned'; e.cd=50; e.home=e.x; return e; }
+// Mends what you have spent your poise damage opening. Weak, and it will not come
+// to you — the whole idea is that you have to decide to go to it first.
+function mkHealer(x,y){ const e=base(x,y,12,20,30,24); e.kind='healer'; e.cd=40; e.home=e.x; e.mend=null; return e; }
 
 function mkBoss(x,y,who){
   who=who||'ogbunabali';
@@ -1842,6 +1846,58 @@ function enemyUpdate(e){
 
   e.t++;
 
+  if(e.kind==='healer'){
+    // It keeps its distance and mends whatever you have opened. Break its channel
+    // by hurting it — stagger cancels the mend — or kill it first and fight the
+    // room the way it was before it got here. That choice is the entire enemy.
+    if(e.cd>0) e.cd--;
+    if(e.st==='idle'){
+      // back away from the player, but do not abandon the room
+      const flee = adx<70 ? -Math.sign(dx||1) : (Math.abs(e.x-e.home)>64 ? Math.sign(e.home-e.x) : 0);
+      e.vx = flee*0.42;
+      if(e.vx) e.face = dx>0?1:-1;
+      if(!solidAt(e.x+(e.vx>0?e.w+2:-2), e.y+e.h+2, null)) e.vx=0;
+      if(adx<32 && ady<24 && e.cd<=0){ e.st='wind'; e.t=0; e.tell='white'; e.face=dx>0?1:-1; e.vx=0; }
+      else if(e.cd<=0){
+        // nearest ally that is missing poise, or is already broken open
+        let best=null, bd=1e9;
+        for(const o of enemies){
+          if(o===e || o.dead || o.kind==='healer') continue;
+          if(o.poise>=o.poiseMax && o.broken<=0) continue;
+          const d=Math.abs((o.x+o.w/2)-(e.x+e.w/2));
+          if(d<150 && d<bd){ bd=d; best=o; }
+        }
+        if(best){ e.st='mend'; e.t=0; e.mend=best; e.vx=0; S.charge&&S.charge(); }
+      }
+    }
+    else if(e.st==='mend'){
+      const o=e.mend;
+      e.vx=0; e.tell='';
+      if(!o || o.dead){ e.st='idle'; e.t=0; e.mend=null; e.cd=60; }
+      else {
+        if(e.t%7===0) burst(e.x+e.w/2, e.y+6, 1, C.gold, 0.7, 22);
+        if(e.t>=72){
+          // poise back, and a broken guard closes early — this is what makes you
+          // choose between the thing you opened and the thing that is closing it
+          o.poise = Math.min(o.poiseMax, o.poise + o.poiseMax*0.55);
+          if(o.broken>0){ o.broken=0; o.stagger=Math.max(o.stagger,10); }
+          o.flash=6; S.name&&S.name();
+          burst(o.x+o.w/2, o.y+o.h/2, 14, C.gold, 2.0, 30);
+          e.st='idle'; e.t=0; e.mend=null; e.cd=210;
+        }
+      }
+    }
+    else if(e.st==='wind'){ e.vx=0; e.tell='white'; if(e.t>=24){ e.st='swing'; e.t=0; e.tell=''; } }
+    else if(e.st==='swing'){
+      if(e.t<=9){
+        const box={x:e.face>0?e.x+e.w:e.x-16, y:e.y+2, w:16, h:e.h-4};
+        if(rects(box,P)){ if(!tryParry(e,e.x)) hurtPlayer(9,e.face); }
+      }
+      if(e.t>=11){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.8; if(e.t>=30){ e.st='idle'; e.t=0; e.cd=70; } }
+  }
+
   if(e.kind==='walker'){
     if(e.st==='idle'){
       e.vx = e.face*0.45;
@@ -2870,7 +2926,7 @@ function drawTiles(){
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
     const ch=tileAt(R,x,y);
-    if('.wltWKBSNMhrvXOakiFdmoy'.indexOf(ch)>=0) continue;
+    if('.wltWKBSNMhrvXOakiFdmoyn'.indexOf(ch)>=0) continue;
     const sx=x*T-cam.x, sy=y*T-cam.y;
 
     if(ch==='E'){
@@ -3733,6 +3789,36 @@ function drawEnemy(e){
   const flash = e.flash>0;
   const stag = e.stagger>0;
 
+  if(e.kind==='healer'){
+    // A narrow standing post with a wide flat crown — the only enemy whose
+    // silhouette is top-heavy, so you can pick it out of a crowd at a glance.
+    // Its arms come up when it mends and that is the thing to look for.
+    const mending = e.st==='mend';
+    px(x+3,y+7,e.w-6,e.h-7, flash?C.chalk:'#1b1a22');
+    pxf(x+3,y+7,e.w-6,.5, flash?C.chalk:'#3a3748');
+    pxf(x+e.w-3.5,y+7,.5,e.h-7,'#0e0d13');
+    for(let i=0;i<3;i++) pxf(x+3,y+10+i*4,e.w-6,.5,'#2b2936');
+    px(x+2,y+1,8,7, stag?C.chalkDim:'#d8cfae');                   // pale mask, no eyes
+    pxf(x+2,y+1,8,.5,'#f2ebd0');
+    pxf(x+9.5,y+1,.5,7,'#928a70');
+    pxf(x+3.5,y+3.5,1.5,.5,'#241c14'); pxf(x+7,y+3.5,1.5,.5,'#241c14');
+    for(let i=0;i<7;i++) pxf(x+1.5+i*1.3,y-1,.5,2.5,'#6b5f3f');   // flat raffia crown, wide
+    // arms: down at rest, up and open while it works
+    const ar = mending ? -3.5 : 0;
+    pxf(x+0.5,y+9+ar,2.5,6,'#1b1a22'); pxf(x+e.w-3,y+9+ar,2.5,6,'#1b1a22');
+    pxf(x+0.5,y+9+ar,2.5,.5,'#3a3748'); pxf(x+e.w-3,y+9+ar,2.5,.5,'#3a3748');
+    if(mending && e.mend && !e.mend.dead){
+      // the thread is the target: it says which one is being closed
+      const ox=e.mend.x+e.mend.w/2-cam.x, oy=e.mend.y+e.mend.h/2-cam.y;
+      ctx.globalAlpha=.30+Math.sin(G.t/5)*.16; ctx.strokeStyle=C.gold; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(x+e.w/2,y+6);
+      ctx.quadraticCurveTo((x+e.w/2+ox)/2, Math.min(y+6,oy)-14, ox, oy);
+      ctx.stroke(); ctx.globalAlpha=1;
+      ctx.globalAlpha=.22+Math.sin(G.t/7)*.10; ctx.fillStyle=C.gold;
+      ctx.beginPath(); ctx.arc(ox,oy,11,0,7); ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
+
   if(e.kind==='walker'){
     px(x,y+4,e.w,e.h-4, flash?C.chalk:'#191d19');
     px(x+1,y+e.h-4,e.w-2,4, flash?C.chalk:'#12150f');
@@ -4527,6 +4613,12 @@ const NPCS = {
 const NPC_BY_CH={};
 for(const k in NPCS) NPC_BY_CH[NPCS[k].ch]=k;
 
+// Every character a room map is allowed to contain: geometry, then props and
+// pickups, then enemy spawns, then whatever the NPC table declares. One source
+// of truth — the test suite reads this rather than keeping its own copy, so a
+// new spawn char cannot be added without the maps being checked against it.
+const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakin' + Object.keys(NPC_BY_CH).join('');
+
 function cutArt(name,cx,cy){
   if(name==='bones'){
     ctx.globalAlpha=1;
@@ -5095,6 +5187,8 @@ const BEASTS=[
   "It rolls before it rises. Rolling, it only bruises. Risen, it bites \u2014 and that bite is white-edged and can be turned."},
  {k:'horned',  t:'MMANW\u1ee4 MP\u1eccKI', sub:'the horned masquerade', b:
   "Two attacks. The near one is white and can be parried. The charge is gold and cannot. Learn which shoulder drops first."},
+ {k:'healer',  t:'ONYE MMEZI', sub:'the one who closes what you open', b:
+  "It does not want to fight you and it will back away if you come at it. It stands behind the others and puts their guard back together, and a guard it has closed takes as long to open again as the first time. Kill it first or accept that nothing here stays broken."},
  {k:'chalk',   t:'MMANW\u1ee4 NZU', sub:'the masquerade of chalk', b:
   "It stood up out of the clearing to teach you and then decided to test the lesson. Nothing in this place is only a lesson."},
  {k:'boss_ogbunabali', t:'OGBUNABALI', sub:'he who kills at night', boss:1, b:
@@ -5553,7 +5647,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   startSpeedrun, unlockAll, relock, titleOpts, PAUSE_SEL:()=>PAUSE.sel,
   PAUSE_LABEL:()=>pauseLabel(pauseRows()[PAUSE.sel]), LORE_OPEN:loreOpen, BEAST_OPEN:beastOpen,
   CDX:()=>CDX, storyProgress, LORE, BEASTS, openCodex, BG_ROOM:()=>bgRoom,
-  WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE
+  WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS
 });
 cvs.focus();
 requestAnimationFrame(frame);
