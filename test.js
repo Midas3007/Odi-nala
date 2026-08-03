@@ -3837,6 +3837,108 @@ section('the nine graves');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('the night turns');
+(() => {
+  // 3.4, scoped so it can never contradict the fiction: it is always night and
+  // it stays night. What moves is where in the night you are.
+  const T = api.NIGHT_TURN;
+  check('a turn is a long time — this is not a strobe', T > 60 * 60 * 20, 'NIGHT_TURN=' + T);
+
+  G().playT = 0;
+  check('it starts at the dead of night', near(api.deepNight(), 1, 1e-6), String(api.deepNight()));
+  G().playT = Math.round(T / 2);
+  check('and halfway round is the thin end', api.deepNight() < 0.01, String(api.deepNight()));
+  G().playT = T;
+  check('REGRESSION and it comes back round rather than ending',
+    near(api.deepNight(), 1, 1e-6), String(api.deepNight()));
+
+  // never leaves the range, at any playtime, including silly ones
+  let bad = null;
+  for (let t = 0; t < T * 3; t += Math.round(T / 37)) {
+    G().playT = t;
+    const d = api.deepNight(), p = api.nightPhase();
+    if (!(d >= -1e-9 && d <= 1 + 1e-9 && p >= 0 && p < 1)) { bad = t + ': ' + d + '/' + p; break; }
+  }
+  check('REGRESSION it stays in range for any playtime', bad === null, bad);
+
+  (() => {
+    // Ogbunabali holds a guard break for less time while the night is deepest.
+    // That is the whole of "stronger at night" and it is one number.
+    const hold = (t) => {
+      G().playT = t;
+      // spawnRoom reads G.slain, and an earlier block had left him dead, so the
+      // room came up empty and this read as "the break did not land"
+      api.unlockAll();
+      G().slain = {}; G().cheat = false; G().knowsName = true;
+      G().taught = { bossIn: 1, exec: 1, bound: 1 };
+      at(3, 5, 12);
+      G().cheat = false;
+      const b = api.boss;
+      if (!b) return null;
+      // Knowing the name is not calling it: poise damage is zero until he is
+      // bound, so without this the guard never breaks and the test reads null.
+      b.bound = 99999;
+      b.poise = 1; b.broken = 0; b.stagger = 0;
+      for (let i = 0; i < 200 && b.broken <= 0; i++) {
+        P().x = b.x - 20; P().y = b.y; P().inv = 9999; G().hitstop = 0; b.bound = 99999;
+        press('KeyZ', 2, 4);
+      }
+      return b.broken > 0 ? b.stagger : null;
+    };
+    const deep = hold(0);
+    const thin = hold(Math.round(T / 2));
+    check('the guard break lands at both ends of the night', deep !== null && thin !== null,
+      'deep=' + deep + ' thin=' + thin);
+    if (deep !== null && thin !== null) {
+      check('REGRESSION he shakes it off faster at the dead of night', deep < thin,
+        'deep night ' + deep + ' frames vs thin ' + thin);
+    }
+    G().playT = 0;
+  })();
+
+  (() => {
+    // REGRESSION 05-PROGRESSION §5.2: nothing is missable. The market cannot
+    // close, and neither NPC in it can ever stop being there.
+    G().playT = Math.round(T / 2);          // the thinnest part of the night
+    at(4, 20, 16);
+    const npcs = api.shrines.filter(s => s.kind === 'npc').map(s => s.id).sort();
+    check('REGRESSION the market keeps both its people at every hour',
+      npcs.join(',') === 'dibia,woman', npcs.join(','));
+    G().playT = 0;
+    at(4, 20, 16);
+    const npcs2 = api.shrines.filter(s => s.kind === 'npc').map(s => s.id).sort();
+    check('and the same at the dead of night', npcs2.join(',') === 'dibia,woman', npcs2.join(','));
+  })();
+
+  (() => {
+    // REGRESSION the moon is drawn, and drawn after the parallax. The canvas is
+    // a stub here so this cannot see it — it was found in a browser, where the
+    // moon 03-WORLD calls this room's most important art decision turned out to
+    // have been painted under three tree layers since before I arrived and had
+    // never been on screen. What the suite can hold is that rendering room 0
+    // across the whole night never throws.
+    revive();
+    at(0, 20, 16); G().mode = 'play';
+    let threw = null;
+    for (let k = 0; k <= 8; k++) {
+      G().playT = Math.round(api.NIGHT_TURN * k / 8);
+      try { tick(3); } catch (e) { threw = k + ': ' + e.message; break; }
+    }
+    check('rendering the first room at every hour of the night is safe', threw === null, threw);
+    check('and it never crashed', !G().crashed, G().crashErr);
+    G().playT = 0;
+  })();
+
+  (() => {
+    // it survives a save, because playT does
+    G().playT = 12345;
+    api.saveGame(); G().playT = 0; api.loadGame();
+    check('where you are in the night survives a save', G().playT === 12345, String(G().playT));
+    G().playT = 0;
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the codex');
 (() => {
   revive();

@@ -1030,6 +1030,19 @@ function burst(x,y,n,col,spd=2.4,life=26){
   for(let i=0;i<n;i++) parts.push({x,y,vx:(rnd()-.5)*spd*2,vy:(rnd()-.7)*spd,
     life:life+rnd()*10,max:life+10,col,g:0.12,sz:1+ (rnd()<.3?1:0)});
 }
+// 3.4. It never becomes day, and that is deliberate. 01-VISION files a full
+// day/night cycle under "fits in a bigger version" and it is right to: this game
+// is one night long, room 0 holds the last moon the player sees until room 9,
+// and room 9's horror is that there is a sky down there at all. A sunrise would
+// take both of those away and close the market that is defined by opening at
+// night. What turns instead is the night itself — the dead of it round to the
+// thin end and back — which is enough for "he who kills at night" to mean
+// something without contradicting a word of the fiction.
+const NIGHT_TURN = 60*60*40;                       // one turn ~ forty minutes played
+function nightPhase(){ return (G.playT % NIGHT_TURN) / NIGHT_TURN; }
+// 1 at the dead of night, 0 at its thinnest.
+function deepNight(){ return 0.5 + 0.5*Math.cos(nightPhase()*Math.PI*2); }
+
 function shake(a){ if(OPT.calm) return; G.shake = Math.max(G.shake, a); }
 // Slow-motion goes through here for the same reason shake does: reduced
 // motion has to catch every site, and there were four of them.
@@ -1100,7 +1113,12 @@ function roomLights(){
     else if(sh.kind==='npc') L.push({x:sh.x+8,y:sh.y+12,r:30,c:'232,226,208',i:.19});
     else L.push({x:sh.x+8,y:sh.y+9,r:26,c:'232,226,208',i:.22});
   }
-  if(G.room===4) for(let i=0;i<6;i++) L.push({x:80+i*120, y:96+((i*37)%40), r:44, c:'214,120,52', i:.26});
+  if(G.room===4) for(let i=0;i<6;i++){
+    // two of the six gutter at the thin end of the night and come back. The
+    // market never closes — both NPCs live here and nothing is missable.
+    const lit = (i>=4) ? .10+.16*deepNight() : .26;
+    L.push({x:80+i*120, y:96+((i*37)%40), r:44, c:'214,120,52', i:lit});
+  }
   // The street is still burning away below the roof you are standing on, so
   // its lamps sit at the floor line and throw upward. Every other warm light
   // in the game hangs above the player; this is the one room lit from under.
@@ -2291,7 +2309,8 @@ function damage(e,amt,dir,kb,muffled,poiseDmg){
     if(e.poise<=0){
       e.poise = e.poiseMax;
       e.broken = (e.kind==='boss') ? 170 : 220;
-      e.stagger = Math.max(e.stagger, e.kind==='boss'?60:52);
+      const nightHold = (e.kind==='boss' && e.who==='ogbunabali') ? (1.25-0.5*deepNight()) : 1;
+      e.stagger = Math.max(e.stagger, Math.round((e.kind==='boss'?60:52)*nightHold));
       S.brk(); stop(11); shake(5.5); G.flash=7;
       burst(e.x+e.w/2, e.y+e.h/2, 28, C.gold, 3, 42);
       teach('exec', "Guard broken. Stand close and press Z while he is gold.", 200);
@@ -3720,6 +3739,34 @@ function buildBackLayers(){
   }
   G.seed=keepSeed;
 }
+// Drawn after the parallax, not before it. Before, the three tree layers —
+// the nearest at 0.82 alpha — painted straight over it, so the moon this room
+// is built around has never actually been on screen. After them it is the
+// foreground boughs that cross it, which is the picture 03-WORLD asks for:
+// the last sky the player sees, seen through branches.
+function drawMoon(){
+    // the one moon in the game, and now it moves: across and down as the night
+    // wears on, with the dark side turning to match
+    // It sits at y~66, not y~42. At 42 it was inside the canopy band this room
+    // paints over the top of the frame, and it had never once been visible —
+    // 03-WORLD calls it the single most important art decision in the room and
+    // the room has been drawing it underneath a wall of leaves since before I
+    // arrived. Low enough to clear them, so branches cross it instead of hiding
+    // it, which is what it should have looked like all along.
+    const ph=nightPhase();
+    const mx2=W-140+Math.cos(ph*Math.PI*2-1.2)*70+(-cam.x*0.05);
+    const my2=66+Math.sin(ph*Math.PI*2-1.2)*13+(-cam.y*0.05);
+    ctx.globalAlpha=.10; ctx.fillStyle='#cfc6ad';
+    ctx.beginPath(); ctx.arc(mx2,my2,26,0,7); ctx.fill();
+    ctx.globalAlpha=.75; ctx.fillStyle='#d8d0b6';
+    ctx.beginPath(); ctx.arc(mx2,my2,13,0,7); ctx.fill();
+    ctx.fillStyle='#0b0f10';
+    ctx.beginPath(); ctx.arc(mx2+Math.cos(nightPhase()*Math.PI*2)*6, my2-4+Math.sin(nightPhase()*Math.PI*2)*3, 12,0,7); ctx.fill();
+    ctx.globalAlpha=.5;
+    for(let i=0;i<24;i++){ const h1=hash2(i*7,3), h2=hash2(i*13,9);
+      pxf((h1*W)|0, (h2*110)|0, .5, .5, '#cfc6ad'); }
+    ctx.globalAlpha=1;
+}
 function drawBackLayers(){
   if(bgRoom!==G.room || !bgLayers) buildBackLayers();
   if(!bgLayers) return;
@@ -3848,19 +3895,6 @@ function drawBG(){
   }
 
   // a moon over the buried charm; lanterns over the market; caustics under water
-  if(G.room===0){
-    const mx2=W-96+(-cam.x*0.05), my2=42+(-cam.y*0.05);
-    ctx.globalAlpha=.10; ctx.fillStyle='#cfc6ad';
-    ctx.beginPath(); ctx.arc(mx2,my2,26,0,7); ctx.fill();
-    ctx.globalAlpha=.75; ctx.fillStyle='#d8d0b6';
-    ctx.beginPath(); ctx.arc(mx2,my2,13,0,7); ctx.fill();
-    ctx.fillStyle='#0b0f10';
-    ctx.beginPath(); ctx.arc(mx2+5,my2-4,12,0,7); ctx.fill();
-    ctx.globalAlpha=.5;
-    for(let i=0;i<24;i++){ const h1=hash2(i*7,3), h2=hash2(i*13,9);
-      pxf((h1*W)|0, (h2*110)|0, .5, .5, '#cfc6ad'); }
-    ctx.globalAlpha=1;
-  }
   if(G.room===4){
     for(let i=0;i<7;i++){
       const lx=((i*141)%(R.w*T))-cam.x*0.62, ly=26+((i*37)%34)-cam.y*0.3;
@@ -3903,6 +3937,7 @@ function drawBG(){
   }
 
   drawBackLayers();
+  if(G.room===0) drawMoon();
   // distant fog band
   ctx.globalAlpha=.5;
   const fg=ctx.createLinearGradient(0,H*0.45,0,H);
@@ -7434,6 +7469,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   savePrefs, loadPrefs, PREFKEY,
   tellCol, txtScale, FIXED,
   GRAVES, GRAVE_LINES, gravesStood, graveTick,
+  nightPhase, deepNight, NIGHT_TURN,
   MODES, MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
   CHM_SEL:()=>CHM.sel
 });

@@ -47,6 +47,15 @@ specified before a new biome is built.
 The moon is the single most important art decision in this room. It is the last sky the
 player sees until room 9, and it is why room 9 lands.
 
+**It was never visible.** It was drawn *before* `drawBackLayers()`, and this room's three
+parallax tree layers — the nearest at 0.82 alpha — painted straight over it, so from the
+first build to Phase 3 nobody had ever seen it. It is drawn after the parallax now, and
+sits at y≈66 rather than y≈42 so it clears the canopy band. The **foreground** boughs
+still cross it, which is the picture this paragraph was always describing: the last sky,
+seen through branches.
+
+**It moves.** See §3.6 below.
+
 ### Room 10 — Ogilisi (the tree at the boundary) — **[BUILT]**
 | | |
 |---|---|
@@ -384,6 +393,33 @@ and it means the player can read a dark screen instantly.
 - [ ] Does it break the silhouette of anything the player needs to read?
 - [ ] Does it glow? If yes, is it either safe (gold/cyan) or dangerous (orange/red)?
 - [ ] Would removing it change the room's meaning? If no, remove it.
+
+## 3.6 The night turns — **[BUILT]**
+
+**It never becomes day, and that is the whole design.** `01-VISION.md` files a full
+day/night cycle under *"fits in a bigger version"* and it is right to: this game is one
+night long. Room 0 holds the last moon the player sees until room 9; room 9's horror is
+that there is a sky down there at all; and room 4 is *the market that opens at night*. A
+sunrise deletes all three. **Deviation from `10-ROADMAP.md` row 3.4, deliberate, and this
+paragraph is the record of it.**
+
+What turns is the night itself — the dead of it round to the thin end and back, one turn
+per forty minutes played, off `G.playT`. `nightPhase()` is 0..1 and `deepNight()` is 1 at
+the dead of night and 0 at its thinnest.
+
+Three things read it, and only three:
+
+| | |
+|---|---|
+| **The moon** | crosses and descends, and its dark side turns with it |
+| **The market** | two of its six lamps gutter at the thin end and come back. **It never closes.** |
+| **Ogbunabali** | holds a broken guard for less time while the night is deepest |
+
+**Nothing becomes unreachable and nothing is missable.** Both market NPCs are there at
+every hour — §5.2's economy rule, and there is a REGRESSION test that spawns them at both
+ends of the night. Ogbunabali's number is his *stagger duration*, never his damage gate:
+the name still zeroes his defence, so the epistemic gate the whole game is built on is
+untouched.
 
 ## 3.5 Rooms not yet built — **[NOT BUILT]**
 
