@@ -102,6 +102,22 @@ M    map           Esc  pause     P  mute        K  toggle cheats
 **Touch rule: never add a gesture.** No swipes, no double-taps, no long-presses. Every
 action is a discrete button or the stick.
 
+## 8.2b Hold-to-scroll and MENU_MODES
+
+**Every mode the player steers with a direction must be in `MENU_MODES`.** This is not
+only about `menuRepeat()`. The touch stick branches on the same list, and a mode that is
+missing from it falls through to the *play* branch — which calls `clearDirs()` then
+`down()` on **every `pointermove` event**. Holding the stick then re-presses the direction
+dozens of times a second.
+
+The codex was missing from the list and did exactly that: holding the stick scrolled the
+lore and bestiary past everything you were trying to read. Fixed by adding `codex`.
+
+Repeat rates are per mode in `MENU_REPEAT` — `[frames before repeating, frames between]`.
+The default is `[20, 6]`. **The codex is deliberately slower at `[30, 13]`**, because its
+rows are things you read rather than things you count past, and overshooting an entry
+costs a re-read rather than one more tap.
+
 ## 8.5 Accessibility
 
 Some of this is built; much is not. **[NOT BUILT]** markers are honest.
