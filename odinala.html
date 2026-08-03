@@ -588,8 +588,8 @@ const ROOMS = [
   "#..........................#",
   "#..........................E",
   "#..........................E",
-  "######......################",
-  "######......################",
+  "##......####################",
+  "##......####################",
   "############################",
   "############################"],
   exits:[{tx:27,ty:14,tw:1,th:2,to:0,sx:2,sy:16}] },
@@ -673,6 +673,7 @@ const G = {
   slain:{}, seen:{}, deaths:0, ending:0, playT:0,
   checkpoint:{room:0, tx:9, ty:16},
   visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0, met:{}, spared:1, cardT:0, cardWho:'',
+  graves:{},
   spells:{amadioha:1, ala:0, idemili:0, ikenga:0},
   skills:{riposte:0, swift:0, charm:0, flasks:3, heartUps:0},
   equipped:'amadioha', weapons:{mma:1}, weapon:'mma', charms:{}, worn:[], boneUsed:0, storyDone:false, tutDone:false, cheat:false, sel:0, sub:0, note:'', noteT:0
@@ -691,17 +692,22 @@ function load(k){
   try{ if(typeof localStorage!=='undefined'){ const v=localStorage.getItem(k); if(v!=null) return v; } }catch(e){}
   return (k in memSave) ? memSave[k] : null;
 }
-function saveGame(){
+// `quiet` exists for the graves. 05-PROGRESSION §5.6 is explicit that the thread
+// has no marker and no completion sound, and a 'Saved.' note flashing nine times
+// as you walk the row is a marker whichever way you look at it.
+function saveGame(quiet){
   const d={ v:1, knowsName:G.knowsName, hasSlam:G.hasSlam, bossDead:G.bossDead,
     slain:G.slain, seen:G.seen, deaths:G.deaths, ending:G.ending, playT:G.playT,
     maxHP:G.maxHP, cowries:P.cowries, checkpoint:G.checkpoint, visited:G.visited,
     mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped, met:G.met, spared:G.spared,
     charms:G.charms, worn:G.worn,
     storyDone:G.storyDone, tutDone:G.tutDone, cheat:G.cheat, taken:ROOMS.map(r=>!!r.taken), taught:G.taught,
-    chalk:G.chalk, gaveChalk:G.gaveChalk };
+    chalk:G.chalk, gaveChalk:G.gaveChalk, graves:G.graves };
   const where=store(slot(), JSON.stringify(d));
-  G.note = where==='disk' ? 'Saved.' : 'Saved for this session only.';
-  G.noteT=110;
+  if(!quiet){
+    G.note = where==='disk' ? 'Saved.' : 'Saved for this session only.';
+    G.noteT=110;
+  }
   return where;
 }
 const PREFKEY='odinala.prefs';
@@ -737,7 +743,7 @@ function loadGame(){
   G.visited=d.visited||{}; G.mirrors=d.mirrors||{}; G.met=d.met||{};
   G.spared=(d.spared==null?1:d.spared);
   G.charms=d.charms||{}; G.worn=(d.worn||[]).filter(k=>CHARMS[k]).slice(0,CHARM_SLOTS); G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
-  G.chalk=!!d.chalk; G.gaveChalk=!!d.gaveChalk;
+  G.chalk=!!d.chalk; G.gaveChalk=!!d.gaveChalk; G.graves=d.graves||{};
   G.spells=Object.assign(G.spells,d.spells||{}); G.skills=Object.assign(G.skills,d.skills||{});
   G.equipped=d.equipped||'amadioha'; G.taught=d.taught||{};
   if(d.taken) d.taken.forEach((t,i)=>{ if(ROOMS[i]) ROOMS[i].taken=t; });
@@ -1432,6 +1438,22 @@ TRACKS.ikuku = { spb:.158, sc:'sky', mix:.9, pad:1,
 const BOSS_TRACK = { ekwensu:'ekwensu', onwe:'onwe', uzu:'uzu', ikuku:'ikuku' };
 // The card on encounter. Names are read out of BEASTS so a boss cannot have a
 // title card and no bestiary entry, or the two drift apart.
+const GRAVES=[10,12,14,16,18,20,22,24];
+// 05-PROGRESSION §5.6, thread three. Standing at a mound adds a line to a codex
+// entry and does nothing else — no marker, no log, no sound. The player finds
+// out there is more by opening the codex and seeing where it stops.
+function graveTick(){
+  if(G.room!==10 || !P.onGround) return;
+  const cx=P.x+P.w/2;
+  for(const c of GRAVES){
+    if(Math.abs(cx-(c*T+8))<9 && !G.graves[c]){ G.graves[c]=1; saveGame(true); return; }
+  }
+  // The ninth is the hole, and the hole is yours. Keyed 'own' rather than by
+  // column so that moving the pit again cannot silently unvisit it in old saves.
+  if(cx>2*T && cx<8*T && P.y+P.h > 17*T && !G.graves.own){ G.graves.own=1; saveGame(true); }
+}
+function gravesStood(){ let n=0; for(const c of GRAVES) if(G.graves[c]) n++; return n; }
+
 function bossCard(who){
   const e = BEASTS.filter(b=>b.k==='boss_'+who)[0];
   return e ? {t:e.t, sub:e.sub} : {t:String(who).toUpperCase(), sub:''};
@@ -3410,6 +3432,7 @@ function update(){
   G.t++;
   if(G.mode==='play') G.playT++;
   if(G.noteT>0) G.noteT--; else G.note='';
+  if(G.mode==='play') graveTick();
   if(G.cardT>0) G.cardT--;
   if(G.outroT>0){ G.outroT--; if(G.outroT===0){
     saveGame();
@@ -4290,7 +4313,7 @@ function drawProps(){
     // parallax through it and it reads as a window cut in the wall. It has to be
     // filled by hand: dug earth going black downwards, a cut lip where the
     // spade went in, and roots let through from the tree above.
-    const hx=6*T-cam.x, hw=6*T, hy=fy, hh=2*T;
+    const hx=2*T-cam.x, hw=6*T, hy=fy, hh=2*T;
     const dg=ctx.createLinearGradient(0,hy,0,hy+hh);
     dg.addColorStop(0,'#1a150f'); dg.addColorStop(.45,'#0d0a07'); dg.addColorStop(1,'#040302');
     // +2 so it covers the lit top edge drawTiles paints on the tile underneath:
@@ -4313,7 +4336,7 @@ function drawProps(){
     }
     // Eight mounds. There is no ninth: the hole is where it would be, and the
     // player who counts is the one this room is for. 03-WORLD §3.4.
-    for(const c of [2,4,13,15,17,19,21,23]){
+    for(const c of GRAVES){
       const bx=c*T+8-cam.x;
       if(bx<-30||bx>W+30) continue;
       ctx.fillStyle='#171410';
@@ -4326,7 +4349,7 @@ function drawProps(){
     // Nine strokes of nzu at the lip. Chalk is never decorative (03-WORLD §3.4):
     // this is the mark a dibia leaves when a name has been written down.
     for(let i=0;i<9;i++){
-      const cx2=12*T+4+i*4-cam.x;
+      const cx2=8*T+4+i*4-cam.x;
       ctx.globalAlpha=.78-(i%3)*.10;
       pxf(cx2, fy-5-((i*5)%3), 1, 4, '#d8d0b6');
     }
@@ -4334,7 +4357,7 @@ function drawProps(){
     // The tree itself, planted over the hole. An ogilisi is grown from a cut
     // stake pushed into the ground, which is why it is the tree people use for
     // boundaries: it survives being moved. That is also the joke.
-    const tx2=9*T-cam.x*1.06;
+    const tx2=5*T-cam.x*1.06;
     if(tx2>-200 && tx2<W+200)
       treeShape(tx2, fy+2, 168, {
         seed:4,
@@ -6646,7 +6669,31 @@ function drawTutorial(){
 }
 
 // -- the codex: everything the game knows about itself ------------------------
+const GRAVE_LINES=[
+ "The first is small and the grass has taken it. Nobody has needed to know which one it is for a long time.",
+ "The second is the same size. So is the third. They stopped growing at the same age, which is the point.",
+ "The fourth has a stone on it. Somebody carried that here.",
+ "The fifth is where the row starts to look like a row rather than a series of accidents.",
+ "The sixth. A dibia was called by now. He asked the right questions and got the answers children give.",
+ "The seventh. The mother did the asking herself by this one.",
+ "The eighth is the last that anyone dug expecting it to be the last.",
+ "There is no ninth mound. The ninth was dug up.",
+ "You have been standing in it. It is smaller than you remember, and it is the only one here that was ever opened."
+];
 const LORE=[
+ // §5.6's third standing request. `b` is computed, so the entry genuinely grows
+ // as the player walks the row rather than unlocking whole.
+ {id:'graves', t:'NINE', when:()=>gravesStood()>0 || !!G.graves.own,
+  // a getter, not an array and not a call: every other entry is read as `.b`,
+  // and an IIFE here would freeze the entry at whatever was true when the file
+  // loaded, which is nothing
+  get b(){
+    const out=[];
+    for(let i=0;i<GRAVES.length;i++) if(G.graves[GRAVES[i]]) out.push(GRAVE_LINES[i]);
+    if(G.graves.own) out.push(GRAVE_LINES[8]);
+    else if(gravesStood()===GRAVES.length) out.push(GRAVE_LINES[7]);
+    return out;
+  }},
  {id:'ogbanje', t:'\u1eccGBANJE', when:()=>true, b:[
   "A child who is born to die and be born again to the same woman. Not a ghost and not a curse: a member of a spirit company who agreed, before birth, to come only briefly and then go back.",
   "The Igbo word carries no melodrama. It is a diagnosis. A woman who has buried three infants in a row is not unlucky; she is being visited by the same one."]},
@@ -7386,6 +7433,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   keyName, openOpts, optsCapture, OPTS_SEL:()=>OPTS.sel, OPTS_WAIT:()=>OPTS.wait, parryWindow,
   savePrefs, loadPrefs, PREFKEY,
   tellCol, txtScale, FIXED,
+  GRAVES, GRAVE_LINES, gravesStood, graveTick,
   MODES, MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
   CHM_SEL:()=>CHM.sel
 });

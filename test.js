@@ -3755,6 +3755,88 @@ section('the accessibility options');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('the nine graves');
+(() => {
+  // 05-PROGRESSION §5.6, thread three. No marker, no log, no sound: the entry
+  // in the codex is the whole of it, and it grows as you walk the row.
+  const entry = api.LORE.filter(l => l.id === 'graves')[0];
+  check('there is an entry for them', !!entry);
+  G().graves = {};
+  check('locked until you have stood at one', !entry.when());
+  check('and it says nothing', entry.b.length === 0, JSON.stringify(entry.b));
+
+  (() => {
+    // played: walk the row and watch the entry fill in
+    at(10, 25, 16);
+    G().cheat = false; G().graves = {};
+    // revive() clears msg but not note, and a leftover 'Saved.' from an earlier
+    // block was being read as this one speaking.
+    G().note = ''; G().noteT = 0;
+    api.down('ArrowLeft');
+    const seen = [];
+    let spoke = null;
+    for (let n = 0; n < 700; n++) {
+      tick(1);
+      // watched inside the loop, not after it: G.noteT counts down, so a note
+      // raised at the third mound has expired by the time the walk finishes and
+      // asserting at the end proved nothing.
+      if (G().note && spoke === null) spoke = G().note;
+      const k = Object.keys(G().graves).length;
+      if (k !== seen.length) seen.push(k);
+      if (G().room !== 10) break;
+      if (k >= 8) break;
+    }
+    api.up('ArrowLeft');
+    check('REGRESSION walking the row stands you at every mound',
+      api.LORE.filter(l => l.id === 'graves')[0] && Object.keys(G().graves).filter(k => k !== 'own').length === 8,
+      'stood at ' + JSON.stringify(G().graves));
+    check('and the entry grew one line at a time, not all at once',
+      seen.length >= 6, 'it went ' + seen.join(','));
+    // REGRESSION §5.6: no marker. A 'Saved.' note flashing nine times as you
+    // walk the row is a marker whatever else you call it.
+    check('REGRESSION and nothing announced itself while you walked it',
+      spoke === null, 'it said "' + spoke + '"');
+  })();
+
+  (() => {
+    // the ninth is the hole, and you have to be down in it
+    G().graves = {};
+    at(10, 25, 16); G().cheat = false;
+    // Sailing over the hole is not standing in it. onGround is the guard that
+    // makes that true, and asserting from a spot nowhere near the pit proved
+    // nothing at all — the x range alone excluded it.
+    P().x = 4 * 16; P().y = 15 * 16 - P().h; P().vy = -4; P().onGround = false;
+    tick(1);
+    check('REGRESSION jumping across the hole is not standing in it', !G().graves.own,
+      'onGround=' + P().onGround + ' y=' + P().y.toFixed(1));
+    at(10, 4, 18);
+    for (let n = 0; n < 40; n++) tick(1);
+    check('REGRESSION being down in the hole is the ninth', !!G().graves.own,
+      'y=' + P().y.toFixed(1) + ' x=' + P().x.toFixed(1));
+    const lines = api.LORE.filter(l => l.id === 'graves')[0].b;
+    check('and the last line is the one about it being opened',
+      /opened/.test(lines[lines.length - 1] || ''), lines[lines.length - 1]);
+  })();
+
+  (() => {
+    // the entry must be a live read, not a snapshot taken when the file loaded
+    G().graves = {};
+    const empty = entry.b.length;
+    G().graves[api.GRAVES ? api.GRAVES[0] : 10] = 1;
+    check('REGRESSION the entry is read live, not frozen at load',
+      entry.b.length === empty + 1, empty + ' -> ' + entry.b.length);
+  })();
+
+  (() => {
+    G().graves = { 10: 1, own: 1 };
+    api.saveGame(); G().graves = {}; api.loadGame();
+    check('which graves you have stood at survives a save',
+      !!G().graves[10] && !!G().graves.own, JSON.stringify(G().graves));
+    G().graves = {};
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the codex');
 (() => {
   revive();

@@ -253,8 +253,33 @@ Three such threads, maximum:
 1. ~~The dibia's chalk~~ — **[BUILT]**, rewards lore.
 2. The market woman's story — rewards nothing but itself, and unlocks the final codex
    entry.
-3. **[PROPOSED]** Nine graves. Somewhere in the world, nine small mounds. Standing at
-   each one adds a line to a codex entry. The ninth is your own. No reward.
+3. ~~Nine graves~~ — **[BUILT]**, see below.
+
+### Nine graves — **[BUILT]**
+
+They are not scattered. They are **the row in room 10**, which is the same row the
+dibia's own codex entry already refers to: *"a family with nine graves behind the
+compound."* Eight mounds and, at the end of the row, the hole — **the ninth is yours and
+it is the only one that was ever opened.**
+
+Standing at a mound adds a line to the `NINE` codex entry and does **nothing else**. No
+marker, no log, no sound, no counter on screen. The player finds out there is more by
+opening the codex and seeing where it stops.
+
+Three things this needed:
+
+- **The hole had to move to the end of the row.** It was authored in the middle, which
+  contradicted the room's own lore entry — *"eight mounds under it, in a row, and a hole
+  at the end of the row"* — and put the ninth grave third in space. The text was right
+  and the geometry was wrong.
+- **The entry is a getter, not an array.** Every other `LORE` entry is read as `.b`; an
+  array or an IIFE freezes the entry at whatever was true when the file loaded, which is
+  nothing.
+- **`saveGame(quiet)` exists because of this.** Standing at a grave saves, and the save
+  raises a `Saved.` note — nine times as you walk the row. A note flashing nine times is
+  a marker whichever way you look at it, and this section forbids markers. There is a
+  REGRESSION test that watches for it **during** the walk, because the note expires and
+  checking afterwards proves nothing.
 
 ### Rules
 - **No quest markers. No quest log. No "objective complete."**

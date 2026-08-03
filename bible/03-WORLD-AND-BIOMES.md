@@ -61,10 +61,15 @@ player sees until room 9, and it is why room 9 lands.
 A dead end off the **left** wall of room 0 — the direction the player has no reason to
 go. Nothing to fight, nothing to buy, no charm, no mirror. It exists to be looked at.
 
-**Eight mounds and a hole.** The hole is where the ninth would be, and nothing in the
-game says so; the codex entry counts the mounds and stops. This is the number-nine rule
-in 3.4 working exactly as written — a player who counts is rewarded and a player who
-does not feels a rhythm.
+**Eight mounds and a hole, in that order, left to right.** The hole is at the **end of
+the row** — it was authored in the middle, which contradicted the room's own codex entry
+and put the ninth grave third in space. The hole is where the ninth would be, and nothing
+in the game says so.
+
+Standing at each mound writes a line into a codex entry, and standing **in** the hole
+writes the last one. See `05-PROGRESSION.md` §5.6. This is the number-nine rule in 3.4
+working exactly as written — a player who counts is rewarded and a player who does not
+feels a rhythm.
 
 The pit is **two tiles deep, not three.** Three was the first draft and it was wrong
 twice: it is a soft-lock risk at the far end of a dead-end room, and a hole you have to
