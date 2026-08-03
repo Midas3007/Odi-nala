@@ -187,7 +187,7 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **845 assertions, headless Node, no dependencies**, about 20 seconds. Its
+`test.js` — **858 assertions, headless Node, no dependencies**, about 20 seconds. Its
 first section shells out to `tools/audit.py`, so a red audit is a red test run.
 
 ### How it works

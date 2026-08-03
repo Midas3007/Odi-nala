@@ -139,7 +139,7 @@ Rules:
 5. It occupies a distinct *range band* — melee, mid, ranged, aerial.
 6. Its death drops cowries.
 
-### The ten
+### The eleven
 
 | Enemy | HP / Poise | Range | Idea | Tell |
 |---|---|---|---|---|
@@ -153,6 +153,7 @@ Rules:
 | **Crawler** (`k`) | 34 / 26 | melee | Fast, low, bites twice | white |
 | **Effigy** (`i`) | 66 / **96** | ranged | Rooted. Three-shot aimed volley. High poise — must be broken. | white |
 | **Healer** (`n`) | 30 / 24 | mid | Restores an ally's poise and closes a broken guard. Retreats; will not chase. | white |
+| **Mimic** (`q`) | 44 / 34 | melee | An idol that is an idol until you are inside its reach. | **gold** waking, white after |
 
 ### Enemy roster gaps — **[NOT BUILT]**
 Ranked by what the roster is missing mechanically:
@@ -166,8 +167,14 @@ Ranked by what the roster is missing mechanically:
    only swings, white-telegraphed, when cornered.
 2. **A grappler.** Something that grabs and must be broken out of. Adds a real fear.
 3. **A shield-and-spear pair that fights as a unit.**
-4. **A mimic prop** — a skull or idol that is an enemy. The prop vocabulary already
-   supports this and it would be cheap.
+4. ~~**A mimic prop.**~~ **[BUILT]** `q`, Arụsị Ọjọọ, in Ala Mmụọ. Asleep it is drawn by
+   the *same `idolStatue()` call with the same arguments* as the room's real props — not
+   a similar palette, the same one, because a palette that was slightly off gave it away
+   immediately in a browser. Inside 40px it stands up on a **gold** tell and pounces.
+   Pillar 2 holds: the surprise is that it was scenery, never that the attack is
+   unreadable — it always stands up first. Awake it stays awake, splits open and lights
+   from inside, so the second one you meet is a read rather than another ambush. Two are
+   placed for exactly that reason.
 5. **A swimmer** for Iyi Idemili — the water room has no unique enemy, which is a gap.
 6. **A wall-crawler** that changes the vertical read.
 

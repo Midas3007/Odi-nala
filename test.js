@@ -1387,6 +1387,72 @@ section('every menu mode opens and closes');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('the idol that was waiting');
+(() => {
+  function scene(px_) {
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1 };
+    G().slain = { onwe: 1 };
+    at(7, 4, 16);
+    const m = api.enemies.find(e => e.kind === 'mimic');
+    if (m) { P().x = m.x - (px_ == null ? 200 : px_); P().y = m.y; P().inv = 9999; }
+    return m;
+  }
+  const m0 = scene();
+  check('the land of spirits hides mimics among its idols', !!m0,
+    'enemies=' + api.enemies.map(e => e.kind).join(','));
+  if (!m0) return;
+  check('a mimic starts asleep', m0.st === 'sleep', 'st=' + m0.st);
+  check('an asleep mimic gives nothing away', m0.tell === '' && !m0.woke, 'tell=' + m0.tell);
+
+  // it stays a prop while you keep your distance
+  (() => {
+    const m = scene(200);
+    for (let i = 0; i < 120; i++) { P().inv = 9999; tick(1); }
+    check('it stays asleep while you keep away', m.st === 'sleep', 'st=' + m.st);
+    check('and it does not drift like an enemy', Math.abs(m.vx) < 0.01, 'vx=' + m.vx);
+  })();
+
+  // waking is telegraphed — Pillar 2 holds
+  (() => {
+    const m = scene(200);
+    let sawGold = false, hitBeforeTell = false;
+    const hp0 = P().hp;
+    for (let i = 0; i < 200; i++) {
+      P().inv = 0; P().hp = G().maxHP;
+      P().x = m.x - 26; P().y = m.y;
+      tick(1);
+      if (m.tell === 'gold') sawGold = true;
+      if (P().hp < G().maxHP && !sawGold) hitBeforeTell = true;
+      if (m.st === 'pounce') break;
+    }
+    check('REGRESSION waking shows a gold tell before it does anything (Pillar 2)', sawGold,
+      'st=' + m.st + ' tell=' + m.tell);
+    check('REGRESSION it never lands a hit before it has telegraphed', !hitBeforeTell,
+      'it damaged the player with no wind-up');
+    check('the wake leads into a pounce', m.st === 'pounce' || m.woke, 'st=' + m.st);
+  })();
+
+  // once woken it stays woken, and it behaves like an enemy
+  (() => {
+    const m = scene(30);
+    for (let i = 0; i < 90; i++) { P().inv = 9999; P().x = m.x - 30; tick(1); }
+    check('a woken mimic does not go back to being scenery', m.st !== 'sleep' && m.woke === 1,
+      'st=' + m.st);
+    check('it has poise and can be broken like anything else', m.poiseMax > 0 && m.hp > 0);
+    let sawWhite = false;
+    for (let i = 0; i < 240; i++) { P().inv = 9999; P().x = m.x - 30; tick(1); if (m.tell === 'white') sawWhite = true; }
+    check('awake it also has a white tell, so both verbs are exercised', sawWhite, 'tell=' + m.tell);
+  })();
+
+  check('the mimic has a bestiary entry', api.BEASTS.some(b => b.k === 'mimic'));
+  check('two mimics are placed, so the second one is a read not a repeat',
+    ROOMS[7].map.join('').split('q').length - 1 >= 2,
+    'count=' + (ROOMS[7].map.join('').split('q').length - 1));
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the healer that closes what you open');
 (() => {
   // Put a healer and a wounded ally in a room and let it work.

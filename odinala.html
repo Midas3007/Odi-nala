@@ -420,7 +420,7 @@ const ROOMS = [
   "#.........------......................------.......#",
   "#..................................................#",
   "#..................................................#",
-  "E.......M...............y..........................#",
+  "E.......M.....q.........y...............q..........#",
   "E...S.............................O................#",
   "####################################################",
   "####################################################",
@@ -623,6 +623,7 @@ function spawnRoom(){
     if(ch==='k') enemies.push(mkCrawler(x,y));
     if(ch==='i') enemies.push(mkEffigy(x,y));
     if(ch==='n') enemies.push(mkHealer(x,y));
+    if(ch==='q') enemies.push(mkMimic(x,y));
     if(ch==='F' && !G.weapons.oku) pickups.push({kind:'weapon', w:'oku', x:x*T+2, y:y*T+4, t:0});
     if(ch==='S') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'rest'});
     if(ch==='N') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'name'});
@@ -665,6 +666,11 @@ function mkHorned(x,y){ const e=base(x,y,22,26,110,86); e.kind='horned'; e.cd=50
 // Mends what you have spent your poise damage opening. Weak, and it will not come
 // to you — the whole idea is that you have to decide to go to it first.
 function mkHealer(x,y){ const e=base(x,y,12,20,30,24); e.kind='healer'; e.cd=40; e.home=e.x; e.mend=null; return e; }
+// An idol that is not an idol. It sits still, drawn exactly as the props around
+// it are drawn, until you are close enough — then it stands up, gold, and you
+// have a fight you did not know was there. The surprise is that it was scenery,
+// never that the attack is unreadable: Pillar 2 still holds.
+function mkMimic(x,y){ const e=base(x,y,16,24,44,34); e.kind='mimic'; e.cd=0; e.woke=0; e.st='sleep'; return e; }
 
 function mkBoss(x,y,who){
   who=who||'ogbunabali';
@@ -1846,6 +1852,42 @@ function enemyUpdate(e){
 
   e.t++;
 
+  if(e.kind==='mimic'){
+    if(e.st==='sleep'){
+      // a prop in every respect until you are inside its reach
+      e.vx=0; e.tell=''; e.woke=0;
+      if(adx<40 && ady<28){ e.st='wake'; e.t=0; e.woke=1; S.brk&&S.brk(); shake(3);
+        burst(e.x+e.w/2,e.y+e.h/2,20,C.gold,2.4,34); }
+      e.vy=Math.min(e.vy+0.46,9); moveEnt(e);
+      return;
+    }
+    e.woke=1;
+    if(e.st==='wake'){
+      // standing up is the wind-up, and it is gold: this one cannot be turned
+      e.vx=0; e.tell='gold';
+      if(e.t>=30){ e.st='pounce'; e.t=0; e.tell=''; e.face=dx>0?1:-1; e.vx=e.face*3.4; e.vy=-3.2; }
+    }
+    else if(e.st==='pounce'){
+      if(rects(e,P)){ hurtPlayer(17,e.face,true); e.st='rec'; e.t=0; }
+      if(e.t>=26 || (e.onGround && e.t>6)){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.82; if(e.t>=40){ e.st='idle'; e.t=0; e.cd=50; } }
+    else if(e.st==='idle'){
+      e.face = dx>0?1:-1;
+      e.vx = adx>26 ? e.face*0.5 : 0;
+      if(e.cd>0) e.cd--;
+      if(adx<34 && ady<26 && e.cd<=0){ e.st='wind'; e.t=0; e.tell='white'; e.vx=0; }
+    }
+    else if(e.st==='wind'){ e.vx=0; e.tell='white'; if(e.t>=26){ e.st='swipe'; e.t=0; e.tell=''; } }
+    else if(e.st==='swipe'){
+      if(e.t<=10){
+        const box={x:e.face>0?e.x+e.w-4:e.x-20, y:e.y+2, w:24, h:e.h-4};
+        if(rects(box,P)){ if(!tryParry(e,e.x)) hurtPlayer(13,e.face); }
+      }
+      if(e.t>=13){ e.st='rec'; e.t=0; }
+    }
+  }
+
   if(e.kind==='healer'){
     // It keeps its distance and mends whatever you have opened. Break its channel
     // by hurting it — stagger cancels the mend — or kill it first and fight the
@@ -2926,7 +2968,7 @@ function drawTiles(){
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
     const ch=tileAt(R,x,y);
-    if('.wltWKBSNMhrvXOakiFdmoyn'.indexOf(ch)>=0) continue;
+    if('.wltWKBSNMhrvXOakiFdmoynq'.indexOf(ch)>=0) continue;
     const sx=x*T-cam.x, sy=y*T-cam.y;
 
     if(ch==='E'){
@@ -3789,6 +3831,34 @@ function drawEnemy(e){
   const flash = e.flash>0;
   const stag = e.stagger>0;
 
+  if(e.kind==='mimic'){
+    // Asleep it is drawn with idolStatue, exactly as the props in this room are,
+    // and nothing distinguishes it. Awake, the wood splits and the same painter
+    // runs with a red seam through it — so the second one you meet is readable.
+    // Asleep it takes the room's own idol options — the same eye, the same chalk,
+    // the same scale band — so it is not merely similar to the props, it is drawn
+    // by the same call with the same arguments. A palette that was even slightly
+    // off gave it away in the first browser pass.
+    if(e.st==='sleep'){
+      idolStatue(x+e.w/2, y+e.h, 6.5+((Math.round(e.x/T)*7)%3), {eye:'#8fe6ff', chalk:Math.round(e.x/T)%2===0});
+      ctx.globalAlpha=.10; ctx.fillStyle=C.glass;
+      ctx.beginPath(); ctx.arc(x+e.w/2, y+e.h-14, 22, 0, 7); ctx.fill(); ctx.globalAlpha=1;
+      return;
+    }
+    // awake: the same carving, split open and lit from inside, so the next one
+    // you meet is a read rather than another ambush
+    idolStatue(x+e.w/2, y+e.h, e.w/2.3, {wood:['#5a3226','#331914','#170b09'], eye:'#e06a4a'});
+    pxf(x+e.w/2-0.5, y+2, 1, e.h-4, flash?C.chalk:'#8e2323');
+    ctx.globalAlpha=.5+Math.sin(G.t/6)*.2;
+    pxf(x+e.w/2-1.5, y+5, 3, 2, '#e06a4a');
+    pxf(x+e.w/2-1, y+11, 2, 2, '#e06a4a');
+    ctx.globalAlpha=1;
+    if(e.st==='wake'){
+      ctx.globalAlpha=.30+Math.sin(G.t/4)*.16; ctx.fillStyle=C.gold;
+      ctx.beginPath(); ctx.arc(x+e.w/2,y+e.h/2,16+e.t*0.3,0,7); ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
+
   if(e.kind==='healer'){
     // A narrow standing post with a wide flat crown — the only enemy whose
     // silhouette is top-heavy, so you can pick it out of a crowd at a glance.
@@ -4617,7 +4687,7 @@ for(const k in NPCS) NPC_BY_CH[NPCS[k].ch]=k;
 // pickups, then enemy spawns, then whatever the NPC table declares. One source
 // of truth — the test suite reads this rather than keeping its own copy, so a
 // new spawn char cannot be added without the maps being checked against it.
-const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakin' + Object.keys(NPC_BY_CH).join('');
+const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakinq' + Object.keys(NPC_BY_CH).join('');
 
 function cutArt(name,cx,cy){
   if(name==='bones'){
@@ -5187,6 +5257,8 @@ const BEASTS=[
   "It rolls before it rises. Rolling, it only bruises. Risen, it bites \u2014 and that bite is white-edged and can be turned."},
  {k:'horned',  t:'MMANW\u1ee4 MP\u1eccKI', sub:'the horned masquerade', b:
   "Two attacks. The near one is white and can be parried. The charge is gold and cannot. Learn which shoulder drops first."},
+ {k:'mimic',   t:'AR\u1ee4S\u1eca \u1eccJ\u1ecc', sub:'the idol that was waiting', b:
+  "There are a great many carved posts in the land of spirits and one of them has been watching you walk past it. It stands up gold-edged, which cannot be turned aside \u2014 but it does stand up first. Nothing here strikes without showing you."},
  {k:'healer',  t:'ONYE MMEZI', sub:'the one who closes what you open', b:
   "It does not want to fight you and it will back away if you come at it. It stands behind the others and puts their guard back together, and a guard it has closed takes as long to open again as the first time. Kill it first or accept that nothing here stays broken."},
  {k:'chalk',   t:'MMANW\u1ee4 NZU', sub:'the masquerade of chalk', b:
