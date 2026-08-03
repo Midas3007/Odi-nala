@@ -3505,6 +3505,71 @@ section('Ụlọ Dibia, the compound that fell in');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('the last two boss themes, and ducking');
+(() => {
+  // Ụzụ and Ikuku were the only bosses still taking the BOSS_TRACK fallback.
+  check('Ụzụ has a theme', api.BOSS_TRACK.uzu === 'uzu' && !!api.TRACKS.uzu);
+  check('Ikuku has a theme', api.BOSS_TRACK.ikuku === 'ikuku' && !!api.TRACKS.ikuku);
+  check('nothing is left on the fallback',
+    Object.keys(api.BOSS_TRACK).length === 4, JSON.stringify(api.BOSS_TRACK));
+
+  // The smith works while you fight him: a second fixed line under the bell.
+  const u = api.TRACKS.uzu;
+  check('Ụzụ\'s hammer is even — it is a timeline, not a fill',
+    u.udu.filter(Boolean).length === 4 &&
+    [0, 3, 6, 9].every(i => u.udu[i] === 3), u.udu.join(''));
+  check('and it is hot — the forge\'s own scale', u.sc === api.TRACKS.fire.sc, u.sc);
+
+  // Ikuku never lands, so nothing marks the floor.
+  const k = api.TRACKS.ikuku;
+  check('REGRESSION Ikuku\'s theme has no drum on the ground',
+    k.udu.every(v => !v) && k.ekwe.every(v => !v),
+    'udu=' + k.udu.join('') + ' ekwe=' + k.ekwe.join(''));
+  check('but it keeps the bell — the spine never changes for anything (§7.2)',
+    k.bell.some(v => v), k.bell.join(''));
+  check('and it keeps the rattle, which is not the ground', k.shk.some(v => v));
+
+  (() => {
+    // played, not tabled
+    revive(); unlockAudio();
+    api.unlockAll(); G().slain = {}; G().taught = { uzIn: 1, ikIn: 1, bossIn: 1 };
+    at(8, 30, 16); tick(6);
+    check('standing in the forge with Ụzụ alive plays its theme',
+      api.MUS_NAME() === 'uzu', 'playing ' + api.MUS_NAME());
+    G().slain = { uzu: 1 }; at(8, 30, 16); tick(6);
+    check('and once it is dead the room goes back to its own',
+      api.MUS_NAME() === 'fire', 'playing ' + api.MUS_NAME());
+    G().slain = {}; at(9, 30, 16); tick(6);
+    check('the open sky with Ikuku alive plays its theme',
+      api.MUS_NAME() === 'ikuku', 'playing ' + api.MUS_NAME());
+    G().slain = { ikuku: 1 }; at(9, 30, 16); tick(6);
+    check('and its own again afterwards', api.MUS_NAME() === 'sky', 'playing ' + api.MUS_NAME());
+  })();
+
+  (() => {
+    // 07-AUDIO §7.2: never fade the music out for a cutscene. Ducking is the
+    // other thing — it keeps playing and steps back so the voice reads over it.
+    revive(); unlockAudio();
+    G().slain = { ogbunabali: 1, uzu: 1, ikuku: 1, ekwensu: 1, onwe: 1 };
+    at(4, 20, 16); tick(6);
+    G().mode = 'play'; api.musicDuck();
+    const open = api.DUCK_LEVEL();
+    check('playing, the bus is at full', near(open, api.MUS_VOL(), 1e-6), 'gain=' + open);
+
+    G().mode = 'cut'; api.musicDuck();
+    const ducked = api.DUCK_LEVEL();
+    check('a cutscene ducks it', ducked < open, 'ducked to ' + ducked + ' from ' + open);
+    check('REGRESSION but never to silence — the room\'s track carries on under it',
+      ducked > 0, 'ducked to ' + ducked);
+    check('and the track itself does not change', !!api.MUS_NAME(), 'playing ' + api.MUS_NAME());
+
+    G().mode = 'play'; api.musicDuck();
+    check('and it comes back up afterwards', near(api.DUCK_LEVEL(), open, 1e-6),
+      'gain=' + api.DUCK_LEVEL());
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the codex');
 (() => {
   revive();

@@ -6,6 +6,9 @@ Shipping. Thirteen rooms, five bosses, fifteen enemy types, four NPCs, four weap
 tutorial, a codex, an ending, fast travel, two save slots, a speedrun mode, and a
 test suite. Roughly 90 minutes for a first completion.
 
+**Phase 2 is closed.** All twelve items are built, and the audio and world chapters
+have no `[NOT BUILT]` gaps left in them.
+
 Phase 1 is **closed**. Both crash-class bugs are fixed, `tools/audit.py` is clean and
 wired into `node test.js`, and the loop can no longer be killed by a throw.
 
@@ -35,6 +38,7 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 | 2.8 | ~~Bone road music; Ekwensu and Onwe themes~~ | **Done.** `bone` is its own track. Onwe's theme is the opening theme in retrograde, built by a function so it cannot drift. |
 | 2.9 | ~~Three rooms: ogilisi tree, second market, dibia's compound~~ | **Done.** Rooms 10, 11 and 12. |
 | 2.10 | ~~Ambient beds per room~~ | **Done.** One looping noise source per track, filter and gain only. |
+| 2.12 | ~~Ụzụ and Ikuku themes; ducking under speech~~ | **Done.** The audio chapter has no gaps left. |
 | 2.11 | ~~Per-boss title cards~~ | **Done.** Name and epithet, read out of the bestiary, over a struck-bell stinger. Cheap, big perceived-quality win. |
 
 ### Phase 3 — Depth

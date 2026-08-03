@@ -1121,6 +1121,8 @@ const BEDS = {
   sky:    {f:1900, q:0.5, g:0.011},   // thin high air
   boss:   {f:180,  q:0.8, g:0.010},
   ekwensu:{f:150,  q:0.9, g:0.012},   // lower than anything else: it is enormous
+  uzu:    {f:260,  q:0.6, g:0.018},   // the forge, still going
+  ikuku:  {f:2100, q:0.4, g:0.013},   // thinner and higher than the sky's own
   elu:    {f:900,  q:1.2, g:0.009},   // the same crowd, one floor further away
   ulo:    {f:300,  q:0.8, g:0.010},   // a closed room with fallen earth in it
   ogilisi:{f:560,  q:0.6, g:0.006},   // thinner and further off than room 0's
@@ -1295,7 +1297,36 @@ TRACKS.ekwensu = { spb:.138, sc:'shaft', mix:1, pad:1,
          [0,0,0,0,0,4,0,0,0,0,3,0] ] };
 // ...and Onwe is you, backwards.
 TRACKS.onwe = retrograde(TRACKS.night, { spb:.186, mix:.92 });
-const BOSS_TRACK = { ekwensu:'ekwensu', onwe:'onwe' };
+// Ụzụ Ọkụ keeps working while you fight him, and a smith's hammer is a
+// timeline in its own right. This is the only track in the game with two fixed
+// lines running at once — the bell that never changes (§7.2) and an anvil
+// stroke that never changes either — and the melody has to argue with both.
+TRACKS.uzu = { spb:.140, sc:'fire', mix:1, pad:2,
+  bell:BELL_B,
+  udu: [3,0,0,3,0,0,3,0,0,3,0,0],
+  ekwe:[0,1,0,0,1,0,0,1,0,0,1,0],
+  shk: [0,0,1,0,0,1,0,0,1,0,0,1],
+  gtr: null,
+  opi: [ [0,0,0,4,0,0,0,3,0,0,0,0],
+         [2,0,0,0,0,3,0,0,0,4,0,0],
+         [0,0,3,0,0,0,0,0,2,0,0,0],
+         [0,0,0,0,4,0,3,0,0,0,2,0] ] };
+
+// Ikuku never lands, so nothing in its theme marks the floor. No udu and no
+// ekwe — the two drums that tell you where the ground is — leaving bell, rattle
+// and breath. The spine holds; the ground is what is missing.
+TRACKS.ikuku = { spb:.158, sc:'sky', mix:.9, pad:1,
+  bell:BELL7,
+  udu: [0,0,0,0,0,0,0,0,0,0,0,0],
+  ekwe:[0,0,0,0,0,0,0,0,0,0,0,0],
+  shk: [2,1,1,2,1,1,2,1,1,2,1,1],
+  gtr: null,
+  opi: [ [0,0,4,0,0,0,3,0,0,0,0,0],
+         [0,0,0,0,0,2,0,0,4,0,0,0],
+         [3,0,0,0,4,0,0,0,0,0,2,0],
+         [0,0,0,0,0,0,0,3,0,0,0,0] ] };
+
+const BOSS_TRACK = { ekwensu:'ekwensu', onwe:'onwe', uzu:'uzu', ikuku:'ikuku' };
 // The card on encounter. Names are read out of BEASTS so a boss cannot have a
 // title card and no bestiary entry, or the two drift apart.
 function bossCard(who){
@@ -1494,6 +1525,7 @@ function musicStep(t,i){
     mOpi(t, sc[1]*2, tr.spb*3, .03*m);
 }
 function musicSched(){
+  musicDuck();   // before the guard: a muted bus still has to settle to zero
   if(!AC || AC.state!=='running' || !MUS.track || !MUS.on) return;
   const now=AC.currentTime;
   if(MUS.next < now) MUS.next = now + .06;
@@ -1512,8 +1544,18 @@ function musicForRoom(){
   if(boss && !boss.dead) musicPlay(BOSS_TRACK[boss.who] || 'boss');
   else musicPlay(ROOM_TRACK[G.room]||'night');
 }
+const DUCK = 0.42;                 // how far down, not how far out
+let duckedTo = -1;
+function musicDuck(){
+  if(!AC || !MUS.bus) return;
+  const want = MUS.on ? MUS.vol * (G.mode==='cut' ? DUCK : 1) : 0;
+  if(Math.abs(want-duckedTo) < 0.0005) return;   // one write per change, not per frame
+  duckedTo = want;
+  try{ MUS.bus.gain.setTargetAtTime(want, AC.currentTime, .18); }catch(e){}
+}
 function musicToggle(){
   MUS.on=!MUS.on;
+  duckedTo=-1;   // let musicDuck() re-decide rather than fighting it
   if(AC && MUS.bus) try{ MUS.bus.gain.setTargetAtTime(MUS.on?MUS.vol:0, AC.currentTime, .2); }catch(e){}
   if(AC && MUS.droneG) try{ MUS.droneG.gain.setTargetAtTime(MUS.on?.042:0, AC.currentTime, .2); }catch(e){}
   say(MUS.on?'Sound on.':'Sound off.',70);
@@ -7124,6 +7166,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS,
   ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C, get flames(){return flames}, bossIsGated,
   TRACKS, SCALES, BEDS, ROOM_TRACK, BOSS_TRACK, retrograde, bossCard,
+  musicDuck, DUCK_LEVEL:()=>duckedTo, MUS_VOL:()=>MUS.vol,
   MAPPOS, AMBIENT, ROOM_STONE, mapCacheKey, buildMapCache,
   CTX_IS_BASE:()=>ctx===baseCtx,
   MAP_CACHED:()=>!!mapCache, MAP_KEY:()=>mapKey,

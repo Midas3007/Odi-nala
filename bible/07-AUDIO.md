@@ -67,6 +67,8 @@ music. A track in 16 steps is a different genre.
 | `boss` | 3 | **C with a flat second** | **0.132** | The same bell, knocked wrong. War drums. Pad. |
 | `ekwensu` | 6, boss alive | E minor, low | 0.138 | The shaft scale played at boss tempo — the bone road's own ground, sped up under you. |
 | `onwe` | 7, boss alive | A minor pentatonic | 0.186 | **`night` in retrograde.** See below. |
+| `uzu` | 8, boss alive | C# minor | 0.140 | **Two fixed lines.** The bell, and a hammer four to the bar. |
+| `ikuku` | 9, boss alive | G major | 0.158 | **No udu, no ekwe.** Nothing marks the floor. |
 
 The boss track is the forest track's structure with a poisoned scale. That relationship
 should be preserved in any new boss music.
@@ -87,6 +89,39 @@ This is a function and not a transcribed copy on purpose: Onwe is the player's m
 if the opening theme is ever edited, Onwe's theme must change with it. A hand-copied
 retrograde would silently drift the day someone retunes `night`, and the mirror would
 stop being a mirror. **If you edit `night`, do not touch `onwe` — it already followed.**
+
+### The last two boss themes
+
+Both were on the `BOSS_TRACK` fallback until they weren't. Each is built around the one
+thing that is true about the fight.
+
+**`uzu` — the smith keeps working.** A hammer is a timeline in its own right, so this is
+the only track in the game with **two fixed lines running at once**: the bell that never
+changes, and an anvil stroke square on beats 0, 3, 6 and 9 that never changes either. The
+melody has to argue against both. That is what a forge sounds like and it is also what
+the fight is — a guard that reforges faster than you can break it.
+
+**`ikuku` — nothing marks the floor.** Ikuku never lands, so its theme has **no udu and
+no ekwe**, the two drums that tell you where the ground is. What is left is bell, rattle
+and breath. The bell stays because the bell always stays (§7.2); it is the *ground* that
+is missing, not the spine. There is a REGRESSION test on those two arrays being empty,
+because a well-meaning edit adding "a bit of low end" would quietly delete the idea.
+
+### Ducking — **[BUILT]**
+
+**Ducking is not fading out.** §7.2 forbids fading the music out for a cutscene and that
+still holds: the room's track keeps playing, keeps its place, and keeps its drone. It
+just steps back to **42%** on a 0.18 s time constant so the voice reads over it, and
+comes back up when the cutscene ends.
+
+`musicDuck()` runs from `musicSched` on its 60 ms interval — **before** the muted guard,
+so a muted bus still settles to zero — and writes to the gain only when the target
+actually changes, not every tick. `musicToggle()` clears `duckedTo` so mute and duck
+decide the gain in one place instead of fighting over it.
+
+**It must never duck to silence.** There is a REGRESSION test asserting the ducked level
+is above zero, because `DUCK = 0` would satisfy every other assertion here and would be
+exactly the mistake §7.2 exists to prevent.
 
 ### Beds
 
@@ -207,6 +242,10 @@ sound and the name cannot come apart. All five bosses use it.
 
 ## 7.7 Audio not yet built — **[NOT BUILT]**
 
-- Themes for **Ụzụ Ọkụ and Ikuku** — both still take the `BOSS_TRACK` fallback to `boss`
-- Ducking the music under cutscene voices
+Every room has its own arrangement, every boss has its own theme, every track has a bed,
+the encounter has a stinger, and the music ducks under speech. What is left is depth
+rather than gaps:
+
 - More voice profiles as more characters are added (§7.3)
+- Formant shaping on the voice blips — the system to deepen, never to replace
+- Per-weapon impact timbre, so the machete and the staff do not share `hit`
