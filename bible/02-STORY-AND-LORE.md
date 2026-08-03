@@ -228,7 +228,8 @@ The stats card carries a `left standing` row so the run tells you which way it w
 ### What all endings share
 - No credits crawl. A stats card, the title, silence.
 - The save is retained. There is no "you have completed the game" lock.
-- **[NOT BUILT]** NG+ offer on the stats card.
+- ~~NG+ offer on the stats card~~ — **[BUILT]**. `N` on the ending card, under the
+  `Z` prompt, and the card carries a **times round** row.
 
 ## 2.8 NPCs — the honest gap
 

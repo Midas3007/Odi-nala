@@ -287,6 +287,47 @@ Three things this needed:
   means something in this game.
 - **Rewards are lore or access, never stats.** Stats come from the ledger.
 
+## 5.6b New game plus — *chi* — **[BUILT]**
+
+`01-VISION.md` names the framing and it is the whole design: **your chi remembers, and
+nothing else does.** §5.1 puts knowledge above the other three currencies, so knowledge
+is exactly what carries.
+
+| Carries over | Does not |
+|---|---|
+| The bestiary — what you have seen | Every boss you killed |
+| The people — `G.met`, so conversations continue | Cowries, weapons, spells, skills, charms |
+| The graves you have stood at | The mirrors, the map, the ground walked |
+| That you have done the Teaching | **The name** |
+
+**The name is the one thing you go back for.** It is the game's central idea — the
+epistemic gate, the thing that costs nothing but attention — so a second run that starts
+holding it is a second run with nothing to find. There is a REGRESSION test.
+
+Each cycle raises **enemy poise only**, capped at three cycles. One number, applied at
+`base()`, so a guard takes longer to break and *no fight changes shape*. It is capped
+because an uncapped multiplier eventually makes a guard unbreakable, which would silently
+delete the execution from the game.
+
+**Not built, and honestly so:** `01-VISION` also asks for *one extra gold tell per boss*.
+That means authoring five new boss attacks, which is Phase 4 work, not a scalar. It is
+**[NOT BUILT]** and this paragraph is the record of why.
+
+## 5.6c The rematch — **[BUILT]**
+
+`N` on a bestiary entry for a boss you have **already put down** drops you into its room
+with the fight ready. Never a preview: `rushable()` offers only the dead, so it cannot be
+used to see a boss early.
+
+It runs in the **speedrun save slot**, which already exists for exactly this reason — a
+rematch must never be able to write over the run somebody is playing, and there is a
+REGRESSION test that the real save is byte-identical afterwards. It is **not** the
+untouchable mode: `unlockAll()` gives you the kit and then cheats go straight back off,
+because a rematch you cannot lose is not a rematch.
+
+`bossHome()` finds each boss by its spawn char in `ROOMS` rather than from a table. A
+table of boss positions would be a sixth thing keyed by boss and a sixth thing to drift.
+
 ## 5.7 Progression pacing — the intended playthrough
 
 | Beat | Time | Player has |

@@ -3947,6 +3947,83 @@ section('the night turns');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('the rematch and the next time round');
+(() => {
+  // 3.8 — a rematch with something you have already put down.
+  check('every boss can be found in the world by its spawn char',
+    Object.keys(api.BOSS_CHAR).every(c => !!api.bossHome(api.BOSS_CHAR[c])),
+    Object.keys(api.BOSS_CHAR).filter(c => !api.bossHome(api.BOSS_CHAR[c])).join(','));
+
+  G().slain = {};
+  check('REGRESSION nothing is offered before you have killed anything',
+    api.rushable().length === 0, api.rushable().join(','));
+  G().slain = { ekwensu: 1 };
+  check('and only what you have killed is offered',
+    api.rushable().join(',') === 'ekwensu', api.rushable().join(','));
+
+  (() => {
+    revive();
+    G().slain = { ekwensu: 1 };
+    storage.clear();
+    api.saveGame();                          // a real save to protect
+    const realBefore = storage.getItem('odinala.v1');
+    const ok = api.startRush('ekwensu');
+    check('starting it puts you in the room the boss lives in', ok && G().room === 6,
+      'room=' + G().room);
+    check('and the boss is standing there again', !!api.boss && api.boss.who === 'ekwensu',
+      api.boss ? api.boss.who : 'none');
+    check('REGRESSION and it is a real fight, not the untouchable mode', !G().cheat);
+    api.saveGame();
+    check('REGRESSION a rematch cannot write over the run you are playing',
+      storage.getItem('odinala.v1') === realBefore,
+      'the real save changed');
+    storage.clear();
+  })();
+
+  // 3.10 — your chi remembers.
+  (() => {
+    revive();
+    G().ng = 0; G().ending = 2;
+    G().seen = { walker: 3 }; G().met = { dibia: 1 }; G().graves = { 10: 1 };
+    G().slain = { ogbunabali: 1, ekwensu: 1 };
+    G().knowsName = true; G().visited = { 0: 1, 4: 1 }; G().mirrors = { 0: 1 };
+    P().cowries = 900;
+    api.startNgPlus();
+
+    check('the cycle counts up', G().ng === 1, String(G().ng));
+    check('REGRESSION the bestiary remembers', !!G().seen.walker, JSON.stringify(G().seen));
+    check('REGRESSION the people remember you', !!G().met.dibia);
+    check('REGRESSION and so do the graves', !!G().graves[10]);
+    check('but the world does not', Object.keys(G().slain).length === 0, JSON.stringify(G().slain));
+    check('the mirrors are shut again', Object.keys(G().mirrors).filter(k => G().mirrors[k]).length === 0);
+    check('REGRESSION and the name is gone — it is the thing you go back for',
+      !G().knowsName);
+    check('the cowries are gone', P().cowries === 0, String(P().cowries));
+    check('you start where you woke up', G().room === 0, String(G().room));
+    check('and you do not sit through the Teaching twice', !!G().tutDone);
+  })();
+
+  (() => {
+    // the one number a cycle changes, and it changes in the right direction
+    G().ng = 0;
+    const a = api.ngPoise();
+    G().ng = 2;
+    const b = api.ngPoise();
+    check('a later cycle takes longer to break a guard', b > a, a + ' -> ' + b);
+    G().ng = 99;
+    check('REGRESSION and it is capped, so it can never become unbreakable',
+      api.ngPoise() <= 1 + 3 * 0.22 + 1e-9, String(api.ngPoise()));
+    G().ng = 0;
+  })();
+
+  (() => {
+    G().ng = 2; api.saveGame(); G().ng = 0; api.loadGame();
+    check('which time round survives a save', G().ng === 2, String(G().ng));
+    G().ng = 0; storage.clear();
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the codex');
 (() => {
   revive();

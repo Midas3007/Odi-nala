@@ -51,9 +51,9 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 | 3.5 | ~~Water surface, ripples, reflections in Iyi Idemili~~ | **Done.** The wet floor holds what stands on it. |
 | 3.6 | ~~Heat shimmer as real distortion in the fire room~~ | **Done.** Real strip distortion, 1.4 ms after a rewrite from 92.7. |
 | 3.7 | Logo lockup and title key art |
-| 3.8 | Boss rush from the codex |
+| 3.8 | ~~Boss rush from the codex~~ | **Done.** N on a bestiary entry you have earned; runs in the speedrun slot. |
 | 3.9 | Photo mode |
-| 3.10 | NG+ framed as *chi* |
+| 3.10 | ~~NG+ framed as *chi*~~ | **Done.** Knowledge carries, the name does not. The extra gold tell per boss is Phase 4. |
 
 ### Phase 4 — If the project keeps going
 Playable village prologue · harmattan and rain weather · Idemili's python as an optional

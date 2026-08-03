@@ -673,7 +673,7 @@ const G = {
   slain:{}, seen:{}, deaths:0, ending:0, playT:0,
   checkpoint:{room:0, tx:9, ty:16},
   visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0, met:{}, spared:1, cardT:0, cardWho:'',
-  graves:{},
+  graves:{}, ng:0, rush:null,
   spells:{amadioha:1, ala:0, idemili:0, ikenga:0},
   skills:{riposte:0, swift:0, charm:0, flasks:3, heartUps:0},
   equipped:'amadioha', weapons:{mma:1}, weapon:'mma', charms:{}, worn:[], boneUsed:0, storyDone:false, tutDone:false, cheat:false, sel:0, sub:0, note:'', noteT:0
@@ -702,7 +702,7 @@ function saveGame(quiet){
     mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped, met:G.met, spared:G.spared,
     charms:G.charms, worn:G.worn,
     storyDone:G.storyDone, tutDone:G.tutDone, cheat:G.cheat, taken:ROOMS.map(r=>!!r.taken), taught:G.taught,
-    chalk:G.chalk, gaveChalk:G.gaveChalk, graves:G.graves };
+    chalk:G.chalk, gaveChalk:G.gaveChalk, graves:G.graves, ng:G.ng, rush:G.rush };
   const where=store(slot(), JSON.stringify(d));
   if(!quiet){
     G.note = where==='disk' ? 'Saved.' : 'Saved for this session only.';
@@ -744,6 +744,7 @@ function loadGame(){
   G.spared=(d.spared==null?1:d.spared);
   G.charms=d.charms||{}; G.worn=(d.worn||[]).filter(k=>CHARMS[k]).slice(0,CHARM_SLOTS); G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
   G.chalk=!!d.chalk; G.gaveChalk=!!d.gaveChalk; G.graves=d.graves||{};
+  G.ng=d.ng||0; G.rush=d.rush||null;
   G.spells=Object.assign(G.spells,d.spells||{}); G.skills=Object.assign(G.skills,d.skills||{});
   G.equipped=d.equipped||'amadioha'; G.taught=d.taught||{};
   if(d.taken) d.taken.forEach((t,i)=>{ if(ROOMS[i]) ROOMS[i].taken=t; });
@@ -893,6 +894,7 @@ function spawnRoom(){
 
 // ── enemies ──────────────────────────────────────────────────────────────────
 function base(x,y,w,h,hp,poise){
+  poise=Math.round(poise*ngPoise());
   return {x:x*T+(T-w)/2, y:(y+1)*T-h, w,w2:w, h, vx:0, vy:0, hp, maxhp:hp,
           poise:poise||30, poiseMax:poise||30, broken:0, lastHit:-999, tell:'', hitId:-1,
           face:-1, st:'idle', t:0, flash:0, stagger:0, dead:false, onGround:false, hitOnce:false};
@@ -6908,6 +6910,12 @@ function beastOpen(){ return BEASTS.filter(e=> G.seen[e.k] || G.slain[e.k.replac
 function openCodex(from){ CDX.from = from || 'pause'; G.mode='codex'; CDX.sel=0; }
 function codexUpdate(){
   const list = CDX.tab===0 ? loreOpen() : beastOpen();
+  // 3.8. A rematch with something you have already put down, from the page that
+  // says you put it down. Never a preview: rushable() only offers the dead.
+  if(CDX.tab===1 && list[CDX.sel] && tap('KeyN')){
+    const k=(list[CDX.sel].k||'').replace('boss_','');
+    if(rushable().indexOf(k)>=0 && startRush(k)) return;
+  }
   if(tap('ArrowLeft')||tap('KeyA')){ CDX.tab=0; CDX.sel=0; tone(520,.05,'square',.02); }
   if(tap('ArrowRight')||tap('KeyD')){ CDX.tab=1; CDX.sel=0; tone(560,.05,'square',.02); }
   if(list.length){
@@ -6960,7 +6968,13 @@ function renderCodex(){
     ctx.fillText(e.boss?'\u2014 a name worth keeping':'\u2014 common on this ground', 186, H-32);
   }
   ctx.textAlign='center'; ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle='#4a473f';
-  ctx.fillText('\u2191 \u2193  entries      \u2190 \u2192  tabs      X  back', W/2, H-14);
+  {
+    const l=CDX.tab===1?beastOpen():[];
+    const k=(l[CDX.sel]&&l[CDX.sel].k||'').replace('boss_','');
+    const canRush = CDX.tab===1 && rushable().indexOf(k)>=0;
+    ctx.fillText(canRush ? '\u2191 \u2193  entries      \u2190 \u2192  tabs      N  face it again      X  back'
+                         : '\u2191 \u2193  entries      \u2190 \u2192  tabs      X  back', W/2, H-14);
+  }
   ctx.textAlign='left';
 }
 function wrapLeft(text,x,y,maxw,lh){
@@ -7182,7 +7196,9 @@ const ENDING_NAME={
 const ENDW={t:0};
 function endingUpdate(){
   ENDW.t++;
-  if(ENDW.t>90 && (tap('KeyZ')||tap('Enter')||tap('KeyX')||tap('Escape'))){
+  if(ENDW.t<=90) return;
+  if(tap('KeyN')){ startNgPlus(); return; }
+  if(tap('KeyZ')||tap('Enter')||tap('KeyX')||tap('Escape')){
     saveGame(); G.mode='title'; TITLE.sel=0;
   }
 }
@@ -7220,7 +7236,8 @@ function renderEnding(){
       ['lore recovered',    loreOpen().length+' of '+LORE.length],
       ['ground walked',     Object.keys(G.visited).length+' of '+ROOMS.length],
       ['mirrors opened',    Object.keys(G.mirrors).filter(k=>G.mirrors[k]).length+' of '+Object.keys(MIRRORS).length],
-      ['left standing',     G.spared ? 'everything' : 'no']
+      ['left standing',     G.spared ? 'everything' : 'no'],
+      ['times round',       String((G.ng||0)+1)]
     ];
     ctx.font='8px ui-sans-serif,system-ui';
     for(let i=0;i<rows.length;i++){
@@ -7235,6 +7252,10 @@ function renderEnding(){
     ctx.globalAlpha=.5+Math.sin(G.t/22)*.3;
     ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=C.gold;
     ctx.fillText('Z  \u2014  the charm remembers you', W/2, H-18);
+    // 3.10, offered where the player is already thinking about it rather than
+    // buried on the title. 02-STORY flagged this as the missing half of the card.
+    ctx.fillStyle=C.chalkDim;
+    ctx.fillText('N  \u2014  go round again. Your chi remembers.', W/2, H-8);
     ctx.globalAlpha=1;
   }
   ctx.textAlign='left';
@@ -7491,6 +7512,73 @@ function relock(){
   G.cheat=false;
   say('Cheats off. Everything you were given, you keep.',150);
 }
+// ── 3.8 boss rush, 3.10 new game plus ──────────────────────────────────────
+// Where each boss stands, so the rush can put you in front of one without
+// walking the game. Derived from ROOMS rather than listed twice: the spawn char
+// is already in the map and a fifth table keyed by boss is a fifth table to drift.
+const BOSS_CHAR={ B:'ogbunabali', X:'ekwensu', O:'onwe', U:'uzu', I:'ikuku' };
+function bossHome(who){
+  for(let i=0;i<ROOMS.length;i++){
+    const r=ROOMS[i];
+    for(let y=0;y<r.h;y++) for(let x=0;x<r.w;x++){
+      if(BOSS_CHAR[r.map[y][x]]===who) return {room:i, tx:x, ty:y};
+    }
+  }
+  return null;
+}
+// Only bosses you have actually put down. The rush is a rematch, not a preview.
+function rushable(){
+  const out=[];
+  for(const c in BOSS_CHAR){ const w=BOSS_CHAR[c]; if(G.slain[w] && bossHome(w)) out.push(w); }
+  return out;
+}
+// It runs in the speedrun slot, which already exists for exactly this reason:
+// a rematch must never be able to write over the run somebody is playing.
+function startRush(who){
+  const h=bossHome(who); if(!h) return false;
+  G.cheat=true;                       // routes saveGame() to SAVEKEY_RUN
+  unlockAll();
+  G.cheat=false;                      // but not untouchable — it is a real fight
+  G.rush=who;
+  G.slain=Object.assign({}, G.slain); delete G.slain[who];
+  G.taught=Object.assign({}, G.taught);
+  G.knowsName=true;
+  resetPlayerAt(h.room, Math.max(2,h.tx-14), 16);
+  G.checkpoint={room:h.room, tx:Math.max(2,h.tx-14), ty:16};
+  G.mode='play';
+  say('Again.',120);
+  return true;
+}
+
+// 3.10. Your chi remembers: everything you learned stays and everything you had
+// is gone. 05-PROGRESSION §5.1 puts knowledge above the other three currencies,
+// so knowledge is exactly what carries.
+function startNgPlus(){
+  const keepLore={ seen:G.seen, slain:G.slain, met:G.met, graves:G.graves,
+                   knowsName:G.knowsName, chalk:G.chalk, gaveChalk:G.gaveChalk,
+                   ending:G.ending, deaths:G.deaths };
+  const cycle=(G.ng||0)+1;
+  relock();
+  G.ng=cycle;
+  G.seen=keepLore.seen; G.met=keepLore.met; G.graves=keepLore.graves;
+  G.deaths=keepLore.deaths; G.ending=0;
+  // The bestiary and the codex keep what they know; the world does not.
+  G.slain={}; G.visited={}; G.mirrors={}; G.bossDead=false;
+  G.knowsName=false;                 // the name is the one thing you go back for
+  G.chalk=0; G.gaveChalk=0;
+  G.storyDone=true; G.tutDone=true;  // you have done the Teaching. Twice is unkind.
+  G.playT=0;
+  P.cowries=0;
+  resetPlayerAt(0,9,16);
+  G.checkpoint={room:0,tx:9,ty:16};
+  G.mode='play';
+  say('Your chi remembers. Nothing else does.',260);
+  saveGame();
+}
+// How much harder each cycle is. One number, applied to poise, so a guard takes
+// longer to break and nothing else about any fight changes shape.
+function ngPoise(){ return 1 + Math.min(3,(G.ng||0))*0.22; }
+
 function startSpeedrun(){
   unlockAll();
   resetPlayerAt(0,9,16);
@@ -7542,6 +7630,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   tellCol, txtScale, FIXED,
   GRAVES, GRAVE_LINES, gravesStood, graveTick,
   nightPhase, deepNight, NIGHT_TURN, drawWet, drawShimmer,
+  bossHome, rushable, startRush, startNgPlus, ngPoise, BOSS_CHAR,
   MODES, MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
   CHM_SEL:()=>CHM.sel
 });
