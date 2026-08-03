@@ -181,16 +181,53 @@ Some of this is built; much is not. **[NOT BUILT]** markers are honest.
 - **Skippable tutorial and skippable cutscenes.**
 - **No flashing above 0.5 alpha.**
 
-### Not built, ranked by value — **[NOT BUILT]**
-1. **Rebindable keys.** The single biggest gap. `CODES` is already a table; this is
-   maybe 60 lines plus a menu.
-2. **A "hold to parry" assist** that widens the 9-frame window to 14.
-3. **Text size setting.** At 7px, the fiction is genuinely hard to read for some.
-4. **Reduced motion** — disable screen shake and slow-mo.
-5. **Reduced flashing** — cap `G.flash`.
-6. **Colourblind palette variants** for the tell outlines.
-7. **Screen reader support.** Effectively impossible in a canvas game without a parallel
-   DOM tree; the honest answer is that this game will not be screen-reader accessible.
+### Built in Phase 3 — the "HOW YOU PLAY" screen
+
+One screen holds all six, reached from **the pause menu and the title**, because a player
+who needs it should not have to start a run to find it.
+
+1. ~~**Rebindable keys.**~~ **[BUILT]**
+2. ~~**Parry assist**~~ — **[BUILT]** widens the ward window from 9 frames to 14. That is
+   the *only* number it changes: the tell still has to be white and you still have to be
+   facing it.
+3. ~~**Text size.**~~ **[BUILT]** Scales the **fiction only** — `wrapText` and the say
+   banner — at ×1.35. HUD numbers and menu rows deliberately do not scale, because they
+   are laid out against fixed pixel positions and would collide at 480×270.
+4. ~~**Reduced motion.**~~ **[BUILT]** `shake()` becomes a no-op and so does `slowmo()`,
+   which exists *because* of this: slow-motion was set inline at four separate sites, and
+   an option that catches three of four is worse than none.
+5. ~~**Reduced flashing.**~~ **[BUILT]** Capped **where the flash is painted**, not where
+   it is set — a dozen sites set `G.flash` and exactly one paints it.
+6. ~~**Colourblind tell colours.**~~ **[BUILT]** Gold becomes **violet**, a hue used
+   nowhere else: gold means rest charms and broken guards, cyan means mirrors, red means
+   fire. **The white tell never changes**, because white always means turnable, and there
+   is a REGRESSION test that the option leaves it alone.
+7. **Screen reader support.** Still **[NOT BUILT]** and still honestly impossible in a
+   canvas game without a parallel DOM tree.
+
+### Rebinding: how, and what may not be rebound
+
+**Rebinding happens at the event boundary and nowhere else.** The game goes on reading
+canonical codes — `KeyZ` means cut for ever, in all several hundred `tap()` call sites —
+and `BINDS` maps the key physically pressed onto one of those. That is why this cost no
+changes to any game logic, and why the touch buttons, which call `down()` with canonical
+codes, needed none either.
+
+**Binding is a swap, not an assignment.** One physical key drives one action and one
+action has one key; assigning without swapping leaves the displaced action with no key
+at all and no way to get it back.
+
+**`Escape`, `Tab`, `Enter`, `K`, `R` and the WASD aliases cannot be rebound.** A player
+who binds cut to Escape and then cannot open the pause menu to undo it has been locked
+out of the game *by an accessibility feature*. There is a REGRESSION test per fixed key.
+
+### Where the settings live — not in the save
+
+Bindings and assists are stored under their **own key**, not in the save slot. In the
+slot, starting a new game wipes the keys somebody rebound and loading an old save turns
+off an assist they need — the accessibility principle below, broken by a storage
+decision. Loading always starts from the defaults and applies only what is valid, so a
+junk table can never leave a player unable to move.
 
 ### Accessibility principle
 **Never gate accessibility behind difficulty.** The speedrun mode is on the title

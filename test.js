@@ -3570,6 +3570,191 @@ section('the last two boss themes, and ducking');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('rebindable keys');
+(() => {
+  api.resetBinds();
+  check('every action starts on its own key',
+    api.ACTIONS.every(a => api.boundKey(a.code) === a.code),
+    api.ACTIONS.filter(a => api.boundKey(a.code) !== a.code).map(a => a.id).join(','));
+
+  // The whole design: the game keeps reading canonical codes and the physical
+  // key is translated at the event boundary, so no game logic knows about this.
+  api.resetBinds();
+  check('binding cut to J reports J', api.rebind('KeyZ', 'KeyN') && api.boundKey('KeyZ') === 'KeyN');
+  check('and the physical key now drives cut', api.BINDS_OF().KeyN === 'KeyZ', JSON.stringify(api.BINDS_OF().KeyN));
+
+  // REGRESSION: binding is a swap. Assigning without swapping leaves whatever
+  // was on that key with no key at all, and the player cannot get it back.
+  check('REGRESSION the action that was displaced keeps a key',
+    api.boundKey('KeyN') !== null, 'call-the-name ended up unbound');
+  check('and it took the freed one', api.boundKey('KeyN') === 'KeyZ', api.boundKey('KeyN'));
+
+  // REGRESSION 08-UI-UX: a player who binds cut to Escape and cannot then open
+  // the pause menu has been locked out of the game by an accessibility feature.
+  api.resetBinds();
+  api.FIXED.forEach(f => {
+    check('REGRESSION ' + f + ' cannot be bound over', !api.rebind('KeyZ', f));
+  });
+  check('and cut is still on Z after all that', api.boundKey('KeyZ') === 'KeyZ');
+
+  (() => {
+    // played: rebind cut to J, press J, and something has to swing
+    api.resetBinds();
+    api.rebind('KeyZ', 'KeyM');
+    at(1, 6, 16); G().cheat = false; api.enemies.length = 0; G().mode = 'play';
+    dispatch('keydown', 'KeyM'); tick(2); dispatch('keyup', 'KeyM');
+    const swung = P().st === 'atk' || P().swingId > 0;
+    check('REGRESSION pressing the rebound key actually cuts', swung, 'state=' + P().st);
+    api.resetBinds();
+  })();
+
+  (() => {
+    // and it survives a save, without a junk table ever leaving you unable to move
+    // REGRESSION they are stored against the player, not the run. In the save
+    // slot, starting a new game wipes the keys somebody rebound and loading an
+    // old save turns off an assist they need — 08-UI-UX §8.5's principle broken
+    // by a storage decision.
+    api.resetBinds(); api.rebind('KeyZ', 'KeyM');
+    api.savePrefs();
+    api.resetBinds();
+    api.loadPrefs();
+    check('bindings survive', api.boundKey('KeyZ') === 'KeyM', api.boundKey('KeyZ'));
+
+    api.saveGame();
+    check('REGRESSION and are not written into the save slot',
+      (storage.getItem('odinala.v1') || '').indexOf('KeyM') < 0,
+      'the run save mentions the binding');
+    api.wipeSave();
+    api.loadPrefs();
+    check('REGRESSION so wiping the save leaves them alone', api.boundKey('KeyZ') === 'KeyM',
+      api.boundKey('KeyZ'));
+
+    storage.setItem(api.PREFKEY, JSON.stringify({ binds: { Nonsense: 'AlsoNonsense', Escape: 'KeyZ' } }));
+    api.resetBinds(); api.loadPrefs();
+    check('REGRESSION junk in a save falls back to the defaults, not to nothing',
+      api.ACTIONS.every(a => api.boundKey(a.code) !== null),
+      api.ACTIONS.filter(a => api.boundKey(a.code) === null).map(a => a.id).join(','));
+    check('and a save that tries to take Escape is refused',
+      api.BINDS_OF().Escape === 'Escape', api.BINDS_OF().Escape);
+    storage.clear(); api.resetBinds();
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('the accessibility options');
+(() => {
+  // The two mode lists must agree, or a navigable mode exists that the soak
+  // considers illegal — which is how 'opts' announced itself.
+  api.MENU_MODES.forEach(m => {
+    check('MENU_MODES entry ' + m + ' is a real mode', api.MODES.indexOf(m) >= 0, m);
+  });
+  const off = () => api.OPT_ROWS.forEach(r => { api.OPT[r.id] = 0; });
+  off();
+  check('all of them are off by default', api.OPT_ROWS.every(r => !api.OPT[r.id]));
+  check('there is one row per item 08-UI-UX ranked', api.OPT_ROWS.length === 5,
+    api.OPT_ROWS.map(r => r.id).join(','));
+
+  // 2 — parry assist
+  (() => {
+    off();
+    at(1, 6, 16); G().cheat = false; api.enemies.length = 0; G().mode = 'play';
+    P().st = 'ward'; P().t = 12;
+    check('at 12 frames the ordinary ward window has closed', !api.parryWindow());
+    api.OPT.assist = 1;
+    check('the assist opens it', api.parryWindow());
+    P().t = 16;
+    check('REGRESSION but not for ever — 14 frames, not any frame', !api.parryWindow());
+    off();
+  })();
+
+  // 4 — reduced motion
+  (() => {
+    off();
+    G().shake = 0; G().slow = 0;
+    api.shake ? api.shake(9) : 0;
+    off(); G().shake = 0;
+    at(1, 6, 16); G().mode = 'play';
+    G().shake = 0; G().slow = 0;
+    api.OPT.calm = 1;
+    // drive it through the real path: a parry sets shake and slow together
+    G().shake = 0; G().slow = 0;
+    api.OPT.calm = 0;
+  })();
+
+  // 5 — reduced flashing is applied where the flash is painted, not where set
+  (() => {
+    off();
+    at(1, 6, 16); G().mode = 'play';
+    G().flash = 20;
+    for (let i = 0; i < 3; i++) tick(1);
+    check('the flash still counts down normally with the option off', G().flash < 20);
+    api.OPT.noFlash = 1;
+    G().flash = 20;
+    for (let i = 0; i < 3; i++) tick(1);
+    check('and the game does not crash with it on', !G().crashed, G().crashErr);
+    off();
+  })();
+
+  // 6 — tell colours
+  (() => {
+    off();
+    const goldOff = api.tellCol(true), whiteOff = api.tellCol(false);
+    api.OPT.tells = 1;
+    const goldOn = api.tellCol(true), whiteOn = api.tellCol(false);
+    check('the gold tell changes colour', goldOn !== goldOff, goldOff + ' -> ' + goldOn);
+    check('REGRESSION the white tell does not — white always means turnable',
+      whiteOn === whiteOff, whiteOff + ' -> ' + whiteOn);
+    check('REGRESSION and the variant is not a colour already spoken for',
+      [api.C ? '' : '', '#c8952e', '#6fb7c8', '#8e2323', '#c0392b'].indexOf(goldOn) < 0, goldOn);
+    off();
+  })();
+
+  // 3 — larger text
+  (() => {
+    off();
+    check('text is at its usual scale', near(api.txtScale(), 1, 1e-6));
+    api.OPT.bigText = 1;
+    check('and larger with the option on', api.txtScale() > 1, String(api.txtScale()));
+    off();
+  })();
+
+  (() => {
+    // they persist, and a save without them reads as all-off rather than junk
+    off(); api.OPT.assist = 1; api.OPT.calm = 1;
+    api.savePrefs(); off(); api.loadPrefs();
+    check('the options survive', !!api.OPT.assist && !!api.OPT.calm, JSON.stringify(api.OPT));
+    storage.removeItem(api.PREFKEY);
+    api.loadPrefs();
+    check('and no stored prefs at all reads as all off',
+      api.OPT_ROWS.every(r => !api.OPT[r.id]), JSON.stringify(api.OPT));
+    storage.clear(); off();
+  })();
+
+  (() => {
+    // the screen itself: reachable, navigable, and it leaves
+    revive();
+    api.openOpts('pause');
+    check('the settings screen opens', G().mode === 'opts');
+    check('it is in MENU_MODES, so the stick does not machine-gun it (§8.2b)',
+      api.MENU_MODES.indexOf('opts') >= 0);
+    const rows = api.OPTS_ROWS();
+    check('it lists both halves', rows.some(r => r.k === 'opt') && rows.some(r => r.k === 'key'));
+    check('REGRESSION it never opens on a heading', rows[api.OPTS_SEL()].k !== 'head',
+      JSON.stringify(rows[api.OPTS_SEL()]));
+    // walk the whole list and confirm no heading is ever selected
+    let landedOnHead = null;
+    for (let i = 0; i < rows.length + 4; i++) {
+      press('ArrowDown', 1, 1);
+      if (api.OPTS_ROWS()[api.OPTS_SEL()].k === 'head') { landedOnHead = api.OPTS_SEL(); break; }
+    }
+    check('REGRESSION arrowing through it never lands on a heading',
+      landedOnHead === null, 'stopped on row ' + landedOnHead);
+    press('KeyX', 1, 2);
+    check('and X leaves it', G().mode === 'pause', G().mode);
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the codex');
 (() => {
   revive();
@@ -3801,7 +3986,10 @@ section('sound');
 // Randomised soaks. Two runs, seeded, mashing every button across every screen,
 // checking for NaN and illegal states. Any new mode joins MODE_KEYS (11.6 §5).
 // ═════════════════════════════════════════════════════════════════════════════
-const MODE_KEYS = ['title', 'play', 'cut', 'map', 'riddle', 'travel', 'shop', 'pause', 'inv', 'codex', 'ending'];
+// Taken from the game, not kept alongside it. This list had drifted: 'charm'
+// went in with 2f and never reached here, so the soak flagged the mode as
+// illegal the moment mashing ever opened it, and 'opts' did exactly that.
+const MODE_KEYS = api.MODES;
 const PLAYER_STATES = ['idle', 'atk', 'heavy', 'aircut', 'thrust', 'roll', 'ward', 'heal', 'held',
                        'call', 'hurt', 'pray', 'exec', 'dead', 'slam'];
 const SOAK_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyZ', 'KeyX', 'KeyC',

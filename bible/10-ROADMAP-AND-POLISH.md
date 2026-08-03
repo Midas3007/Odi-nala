@@ -42,10 +42,10 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 | 2.11 | ~~Per-boss title cards~~ | **Done.** Name and epithet, read out of the bestiary, over a struck-bell stinger. Cheap, big perceived-quality win. |
 
 ### Phase 3 — Depth
-| # | Item |
-|---|---|
-| 3.1 | Rebindable keys |
-| 3.2 | Accessibility: parry assist, text size, reduced motion, reduced flashing, colourblind tells |
+| # | Item | Notes |
+|---|---|---|
+| 3.1 | ~~Rebindable keys~~ | **Done.** Remapped at the event boundary; no game logic knows. |
+| 3.2 | ~~Accessibility: parry assist, text size, reduced motion, reduced flashing, colourblind tells~~ | **Done.** All five, on one screen, reachable from the title. |
 | 3.3 | Codex expansion; nine graves thread |
 | 3.4 | Day/night cycle — Ogbunabali stronger at night, market opens |
 | 3.5 | Water surface, ripples, reflections in Iyi Idemili |

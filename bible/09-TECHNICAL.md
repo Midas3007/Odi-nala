@@ -149,8 +149,14 @@ The room's `E` tiles and its `exits` rects must also agree exactly — see
 a `BESTIARY` entry → **a `tell` of `'white'` or `'gold'`**.
 
 ### Adding a mode
-A `case` in the `frame()` switch, a branch in the render dispatch, and an entry in
-`MENU_MODES`.
+A `case` in the `frame()` switch, a branch in the render dispatch, an entry in **`MODES`**,
+and — if the player steers it with a direction — an entry in `MENU_MODES` (§8.2b).
+
+`MODES` is the list of every mode the game can legally be in, and the soak asserts
+`G.mode` is always one of them. `test.js` used to keep **its own copy** of that list, and
+it had drifted: `charm` went in with 2f and never reached the test, so the charm screen
+was never soak-tested, and the drift only announced itself when `opts` was added and
+mashing happened to open it. The game owns the list now and the suite reads it.
 
 ### Adding an NPC
 NPCs are shrine-like, so they cost far less than an enemy: an entry in `NPCS` (spawn
@@ -196,7 +202,7 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **1,528 assertions, headless Node, no dependencies**, about 30 seconds.
+`test.js` — **1,580 assertions, headless Node, no dependencies**, about 30 seconds.
 
 `node test.js --quick` skips the two soaks and runs in about 7 seconds. That is the
 inner loop only — **it is not the gate**, it says so in its own output, and what you run

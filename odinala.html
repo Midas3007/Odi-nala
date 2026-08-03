@@ -95,7 +95,12 @@ const keys = {}, pressed = {};
 // touch stick falls through to its *play* branch, which re-presses the direction
 // on every pointermove — the codex was doing exactly that, and holding the stick
 // machine-gunned the list past everything you were trying to read.
-const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut','codex','charm'];
+// Every mode the game can legally be in. The soak asserts G.mode is always one
+// of these, and it used to keep its own copy of the list — which had silently
+// missed 'charm' since 2f, so the charm screen was never soak-tested at all.
+// One list, exported, and it cannot drift again.
+const MODES=['title','play','cut','map','riddle','travel','shop','pause','inv','codex','charm','opts','ending'];
+const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut','codex','charm','opts'];
 // hold-to-scroll, per mode: [frames before it starts repeating, frames between].
 // The codex is slower on purpose. Its rows are things you read, not things you
 // count past, and its entries are long enough that overshooting costs a re-read.
@@ -113,13 +118,87 @@ function menuRepeat(){
   }
 }
 const CODES = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyZ','KeyX','KeyC','KeyV','KeyF','KeyN','KeyG','KeyM','KeyP','KeyE','KeyK','KeyB','Tab','Escape','Space','Enter','KeyA','KeyD','KeyW','KeyS','KeyR'];
+// Rebinding happens at the event boundary and nowhere else. The game keeps
+// reading canonical codes — 'KeyZ' means cut for ever, in all several hundred
+// tap() call sites — and BINDS maps the key that was physically pressed onto one
+// of those. That is why this cost no changes to any game logic, and why the
+// touch buttons, which call down() with canonical codes directly, needed none
+// either. 08-UI-UX §8.5 ranks this the single biggest accessibility gap.
+const ACTIONS=[
+  {id:'left',  code:'ArrowLeft',  n:'move left'},
+  {id:'right', code:'ArrowRight', n:'move right'},
+  {id:'up',    code:'ArrowUp',    n:'up'},
+  {id:'down',  code:'ArrowDown',  n:'crouch / read'},
+  {id:'jump',  code:'Space',      n:'jump'},
+  {id:'cut',   code:'KeyZ',       n:'cut'},
+  {id:'roll',  code:'KeyX',       n:'roll'},
+  {id:'ward',  code:'KeyC',       n:'ward'},
+  {id:'heal',  code:'KeyV',       n:'drink nzu'},
+  {id:'cast',  code:'KeyF',       n:'cast \u1ecdf\u1ecd'},
+  {id:'spell', code:'KeyG',       n:'cycle \u1ecdf\u1ecd'},
+  {id:'blade', code:'KeyB',       n:'cycle weapon'},
+  {id:'name',  code:'KeyN',       n:'call the name'},
+  {id:'use',   code:'KeyE',       n:'use / ledger'},
+  {id:'map',   code:'KeyM',       n:'map'},
+  {id:'mute',  code:'KeyP',       n:'mute'}
+];
+// Escape, Tab, Enter, K and R are deliberately not rebindable. A player who
+// binds cut to Escape and then cannot open the pause menu to undo it has been
+// locked out of the game by an accessibility feature, which is the opposite of
+// the point. The WASD movement aliases stay fixed for the same reason.
+const FIXED=['Escape','Tab','Enter','KeyK','KeyR','KeyA','KeyD','KeyW','KeyS'];
+let BINDS={};
+function resetBinds(){ BINDS={}; for(const c of CODES) BINDS[c]=c; }
+resetBinds();
+function boundKey(code){ for(const k in BINDS) if(BINDS[k]===code) return k; return null; }
+// One physical key drives one action and one action has one key, so binding is a
+// swap rather than an assignment — otherwise the displaced action silently ends
+// up with no key at all and the player cannot get it back without a reset.
+function rebind(code, physical){
+  if(FIXED.indexOf(physical)>=0 || FIXED.indexOf(code)>=0) return false;
+  if(!CODES.includes(physical)) return false;
+  const was = boundKey(code);
+  const displaced = BINDS[physical];
+  if(was!==null) delete BINDS[was];
+  BINDS[physical]=code;
+  if(displaced && displaced!==code && was!==null && was!==physical) BINDS[was]=displaced;
+  return true;
+}
+function keyName(c){
+  if(!c) return '\u2014';
+  if(c==='ArrowLeft') return '\u2190'; if(c==='ArrowRight') return '\u2192';
+  if(c==='ArrowUp') return '\u2191';   if(c==='ArrowDown') return '\u2193';
+  if(c==='Space') return 'SPACE';
+  return c.replace(/^Key/,'').replace(/^Digit/,'');
+}
+
+// 08-UI-UX §8.5, items 2-6. Every one of these is off by default and none of
+// them is behind a difficulty setting — see the accessibility principle.
+const OPT={ assist:0, bigText:0, calm:0, noFlash:0, tells:0 };
+const OPT_ROWS=[
+  {id:'assist',  n:'PARRY ASSIST',    d:['the ward window is 9 frames','the ward window is 14 frames']},
+  {id:'bigText', n:'LARGER TEXT',     d:['the fiction at its usual size','the fiction a third larger']},
+  {id:'calm',    n:'REDUCED MOTION',  d:['screen shake and slow-motion on','no shake, no slow-motion']},
+  {id:'noFlash', n:'REDUCED FLASHING',d:['full white flash on impact','the flash capped low']},
+  {id:'tells',   n:'TELL COLOURS',    d:['white can be turned, gold cannot','white can be turned, violet cannot']}
+];
+// The gold tell already differs from the white one by outline count as well as
+// hue (§8.5), so this is a second axis rather than the only one. Violet is used
+// nowhere else in the game — gold means rest charms and broken guards, cyan
+// means mirrors, red means fire — so it cannot collide with an existing read.
+function tellCol(gold){ return gold ? (OPT.tells?'#b98ae0':C.gold) : C.chalk; }
+function txtScale(){ return OPT.bigText?1.35:1; }
+function narrFont(px,fam){ ctx.font=Math.round(px*txtScale())+'px '+(fam||'ui-serif,Georgia,serif'); }
+
 function down(c){ if(!keys[c]) pressed[c]=true; keys[c]=true; }
 function up(c){ keys[c]=false; }
-addEventListener('keydown',e=>{ initAudio(); if(CODES.includes(e.code)){ e.preventDefault(); down(e.code);} });
+addEventListener('keydown',e=>{ initAudio();
+  if(G.mode==='opts' && OPTS.wait){ e.preventDefault(); optsCapture(e.code); return; }
+  const c=BINDS[e.code]; if(c){ e.preventDefault(); down(c);} });
 addEventListener('pointerdown', initAudio, {passive:true});
 addEventListener('touchstart', initAudio, {passive:true});
 addEventListener('mousedown', initAudio, {passive:true});
-addEventListener('keyup',  e=>{ if(CODES.includes(e.code)){ e.preventDefault(); up(e.code);} });
+addEventListener('keyup',  e=>{ const c=BINDS[e.code]; if(c){ e.preventDefault(); up(c);} });
 cvs.addEventListener('pointerdown',(e)=>{
   cvs.focus(); initAudio();
   if(G.mode!=='play') return;
@@ -625,6 +704,27 @@ function saveGame(){
   G.noteT=110;
   return where;
 }
+const PREFKEY='odinala.prefs';
+function savePrefs(){
+  const b={}; for(const k in BINDS) if(BINDS[k]!==k) b[k]=BINDS[k];
+  const o={}; for(const r of OPT_ROWS) o[r.id]=OPT[r.id]?1:0;
+  store(PREFKEY, JSON.stringify({v:1, binds:b, opts:o}));
+}
+function loadPrefs(){
+  // Always start from the defaults and apply only what is valid. A junk or
+  // half-written table must never be able to leave the player unable to move.
+  resetBinds();
+  for(const r of OPT_ROWS) OPT[r.id]=0;
+  const raw=load(PREFKEY); if(!raw) return false;
+  let d; try{ d=JSON.parse(raw); }catch(e){ return false; }
+  if(d.binds) for(const k in d.binds){
+    const v=d.binds[k];
+    if(CODES.includes(k) && CODES.includes(v) && FIXED.indexOf(k)<0 && FIXED.indexOf(v)<0) BINDS[k]=v;
+  }
+  if(d.opts) for(const r of OPT_ROWS) OPT[r.id]=d.opts[r.id]?1:0;
+  return true;
+}
+loadPrefs();
 function hasSave(){ return !!load(SAVEKEY); }
 function hasRunSave(){ return !!load(SAVEKEY_RUN); }
 function loadGame(){
@@ -924,7 +1024,10 @@ function burst(x,y,n,col,spd=2.4,life=26){
   for(let i=0;i<n;i++) parts.push({x,y,vx:(rnd()-.5)*spd*2,vy:(rnd()-.7)*spd,
     life:life+rnd()*10,max:life+10,col,g:0.12,sz:1+ (rnd()<.3?1:0)});
 }
-function shake(a){ G.shake = Math.max(G.shake, a); }
+function shake(a){ if(OPT.calm) return; G.shake = Math.max(G.shake, a); }
+// Slow-motion goes through here for the same reason shake does: reduced
+// motion has to catch every site, and there were four of them.
+function slowmo(f){ if(OPT.calm) return; G.slow = Math.max(G.slow, f); }
 function stop(f){ G.hitstop = Math.max(G.hitstop, f); }
 function dropCowries(e){
   const base = e.kind==='boss' ? 260 : e.kind==='warden' ? 26 : e.kind==='thrower' ? 12 : 15;
@@ -1906,7 +2009,7 @@ function playerUpdate(){
       if(P.t<16 && P.t%3===0) burst(P.x+5,P.y+16,3,C.gold,1.4,22);
 
       if(k==='amadioha' && P.t===18){
-        G.flash=16; shake(9); stop(12); G.slow=10;
+        G.flash=16; shake(9); stop(12); slowmo(10);
         for(const e of enemies) if(!e.dead && Math.abs(e.y-P.y)<130) damage(e,st.dmg,(e.x>P.x?1:-1),2.2,false,st.poise);
         if(boss && !boss.dead){ const bd=boss.bound>0; damage(boss, bd?st.dmg*1.4:6, 1, 1, !bd, bd?st.poise*1.2:0); }
         for(let i=0;i<9;i++) burst(P.x+5+(i-4)*32, P.y-10, 10, C.gold, 3.2, 42);
@@ -1950,7 +2053,7 @@ function playerUpdate(){
     case 'exec': {
       P.t++;
       const e = P.execTarget;
-      if(P.t===1){ stop(16); G.slow=26; shake(5); S.exec(); }
+      if(P.t===1){ stop(16); slowmo(26); shake(5); S.exec(); }
       if(P.t===15 && e && !e.dead){
         if(e.kind==='boss'){
           damage(e, 130, P.face, 1, false, 0); e.broken=0; e.poise=e.poiseMax; e.stagger=46;
@@ -1962,7 +2065,7 @@ function playerUpdate(){
         P.hp  = Math.min(G.maxHP, P.hp+8);
         P.tut.execs++;
         if(e.trainer && !e.live){ e.hp=e.maxhp; e.poise=e.poiseMax; e.broken=0; e.stagger=40; }
-        G.flash=9; shake(8); stop(14); G.slow=14;
+        G.flash=9; shake(8); stop(14); slowmo(14);
         burst(e.x+e.w/2, e.y+e.h/2, 36, C.uhie, 3.6, 46);
         decal(e.x+e.w/2, e.y+e.h); decal(e.x+e.w/2, e.y+e.h-6);
       }
@@ -2275,7 +2378,9 @@ function die(){
 }
 
 // -- parry -------------------------------------------------------------------
-function parryWindow(){ return P.st==='ward' && P.t<=9; }
+// 9 frames, or 14 with the assist on. This is the only number the assist
+// changes: the tell still has to be white and you still have to be facing it.
+function parryWindow(){ return P.st==='ward' && P.t<=(OPT.assist?14:9); }
 function tryParry(e,fromX,unblockable){
   if(unblockable) return false;
   if(!parryWindow()) return false;
@@ -2294,7 +2399,7 @@ function tryParry(e,fromX,unblockable){
   }
   if(e.kind==='boss' && e.bound>0){ e.bound = Math.min(900, e.bound+140); }
   if(wearing('nzu') && P.hp<G.maxHP){ P.hp=Math.min(G.maxHP,P.hp+4); burst(P.x+5,P.y+8,6,C.chalk,1.4,22); }
-  stop(13); shake(6); G.slow=14; G.flash=9; S.parry();
+  stop(13); shake(6); slowmo(14); G.flash=9; S.parry();
   burst(P.x+P.face*10+5,P.y+8,22,C.chalk,3.4,30);
   burst(P.x+P.face*10+5,P.y+8,10,C.gold,2.6,26);
   P.ofo = Math.min(100, P.ofo+18);
@@ -4820,7 +4925,7 @@ function drawEnemy(e){
   if(e.tell){
     const gold = e.tell==='gold';
     ctx.globalAlpha=.35+Math.abs(Math.sin(G.t/(gold?3:4)))*.45;
-    ctx.strokeStyle = gold?C.gold:C.chalk; ctx.lineWidth=1;
+    ctx.strokeStyle = tellCol(gold); ctx.lineWidth=1;
     ctx.strokeRect(x-2.5,y-2.5,e.w+5,e.h+5);
     if(gold){ ctx.strokeRect(x-4.5,y-4.5,e.w+9,e.h+9); }
     ctx.globalAlpha=1;
@@ -5249,7 +5354,7 @@ function bossTell(b,x,y){
   if(!b.tell) return;
   const gold=b.tell==='gold';
   ctx.globalAlpha=.4+Math.abs(Math.sin(G.t/(gold?3:4)))*.45;
-  ctx.strokeStyle=gold?C.gold:C.chalk; ctx.lineWidth=1;
+  ctx.strokeStyle=tellCol(gold); ctx.lineWidth=1;
   ctx.strokeRect(x-4.5,y-4.5,b.w+9,b.h+9);
   if(gold) ctx.strokeRect(x-7.5,y-7.5,b.w+15,b.h+15);
   ctx.globalAlpha=1;
@@ -5437,7 +5542,7 @@ function drawBoss(b){
   if(b.tell){
     const gold = b.tell==='gold';
     ctx.globalAlpha=.4+Math.abs(Math.sin(G.t/(gold?3:4)))*.45;
-    ctx.strokeStyle=gold?C.gold:C.chalk; ctx.lineWidth=1;
+    ctx.strokeStyle=tellCol(gold); ctx.lineWidth=1;
     ctx.strokeRect(x-4.5,y-4.5,b.w+9,b.h+9);
     if(gold) ctx.strokeRect(x-7.5,y-7.5,b.w+15,b.h+15);
   }
@@ -5606,7 +5711,7 @@ function drawHUD(){
     const a=Math.min(1,G.msgT/30);
     ctx.globalAlpha=a*.82; px(0,H-40,W,26,'#07090a'); ctx.globalAlpha=a;
     px(0,H-40,W,1,'#1e2420');
-    ctx.font='9px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone; ctx.textAlign='center';
+    narrFont(9); ctx.fillStyle=C.bone; ctx.textAlign='center';
     wrapText(G.msg, W/2, H-27, W-40, 10);
     ctx.textAlign='left'; ctx.globalAlpha=1;
   }
@@ -5617,6 +5722,7 @@ function drawHUD(){
   }
 }
 function wrapText(t,cx,cy,maxw,lh){
+  lh=lh*txtScale();
   const words=t.split(' '); let line='', lines=[];
   for(const w of words){ const test=line?line+' '+w:w;
     if(ctx.measureText(test).width>maxw){ lines.push(line); line=w; } else line=test; }
@@ -5675,7 +5781,8 @@ function render(){
       ctx.globalAlpha=1;
     }
   }
-  if(G.flash>0){ ctx.globalAlpha=G.flash/22; ctx.fillStyle=C.chalk; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
+  if(G.flash>0){ ctx.globalAlpha=Math.min(G.flash,OPT.noFlash?3:99)/22;
+    ctx.fillStyle=C.chalk; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
   if(G.fade>0){ ctx.globalAlpha=G.fade; ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
   drawHUD();
 }
@@ -5683,7 +5790,7 @@ function render(){
 // ── title ────────────────────────────────────────────────────────────────────
 // -- title
 const TITLE={sel:0, page:0};
-function titleOpts(){ return (hasSave() ? ['continue','new'] : ['new']).concat(['speedrun','codex','controls']); }
+function titleOpts(){ return (hasSave() ? ['continue','new'] : ['new']).concat(['speedrun','codex','controls','opts']); }
 function titleUpdate(){
   const o=titleOpts();
   if(tap('ArrowUp')||tap('KeyW')){ TITLE.sel=(TITLE.sel-1+o.length)%o.length; tone(540,.05,'square',.02); }
@@ -5693,6 +5800,7 @@ function titleUpdate(){
     if(TITLE.page){ TITLE.page=0; return; }
     const c=o[TITLE.sel];
     if(c==='controls'){ TITLE.page=1; return; }
+    if(c==='opts'){ openOpts('title'); return; }
     if(c==='codex'){ if(hasSave()) loadGame(); openCodex('title'); return; }
     if(c==='speedrun'){ G.cheat=true; G.mode='play'; startSpeedrun(); return; }
     G.cheat=false;
@@ -6735,8 +6843,107 @@ function storyProgress(){
 // -- pause, and what you are carrying ----------------------------------------
 const PAUSE={sel:0};
 function openPause(){ G.mode='pause'; PAUSE.sel=0; tone(420,.07,'triangle',.03,620); }
+// ── settings: bindings and accessibility ─────────────────────────────────────
+// One screen for both, because they are one thing to the player: how the game
+// meets them. Reached from the pause menu and from the title, so a player who
+// needs it does not have to start a run to find it.
+const OPTS={ sel:0, top:0, wait:false };
+function optsRows(){
+  const r=[{k:'head', n:'HOW IT PLAYS'}];
+  for(const o of OPT_ROWS) r.push({k:'opt', id:o.id});
+  r.push({k:'head', n:'KEYS'});
+  for(const a of ACTIONS) r.push({k:'key', id:a.id});
+  r.push({k:'reset'});
+  return r;
+}
+const OPTS_WIN=10;                       // visible rows; the list is longer
+function optsMove(d){
+  const r=optsRows();
+  let i=OPTS.sel;
+  // headings are not selectable — step past them in whichever direction we came
+  do { i=(i+d+r.length)%r.length; } while(r[i].k==='head');
+  OPTS.sel=i;
+  if(OPTS.sel<OPTS.top) OPTS.top=OPTS.sel;
+  if(OPTS.sel>OPTS.top+OPTS_WIN-1) OPTS.top=OPTS.sel-OPTS_WIN+1;
+  tone(540,.05,'square',.02);
+}
+function optsCapture(physical){
+  const r=optsRows()[OPTS.sel];
+  OPTS.wait=false;
+  if(!r || r.k!=='key') return;
+  if(physical==='Escape'){ say('Left as it was.',70); return; }
+  const a=ACTIONS.filter(x=>x.id===r.id)[0];
+  if(!a) return;
+  if(rebind(a.code, physical)){ S.pick(); savePrefs(); }
+  else say(keyName(physical)+' is spoken for and cannot be moved.',110);
+}
+function optsUpdate(){
+  if(OPTS.wait) return;                  // the keydown listener has the input
+  const r=optsRows();
+  if(OPTS.sel>=r.length) OPTS.sel=1;
+  if(r[OPTS.sel] && r[OPTS.sel].k==='head') optsMove(1);
+  if(tap('ArrowUp')||tap('KeyW')) optsMove(-1);
+  if(tap('ArrowDown')||tap('KeyS')) optsMove(1);
+  const row=r[OPTS.sel];
+  if(tap('KeyX')||tap('Escape')){ savePrefs(); G.mode=OPTS.from||'pause'; return; }
+  if(tap('KeyZ')||tap('Enter')||tap('Space')){
+    if(row.k==='opt'){ OPT[row.id]=OPT[row.id]?0:1; S.pick(); savePrefs(); }
+    else if(row.k==='key'){ OPTS.wait=true; }
+    else if(row.k==='reset'){ resetBinds(); for(const o of OPT_ROWS) OPT[o.id]=0;
+      S.name(); say('Back to how it was.',110); savePrefs(); }
+  }
+  if(row && row.k==='opt' && (tap('ArrowLeft')||tap('ArrowRight')||tap('KeyA')||tap('KeyD'))){
+    OPT[row.id]=OPT[row.id]?0:1; S.pick(); savePrefs();
+  }
+}
+function renderOpts(){
+  ctx.globalAlpha=.93; px(0,0,W,H,'#05070b'); ctx.globalAlpha=1;
+  ctx.textAlign='center'; ctx.font='9px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
+  ctx.fillText('HOW YOU PLAY', W/2, 18); ctx.textAlign='left';
+  const r=optsRows();
+  for(let i=0;i<OPTS_WIN && OPTS.top+i<r.length;i++){
+    const row=r[OPTS.top+i], y=34+i*20, on=(OPTS.top+i)===OPTS.sel;
+    if(row.k==='head'){
+      ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.goldDim;
+      ctx.fillText(row.n, 40, y+4);
+      ctx.globalAlpha=.3; pxf(40,y+7,W-80,.5,C.goldDim); ctx.globalAlpha=1;
+      continue;
+    }
+    if(on){ ctx.globalAlpha=.14; px(32,y-8,W-64,18,C.gold); ctx.globalAlpha=1;
+            px(34,y-2,2,4,C.gold); }
+    if(row.k==='opt'){
+      const o=OPT_ROWS.filter(x=>x.id===row.id)[0], v=!!OPT[row.id];
+      ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=on?C.bone:C.chalkDim;
+      ctx.fillText(o.n, 44, y);
+      ctx.fillStyle=v?C.gold:'#4a453d'; ctx.textAlign='right';
+      ctx.fillText(v?'ON':'OFF', W-44, y); ctx.textAlign='left';
+      ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle='#6b6155';
+      ctx.fillText(o.d[v?1:0], 44, y+8);
+    } else if(row.k==='key'){
+      const a=ACTIONS.filter(x=>x.id===row.id)[0];
+      ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=on?C.bone:C.chalkDim;
+      ctx.fillText(a.n, 44, y);
+      ctx.textAlign='right';
+      if(on && OPTS.wait){ ctx.fillStyle=C.gold; ctx.fillText('press a key…', W-44, y); }
+      else { ctx.fillStyle=on?C.gold:'#6b6155'; ctx.fillText(keyName(boundKey(a.code)), W-44, y); }
+      ctx.textAlign='left';
+    } else {
+      ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=on?C.bone:C.chalkDim;
+      ctx.fillText('PUT IT ALL BACK', 44, y);
+    }
+  }
+  // how much list there is, since only ten rows fit
+  const frac=OPTS_WIN/r.length, off=OPTS.top/r.length;
+  px(W-24, 32, 2, 200, '#1a1f22');
+  px(W-24, 32+off*200, 2, Math.max(8,frac*200), C.goldDim);
+  ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim; ctx.textAlign='center';
+  ctx.fillText(OPTS.wait ? 'press the key you want — ESC to leave it alone'
+                         : 'Z change   X back', W/2, H-10);
+  ctx.textAlign='left';
+}
+function openOpts(from){ OPTS.from=from||'pause'; OPTS.sel=1; OPTS.top=0; OPTS.wait=false; G.mode='opts'; }
 function pauseRows(){
-  const r=['resume','weapon','spell','charms','inventory','codex','map','sound','cheat','save','title'];
+  const r=['resume','weapon','spell','charms','inventory','codex','map','opts','sound','cheat','save','title'];
   if(TUT.on) r.splice(1,0,'skiptut');
   return r;
 }
@@ -6750,6 +6957,7 @@ function pauseLabel(k){
   if(k==='inventory') return 'WHAT YOU CARRY';
   if(k==='codex'){ const p=storyProgress(); return 'THE CODEX   ('+(loreOpen().length+beastOpen().length)+' entries, '+p.pct+'% told)'; }
   if(k==='map') return 'MAP';
+  if(k==='opts') return 'HOW YOU PLAY   keys, assists, motion';
   if(k==='sound'){ const st=audioState();
     return 'SOUND  '+(st==='on'?'on':st==='muted'?'muted':st==='blocked'?'blocked \u2014 press a key':'off'); }
   if(k==='cheat') return 'CHEATS  '+(G.cheat?'on \u2014 untouchable, one-hit':'off');
@@ -6777,6 +6985,7 @@ function pauseUpdate(){
     else if(k==='inventory'){ G.mode='inv'; }
     else if(k==='codex'){ openCodex('pause'); }
     else if(k==='map'){ G.mode='map'; }
+    else if(k==='opts'){ openOpts('pause'); }
     else if(k==='sound'){ initAudio(); musicToggle(); }
     else if(k==='cheat'){
       if(G.cheat) relock();
@@ -7082,6 +7291,7 @@ function frameBody(now){
       case 'inv':    G.t++; invUpdate();    break;
       case 'codex':  G.t++; codexUpdate();  break;
       case 'charm':  G.t++; charmUpdate();  break;
+      case 'opts':   G.t++; optsUpdate();   break;
       case 'ending': G.t++; endingUpdate(); break;
       default:
         // presses survive hitstop and slow-mo: a tap during a freeze frame still
@@ -7104,6 +7314,7 @@ function frameBody(now){
     else if(G.mode==='inv') renderInv();
     else if(G.mode==='codex') renderCodex();
     else if(G.mode==='charm') renderCharm();
+    else if(G.mode==='opts') renderOpts();
     else if(G.mode==='ending') renderEnding();
   }
   if(G.crashed) drawCrashNotice();
@@ -7171,7 +7382,11 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   CTX_IS_BASE:()=>ctx===baseCtx,
   MAP_CACHED:()=>!!mapCache, MAP_KEY:()=>mapKey,
   MUS_NAME:()=>{ for(const k in TRACKS) if(TRACKS[k]===MUS.track) return k; return null; },
-  MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
+  ACTIONS, OPT, OPT_ROWS, OPTS_ROWS:optsRows, BINDS_OF:()=>BINDS, boundKey, rebind, resetBinds,
+  keyName, openOpts, optsCapture, OPTS_SEL:()=>OPTS.sel, OPTS_WAIT:()=>OPTS.wait, parryWindow,
+  savePrefs, loadPrefs, PREFKEY,
+  tellCol, txtScale, FIXED,
+  MODES, MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
   CHM_SEL:()=>CHM.sel
 });
 cvs.focus();
