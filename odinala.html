@@ -344,7 +344,7 @@ const ROOMS = [
   "#..............................................#",
   "#.......-----.............-----................#",
   "#...........###................................#",
-  "E....M......###...............####.............E",
+  "E....M......###..d............####.............E",
   "E.........w.###......t......W.####....w.....l..E",
   "################################################",
   "################################################",
@@ -502,7 +502,7 @@ const G = {
   knowsName:false, hasSlam:false, bossDead:false, maxHP:100, taught:{},
   slain:{}, seen:{}, deaths:0, ending:0, playT:0,
   checkpoint:{room:0, tx:9, ty:16},
-  visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0,
+  visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0, met:{},
   spells:{amadioha:1, ala:0, idemili:0, ikenga:0},
   skills:{riposte:0, swift:0, charm:0, flasks:3, heartUps:0},
   equipped:'amadioha', weapons:{mma:1}, weapon:'mma', storyDone:false, tutDone:false, cheat:false, sel:0, sub:0, note:'', noteT:0
@@ -525,7 +525,7 @@ function saveGame(){
   const d={ v:1, knowsName:G.knowsName, hasSlam:G.hasSlam, bossDead:G.bossDead,
     slain:G.slain, seen:G.seen, deaths:G.deaths, ending:G.ending, playT:G.playT,
     maxHP:G.maxHP, cowries:P.cowries, checkpoint:G.checkpoint, visited:G.visited,
-    mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped,
+    mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped, met:G.met,
     storyDone:G.storyDone, tutDone:G.tutDone, cheat:G.cheat, taken:ROOMS.map(r=>!!r.taken), taught:G.taught };
   const where=store(slot(), JSON.stringify(d));
   G.note = where==='disk' ? 'Saved.' : 'Saved for this session only.';
@@ -541,7 +541,7 @@ function loadGame(){
   G.slain=d.slain||{}; G.seen=d.seen||{}; G.deaths=d.deaths||0; G.ending=d.ending||0; G.playT=d.playT||0;
   if(G.bossDead) G.slain.ogbunabali=1;
   G.maxHP=d.maxHP||100; G.checkpoint=d.checkpoint||{room:0,tx:9,ty:16};
-  G.visited=d.visited||{}; G.mirrors=d.mirrors||{}; G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
+  G.visited=d.visited||{}; G.mirrors=d.mirrors||{}; G.met=d.met||{}; G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
   G.spells=Object.assign(G.spells,d.spells||{}); G.skills=Object.assign(G.skills,d.skills||{});
   G.equipped=d.equipped||'amadioha'; G.taught=d.taught||{};
   if(d.taken) d.taken.forEach((t,i)=>{ if(ROOMS[i]) ROOMS[i].taken=t; });
@@ -627,6 +627,7 @@ function spawnRoom(){
     if(ch==='N') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'name'});
     if(ch==='h' && !R.taken) pickups.push({x:x*T+4,y:y*T+4,w:8,h:8,kind:'heart',t:0});
     if(ch==='M') shrines.push({x:x*T,y:y*T+8,w:16,h:24,kind:'mirror',id:G.room});
+    if(NPC_BY_CH[ch]) shrines.push({x:x*T,y:y*T+8,w:16,h:24,kind:'npc',id:NPC_BY_CH[ch]});
     if(ch==='K' && !G.tutDone) enemies.push(mkChalk(x,y));
     if(ch==='B' && !G.slain.ogbunabali) boss = mkBoss(x,y,'ogbunabali');
     if(ch==='X' && !G.slain.ekwensu)     boss = mkBoss(x,y,'ekwensu');
@@ -797,6 +798,7 @@ function roomLights(){
     if(sh.kind==='rest') L.push({x:sh.x+8,y:sh.y+11,r:34,c:'216,164,66',i:.30});
     else if(sh.kind==='mirror') L.push({x:sh.x+8,y:sh.y+11,r:G.mirrors[sh.id]?40:22,
       c:G.mirrors[sh.id]?'111,183,200':'120,120,140',i:G.mirrors[sh.id]?.34:.16});
+    else if(sh.kind==='npc') L.push({x:sh.x+8,y:sh.y+12,r:30,c:'232,226,208',i:.19});
     else L.push({x:sh.x+8,y:sh.y+9,r:26,c:'232,226,208',i:.22});
   }
   if(G.room===4) for(let i=0;i<6;i++) L.push({x:80+i*120, y:96+((i*37)%40), r:44, c:'214,120,52', i:.26});
@@ -1198,7 +1200,10 @@ const VOICE = {
   boss:  {f:74,  type:'sawtooth', vol:.075, jit:9,  dur:.105, growl:1},
   you:   {f:186, type:'sine',     vol:.042, jit:22, dur:.055, growl:0},
   mirror:{f:520, type:'sine',     vol:.038, jit:60, dur:.09,  growl:0},
-  ala:   {f:96,  type:'square',   vol:.05,  jit:10, dur:.09,  growl:0}
+  ala:   {f:96,  type:'square',   vol:.05,  jit:10, dur:.09,  growl:0},
+  // one profile per NPC (07-AUDIO §7.3) — the people are told apart by pitch and
+  // pace before a word of the text has been read
+  dibia: {f:104, type:'triangle', vol:.052, jit:11, dur:.085, growl:0}
 };
 function voiceBlip(kind,seedv){
   if(!AC) return;
@@ -1609,6 +1614,14 @@ function playerUpdate(){
           else openRiddle(sh);
           return;
         } else if(!G.msg) say(G.mirrors[sh.id]?"\u2193 step through":"\u2193 the glass wants a riddle",40);
+      } else if(sh.kind==='npc'){
+        const n=NPCS[sh.id];
+        if(n && tap('KeyE')){
+          G.met[sh.id]=(G.met[sh.id]||0)+1;
+          playCut(n.beats());
+          saveGame();
+          return;
+        } else if(!G.msg) say(n?n.prompt:'E  speak',40);
       } else if(sh.kind==='name' && !G.knowsName){
         if(tap('ArrowDown')||tap('KeyS')){
           G.knowsName=true; G.flash=10; shake(3); S.name();
@@ -2850,7 +2863,7 @@ function drawTiles(){
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
     const ch=tileAt(R,x,y);
-    if('.wltWKBSNMhrvXOakiF'.indexOf(ch)>=0) continue;
+    if('.wltWKBSNMhrvXOakiFd'.indexOf(ch)>=0) continue;
     const sx=x*T-cam.x, sy=y*T-cam.y;
 
     if(ch==='E'){
@@ -3367,12 +3380,63 @@ function drawShrines(){
         ctx.globalAlpha=.45+Math.sin(G.t/9)*.2; glyph(x+8,y+11,4,C.chalkDim,-G.t/60); ctx.globalAlpha=1;
       }
       px(x+1,y-2,14,2,C.goldDim);
+    } else if(s.kind==='npc'){
+      drawNPC(s,x,y);
     } else {
       px(x+2,y,12,22,'#161a1c'); px(x+2,y,12,1,'#20262a');
       ctx.globalAlpha = G.knowsName?.9:.45+Math.sin(G.t/18)*.25;
       glyph(x+8,y+8,4,C.chalk,0); glyph(x+8,y+15,3,C.chalk,0.6);
       ctx.globalAlpha=1;
     }
+  }
+}
+
+// One dominant shape each (06-ART §6.5), three values, top-light. These are the
+// only figures in the game that are not trying to kill you, so they sit still
+// and they are the wrong shape for a fight: no mask, no raffia, no weapon.
+function drawNPC(s,x,y){
+  const t=G.t, spoken=!!(G.met&&G.met[s.id]);
+  if(s.id==='dibia'){
+    // A seated old man behind his mat. The dominant shape is a triangle — widest
+    // where the wrapper spreads on the ground, narrowest at the shoulders. Every
+    // other figure in the game is vertical, so sitting is the whole read.
+    const br=Math.sin(t/54)*0.5;                                   // he breathes; nothing else moves
+    ctx.globalAlpha=.10+Math.sin(t/40)*.03; ctx.fillStyle=C.chalk;
+    ctx.beginPath(); ctx.arc(x+8,y+14,18,0,7); ctx.fill(); ctx.globalAlpha=1;
+
+    // The wrapper, three courses widening to the floor. Lit noticeably along each
+    // top edge — at this size a dark mass with a faint edge reads as a rock.
+    px(x+1,  y+15.5,14,5.5,'#2a2119'); pxf(x+1,  y+15.5,14,1,'#4e3d2b');
+    px(x+2.5,y+11.5,11,4.5,'#332720'); pxf(x+2.5,y+11.5,11,1,'#5b4732');
+    px(x+4,  y+8+br,8,4,'#3b2d22');    pxf(x+4,  y+8+br,8,1,'#675038');
+
+    // arms out of the shoulders and forward onto the knees
+    pxf(x+0.5,y+12,2.5,5,'#2a2119'); pxf(x+0.5,y+12,2.5,1,'#4e3d2b');
+    pxf(x+13, y+12,2.5,5,'#2a2119'); pxf(x+13, y+12,2.5,1,'#4e3d2b');
+
+    px(x+5,y+2.5+br,6,6,'#4a3928');                                // head
+    pxf(x+5,y+2.5+br,6,1,'#7a5f42');
+    pxf(x+10.5,y+2.5+br,.5,6,'#221a11');                           // shaded side
+    pxf(x+4.5,y+1.5+br,7,1.4,'#cfc6ad');                           // white hair
+    pxf(x+6,y+5.5+br,1,1,'#0c0908'); pxf(x+9,y+5.5+br,1,1,'#0c0908');
+    pxf(x+5.5,y+8+br,5,1.2,'#b9b0a0');                             // beard, separates head from body
+
+    // The mat goes on last, in front of him, or the wrapper paints over it. The
+    // cowries are the brightest thing here on purpose: they are what says trader.
+    px(x-3,y+21,22,3,'#141712');
+    pxf(x-3,y+21,22,1,'#333b28');
+    pxf(x+2,y+21.6,4,.6,C.chalk); pxf(x+11,y+21.6,4,.6,C.chalk);   // nzu, a greeting
+    for(let i=0;i<6;i++){
+      const cx=x-1.5+i*3.6;
+      pxf(cx,y+22.4,2.4,1.6,'#e6dcc2'); pxf(cx+.5,y+23.4,1.4,.6,'#8e8474');
+    }
+  }
+  if(!spoken){
+    // a small chalk mote over anyone you have not spoken to, so the market does
+    // not hide them among the stalls
+    const b=y-4+Math.sin(t/18)*1.4;
+    ctx.globalAlpha=.5+Math.sin(t/12)*.22;
+    pxf(x+7.5,b,1,1,C.chalk); ctx.globalAlpha=1;
   }
 }
 
@@ -4292,6 +4356,37 @@ const ON_OUT=[
  {art:'dawn',  voice:'you',  text:"You are ten now. Only ten. And there will not be an eleventh."}
 ];
 
+// ── the people who are still here ────────────────────────────────────────────
+// NPCs are shrine-like objects, not entities: they do not move, take damage or
+// path. E to talk, and the conversation is a cutscene, so there is no new UI.
+// One conversation per world state — no trees, no choices, no barks.
+// 05-PROGRESSION §5.5.
+//
+// beats() is read fresh every time, so a conversation changes when the world
+// does. The dibia does not recognise you, and never will: the last time he saw
+// you, you were three days old and dying.
+const NPCS = {
+  dibia: { ch:'d', room:4, voice:'dibia', prompt:'E  speak',
+    beats(){
+      if(G.slain.ogbunabali) return [
+       {art:'dark',  voice:'dibia', text:"\"Something went quiet in the night. I felt the market lean.\""},
+       {art:'dark',  voice:'dibia', text:"\"Ogbunabali. There. I said it and nothing came for me.\""},
+       {art:'idols', voice:'you',   text:"His hand goes to the cowries and stops halfway. He leaves them where they are."},
+       {art:'idols', voice:'dibia', text:"\"That was one of the coming-and-going. I would have liked to meet them.\""}
+      ];
+      return [
+       {art:'idols', voice:'dibia', text:"\"Sit if you want. I have nothing to sell and nowhere to be.\""},
+       {art:'idols', voice:'dibia', text:"\"You want to hear about the iyi-uwa. They always do.\""},
+       {art:'charm', voice:'dibia', text:"\"A stone, buried. The knot that ties a child to the coming and the going.\""},
+       {art:'charm', voice:'dibia', text:"\"Cut the knot and the child stays. That is the whole of it.\""},
+       {art:'charm', voice:'dibia', text:"\"I cut one myself, once. Nine burials before it. The mother did the asking.\""},
+       {art:'idols', voice:'you',   text:"He does not look up. He has told this to a hundred people who were not you."}
+      ];
+    } }
+};
+const NPC_BY_CH={};
+for(const k in NPCS) NPC_BY_CH[NPCS[k].ch]=k;
+
 function cutArt(name,cx,cy){
   if(name==='bones'){
     ctx.globalAlpha=1;
@@ -4812,6 +4907,10 @@ const LORE=[
  {id:'ofo', t:'\u1eccF\u1eccC', when:()=>true, b:[
   "A staff cut from the \u1ecdf\u1ecd tree and held by whoever has the right to speak. To hold it is to be believed; to lie while holding it is to be struck.",
   "What you carry is not the staff. It is the authority. That is why it empties when you use it and fills when you are proved right in a fight."]},
+ {id:'dibia', t:'DIBIA', when:()=>!!(G.met&&G.met.dibia), b:[
+  "A diviner, a healer, and the person a family calls when the same child keeps arriving and leaving. Not a priest. Closer to a doctor who is also expected to argue with the spirit world on your behalf.",
+  "Finding an iyi-uwa is his work. He asks the child where it is, and the child, being small and not yet careful, tells him.",
+  "The one in the night market did that for a family with nine graves behind the compound. He has told the story so many times that it has stopped being about anybody."]},
  {id:'alusi', t:'ALUSI', when:()=>true, b:[
   "The deities, each with ground of their own. Ala holds the earth and the law that comes with it. Amadioha is lightning and the judgement inside it. Idemili is the water that stands up. Ikenga is the right hand and everything it has earned.",
   "They are carved, fed, consulted and \u2014 if they fail \u2014 put outside in the rain. A relationship, not a worship."]},
@@ -5314,7 +5413,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   startSpeedrun, unlockAll, relock, titleOpts, PAUSE_SEL:()=>PAUSE.sel,
   PAUSE_LABEL:()=>pauseLabel(pauseRows()[PAUSE.sel]), LORE_OPEN:loreOpen, BEAST_OPEN:beastOpen,
   CDX:()=>CDX, storyProgress, LORE, BEASTS, openCodex, BG_ROOM:()=>bgRoom,
-  WEAPONS, CHAIN, WA, cycleWeapon
+  WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE
 });
 cvs.focus();
 requestAnimationFrame(frame);

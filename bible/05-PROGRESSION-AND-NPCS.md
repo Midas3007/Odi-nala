@@ -105,8 +105,8 @@ text. A thing that stands up and shows you.
 
 ## 5.5 NPCs — the gap and the plan
 
-**There are currently zero NPCs.** Every entity in the game is hostile or scenery. This
-is the largest single content gap.
+**The first NPC is built.** The dibia sits in the night market. The other three are
+still [NOT BUILT]. Every other entity in the game is hostile or scenery.
 
 ### Why it matters
 Blasphemous and Hollow Knight both use NPCs as *tonal punctuation* — the player spends
@@ -115,7 +115,7 @@ such punctuation, and the game is more monotone than it should be.
 
 ### The four — **[NOT BUILT, PROPOSED]**
 
-**1. The dibia who buried your charm** — Ahịa Mmụọ, the night market.
+**1. The dibia who buried your charm** — Ahịa Mmụọ, the night market. **[BUILT]**
 Dead now, still working. Sits behind a mat of chalk and cowries. **He does not recognise
 you**, because the last time he saw you, you were three days old and dying.
 
@@ -126,6 +126,11 @@ flinches.
 
 *Function:* lore delivery, codex unlocks. **[PROPOSED]** he could also be the only NPC
 who sells, moving the ledger out of the abstract.
+
+*As built:* spawn char `d`, room 4 at (17,14), voice profile `dibia`. Two conversations,
+switched on `G.slain.ogbunabali` — before, he explains the iyi-uwa; after, he says the
+name aloud and stops with his hand halfway to the cowries. Talking unlocks the `DIBIA`
+codex entry. He never recognises you, and there is no state in which he does.
 
 **2. The market woman selling nothing** — Ahịa Mmụọ.
 One line per visit, cycling. Over the course of the game she describes a woman who used

@@ -13,6 +13,7 @@ Exits non-zero if anything is wrong, so it can go in a pre-commit hook.
 import io, re, sys
 
 SOLID = set('#c')
+NPC_CHARS = ''
 PLATFORM = set('-')
 
 def load(path):
@@ -35,6 +36,11 @@ def at(rows, x, y):
 def main(path):
     s, rooms = load(path)
     problems = []
+
+    # NPC spawn chars come from the game itself, so adding an NPC cannot quietly
+    # opt it out of the embedded-in-solid check below
+    global NPC_CHARS
+    NPC_CHARS = ''.join(re.findall(r"ch:'(.)'", s))
 
     # ---- 1. every index-keyed table must be as long as ROOMS -----------------
     n = len(rooms)
@@ -95,7 +101,7 @@ def main(path):
     for i, r in enumerate(rooms):
         for y, row in enumerate(r['rows']):
             for x, ch in enumerate(row):
-                if ch in 'wltWvakirKBXOhF':
+                if ch in 'wltWvakirKBXOhF' + NPC_CHARS:
                     if at(r['rows'], x, y) in SOLID or at(r['rows'], x, y - 1) in SOLID:
                         problems.append(
                             f"room {i}: spawn '{ch}' at ({x},{y}) is embedded in solid")

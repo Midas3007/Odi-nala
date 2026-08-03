@@ -143,6 +143,17 @@ a `BESTIARY` entry → **a `tell` of `'white'` or `'gold'`**.
 A `case` in the `frame()` switch, a branch in the render dispatch, and an entry in
 `MENU_MODES`.
 
+### Adding an NPC
+NPCs are shrine-like, so they cost far less than an enemy: an entry in `NPCS` (spawn
+char, room, voice, prompt, and a `beats()` that reads current world state) → a branch in
+`drawNPC` → a profile in `VOICE` → the char in the tile-skip string in `drawTiles` → the
+char in the room map. `spawnRoom` and the interaction handler are generic and need no
+edit. `tools/audit.py` reads the spawn chars straight out of `NPCS`, so a new NPC is
+covered by the embedded-in-solid check automatically.
+
+`beats()` is called fresh on every conversation, so dialogue tracks world state without
+any extra machinery. `G.met` counts conversations and is saved.
+
 ## 9.5 Performance
 
 ### The budget
@@ -176,7 +187,7 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **623 assertions, headless Node, no dependencies**, about 20 seconds. Its
+`test.js` — **687 assertions, headless Node, no dependencies**, about 20 seconds. Its
 first section shells out to `tools/audit.py`, so a red audit is a red test run.
 
 ### How it works

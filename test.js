@@ -368,9 +368,12 @@ ROOMS.forEach((r, i) => {
   check('room ' + i + ' rows are all the declared width', r.map.every(row => row.length === r.w),
     'w=' + r.w + ' widths=' + Array.from(new Set(r.map.map(s => s.length))).join(','));
   check('room ' + i + ' height matches its map', r.h === r.map.length);
+  // derived from the game's own NPC table, so adding an NPC does not need this
+  // list edited — and cannot silently introduce a character nothing spawns
+  const known = '-#.cESNMhwltWrvakiFB^XO K' + Object.keys(api.NPCS).map(k => api.NPCS[k].ch).join('');
   check('room ' + i + ' uses only tile characters the spawner understands',
-    r.map.every(row => /^[-#.cESNMhwltWrvakiFB^XO K]*$/.test(row)),
-    'unknown: ' + Array.from(new Set(r.map.join('').split('').filter(c => !/[-#.cESNMhwltWrvakiFB^XO K]/.test(c)))).join(''));
+    r.map.every(row => row.split('').every(c => known.indexOf(c) >= 0)),
+    'unknown: ' + Array.from(new Set(r.map.join('').split('').filter(c => known.indexOf(c) < 0))).join(''));
   check('room ' + i + ' has at least one exit', Array.isArray(r.exits) && r.exits.length > 0);
   check('room ' + i + ' has no more than four exits', r.exits.length <= 4, 'exits=' + r.exits.length);
 });
@@ -1381,6 +1384,101 @@ section('every menu mode opens and closes');
   check('a purchase is written to the save immediately', api.hasSave() === true);
   press('KeyX', 1, 2);
   check('the ledger closes back to play', G().mode === 'play', 'mode=' + G().mode);
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('the people who are still here');
+(() => {
+  const NPCS = api.NPCS;
+  const ids = Object.keys(NPCS);
+  check('NPCs are authored', ids.length > 0, 'npcs=' + ids.join(','));
+
+  // Every rule in 05-PROGRESSION §5.5 that can be checked statically.
+  const chars = {};
+  for (const id of ids) {
+    const n = NPCS[id];
+    check(id + ' has a spawn char, a room and a prompt',
+      !!n.ch && typeof n.room === 'number' && !!n.prompt, JSON.stringify({ ch: n.ch, room: n.room }));
+    check(id + '’s spawn char is unique', !chars[n.ch], 'char ' + n.ch + ' also used by ' + chars[n.ch]);
+    chars[n.ch] = id;
+    check(id + ' lives in a room that exists', n.room >= 0 && n.room < ROOMS.length, 'room=' + n.room);
+    check(id + '’s char is actually placed in that room',
+      ROOMS[n.room].map.some(row => row.indexOf(n.ch) >= 0), 'no ' + n.ch + ' in room ' + n.room);
+    check(id + ' has a voice profile of its own (07-AUDIO §7.3)',
+      !!api.VOICE[n.voice] && n.voice !== 'narr', 'voice=' + n.voice);
+    check(id + ' has no enemy spawn char within two tiles',
+      (() => {
+        const r = ROOMS[n.room];
+        for (let y = 0; y < r.h; y++) {
+          const x = r.map[y].indexOf(n.ch);
+          if (x < 0) continue;
+          for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+            const c = api.tileAt(r, x + dx, y + dy);
+            if ('wltWrvaki'.indexOf(c) >= 0) return false;
+          }
+        }
+        return true;
+      })(), 'an enemy is crowding ' + id);
+
+    // Dialogue, against the style guide in 02-STORY §2.9.
+    for (const state of [{}, { ogbanje: 0, all: 1 }]) {
+      revive();
+      G().slain = state.all ? { ogbunabali: 1, ekwensu: 1, onwe: 1 } : {};
+      const beats = NPCS[id].beats();
+      check(id + ' has something to say in ' + (state.all ? 'the late' : 'the early') + ' game',
+        Array.isArray(beats) && beats.length > 0, 'beats=' + (beats || []).length);
+      for (const b of beats) {
+        check(id + ' beat is at most 110 characters (§2.9)', b.text.length <= 110,
+          b.text.length + ' chars: ' + b.text.slice(0, 60) + '…');
+        check(id + ' beat uses no exclamation mark (§2.9)', b.text.indexOf('!') < 0, b.text);
+        check(id + ' beat has a known voice', !!api.VOICE[b.voice], 'voice=' + b.voice);
+        check(id + ' beat has art that cutArt can draw',
+          ['bones', 'horn', 'idols', 'twin', 'ash', 'dawn', 'moon', 'burial', 'child', 'charm', 'tree', 'dark', 'dig'].indexOf(b.art) >= 0,
+          'art=' + b.art);
+      }
+    }
+  }
+})();
+(() => {
+  // Played, not inspected: walk to the dibia and talk to him.
+  revive();
+  G().cheat = false; G().met = {}; G().slain = {};
+  const n = api.NPCS.dibia;
+  at(n.room, 2, 16);
+  const sh = api.shrines.find(s => s.kind === 'npc' && s.id === 'dibia');
+  check('the dibia is spawned as a shrine, not an entity', !!sh, 'shrines=' + api.shrines.map(s => s.kind).join(','));
+  check('the dibia is not in the enemy list', !api.enemies.some(e => e.kind === 'npc'));
+  if (sh) {
+    P().x = sh.x; P().y = sh.y; P().inv = 600;
+    tick(2);
+    check('standing at an NPC prompts you to speak', /speak/i.test(G().msg || ''), 'msg=' + G().msg);
+    press('KeyE', 1, 2);
+    check('E opens a conversation', G().mode === 'cut', 'mode=' + G().mode);
+    check('talking is recorded', G().met.dibia === 1, 'met=' + JSON.stringify(G().met));
+    check('the conversation is skippable like any cutscene', skipCuts(), 'mode=' + G().mode);
+    tick(4);
+    check('the conversation hands control back', G().mode === 'play', 'mode=' + G().mode);
+    check('the player is unharmed by talking', P().hp === G().maxHP && !P().dead, 'hp=' + P().hp);
+    check('talking to the dibia opens his codex entry',
+      api.LORE_OPEN().some(e => e.id === 'dibia'), 'lore=' + api.LORE_OPEN().map(e => e.id).join(','));
+    check('his entry was shut before you met him', (() => {
+      const keep = G().met; G().met = {};
+      const shut = !api.LORE_OPEN().some(e => e.id === 'dibia');
+      G().met = keep; return shut;
+    })());
+    check('talking saves, so he remembers across a reload', api.hasSave() === true);
+  }
+})();
+(() => {
+  // The world state changes what he says, which is the whole design (§5.5).
+  revive(); G().slain = {};
+  const early = api.NPCS.dibia.beats().map(b => b.text).join(' ');
+  revive(); G().slain = { ogbunabali: 1 };
+  const late = api.NPCS.dibia.beats().map(b => b.text).join(' ');
+  check('the dibia says something different once Ogbunabali is down', early !== late);
+  check('before the killing he does not know the name', early.indexOf('Ogbunabali') < 0);
+  check('after it he says the name aloud (§5.5)', late.indexOf('Ogbunabali') >= 0);
+  check('he never recognises you', !/you were|my child|is it you/i.test(early + late));
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
