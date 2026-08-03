@@ -953,6 +953,139 @@ section('Ogbunabali — the lie is the mechanic');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('Ikuku — the fight in the vertical');
+(() => {
+  function scene() {
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1, exec: 1, bound: 1 };
+    G().slain = { ogbunabali: 1, ekwensu: 1, uzu: 1 };
+    at(9, 6, 16);
+    skipCuts(); G().mode = 'play';
+    return api.boss;
+  }
+  // Keep the player near the boss but well clear of both doorways. Ikuku sweeps
+  // to the walls, and a test that parks the player beside it there walks them
+  // straight through an exit — after which `boss` is a different room's boss and
+  // every assertion is measuring a stale object.
+  const SAFE = (bx) => Math.max(80, Math.min(ROOMS[9].w * 16 - 100, bx - 40));
+  const b0 = scene();
+  check('the open sky holds a boss', !!b0 && b0.who === 'ikuku', 'boss=' + (b0 && b0.who));
+  if (!b0) return;
+  check('Ikuku has its own stat line', !!api.BOSS_STATS.ikuku, JSON.stringify(api.BOSS_STATS.ikuku));
+
+  // the idea — it does not stand on anything
+  (() => {
+    const b = scene();
+    P().inv = 9999; P().x = 200;
+    let everGrounded = false, lowest = -1e9;
+    for (let i = 0; i < 600; i++) {
+      P().hp = G().maxHP; P().inv = 9999; P().x = 200; G().hitstop = 0; G().slow = 0; tick(1);
+      if (b.onGround) everGrounded = true;
+      lowest = Math.max(lowest, b.y);
+    }
+    check('REGRESSION Ikuku never lands — the whole fight is that it has no ground',
+      !everGrounded, 'it came to rest on the floor');
+    check('it stays inside the room', b.y > 0 && b.y + b.h < ROOMS[9].h * 16,
+      'y=' + b.y.toFixed(1));
+    check('it does obey gravity for nobody', finite(b.y) && finite(b.x));
+  })();
+
+  // both tells, and the vertical demand each one makes
+  (() => {
+    const b = scene();
+    const seen = {};
+    P().inv = 9999;
+    for (let i = 0; i < 1400; i++) {
+      P().x = SAFE(b.x); P().hp = G().maxHP; P().inv = 9999;
+      G().hitstop = 0; G().slow = 0; tick(1);
+      if (b.tell) seen[b.tell] = (seen[b.tell] || 0) + 1;
+    }
+    check('it telegraphs white — the floor sweep can be turned', !!seen.white, JSON.stringify(seen));
+    check('it telegraphs gold — the stoop cannot', !!seen.gold, JSON.stringify(seen));
+  })();
+
+  // the stoop commits to a marked spot, so leaving is the counterplay
+  (() => {
+    const b = scene();
+    let marked = null;
+    for (let i = 0; i < 1200 && !marked; i++) {
+      P().x = SAFE(b.x); P().hp = G().maxHP; P().inv = 9999; G().hitstop = 0; tick(1);
+      if (b.st === 'stoopWind' && b.markX != null) marked = { x: b.markX, y: b.markY };
+    }
+    check('the stoop marks where you are standing before it commits', !!marked, 'never stooped');
+    if (marked) {
+      const mx = marked.x;
+      for (let i = 0; i < 40 && b.st === 'stoopWind'; i++) { G().hitstop = 0; P().inv = 9999; P().x = SAFE(b.x + 300); tick(1); }
+      check('and it goes to the mark, not to wherever you moved to',
+        b.markX === mx, 'mark moved from ' + mx.toFixed(1) + ' to ' + (b.markX || 0).toFixed(1));
+    }
+  })();
+
+  // phase change adds
+  (() => {
+    const b = scene();
+    check('it starts in phase one', b.phase === 1);
+    b.hp = b.maxhp * 0.45;
+    P().inv = 9999; P().x = SAFE(b.x);
+    for (let i = 0; i < 12; i++) { P().inv = 9999; G().hitstop = 0; tick(1); }
+    check('dropping it past half turns the phase', b.phase === 2, 'phase=' + b.phase);
+    check('the phase change announces itself', /take the air/i.test(G().msg || ''), 'msg=' + G().msg);
+  })();
+
+  // cutscenes both ends
+  (() => {
+    revive(); api.unlockAll(); G().cheat = false;
+    G().slain = {}; G().taught = {};
+    api.resetPlayerAt(9, 6, 16);
+    check('arriving in the open sky plays its cutscene in', G().mode === 'cut', 'mode=' + G().mode);
+    check('and it can be skipped', skipCuts(), 'mode=' + G().mode);
+    G().mode = 'play';
+  })();
+
+  // killable, recorded, gated
+  (() => {
+    revive(); api.unlockAll(); G().slain = {};
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1 };
+    at(9, 6, 16);
+    const b = api.boss;
+    if (!b) { check('Ikuku can be killed', false, 'no boss'); return; }
+    let killed = false;
+    for (let i = 0; i < 120 && !killed; i++) {
+      P().x = b.x - 14; P().y = b.y; P().face = 1;
+      G().hitstop = 0; G().slow = 0;
+      press('KeyZ', 1, 3); tick(14);
+      killed = !!b.dead;
+    }
+    check('Ikuku can be killed', killed, 'hp=' + b.hp);
+    check('killing it is recorded', !!G().slain.ikuku, JSON.stringify(G().slain));
+    check('it has a bestiary entry', api.BEASTS.some(x => x.k === 'boss_ikuku'));
+  })();
+
+  (() => {
+    const gate = ROOMS[9].exits.find(e => e.needs === 'ikuku');
+    check('the last door is gated behind it', !!gate);
+    if (!gate) return;
+    function walkEast() {
+      revive(); api.unlockAll(); G().cheat = false;
+      G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1 };
+      at(9, 38, 16);
+      for (let i = 0; i < 400 && G().room === 9; i++) { P().inv = 9999; api.down('ArrowRight'); tick(1); }
+      api.up('ArrowRight');
+      return G().room;
+    }
+    G().slain = { uzu: 1 };
+    check('with Ikuku still holding the sky the last door is shut', walkEast() === 9, 'room=' + G().room);
+    G().slain = { uzu: 1, ikuku: 1 };
+    check('with it down the way to Onwe opens', walkEast() === gate.to, 'room=' + G().room);
+  })();
+
+  check('Ikuku is the answer to a riddle the game already asks',
+    RIDDLES.some(r => r.a.some(a => /Ikuku/i.test(a))),
+    'no riddle mentions it');
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('Ụzụ Ọkụ — the guard that reforges');
 (() => {
   function scene() {

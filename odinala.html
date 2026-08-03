@@ -462,7 +462,7 @@ const ROOMS = [
   "#..............................................#",
   "#..............................................#",
   "#..............................................#",
-  "#..............................................#",
+  "#....................I.........................#",
   "#...........a..................................#",
   "#...................a....-----.................#",
   "#...............-----..........................#",
@@ -477,7 +477,8 @@ const ROOMS = [
   "####################........####################",
   "####################^^^^^^^^####################"],
   exits:[{tx:0,ty:14,tw:1,th:2,to:8,sx:53,sy:16},
-         {tx:47,ty:14,tw:1,th:2,to:7,sx:2,sy:16}] }
+         {tx:47,ty:14,tw:1,th:2,to:7,sx:2,sy:16,needs:'ikuku',
+          locked:"The air will not let you past while it is still holding this sky."}] }
 ];
 
 // normalise + index
@@ -606,6 +607,7 @@ function resetPlayerAt(room,tx,ty){
   if(G.room===6 && boss && !boss.dead && !G.taught.ekIn){ G.taught.ekIn=1; playCut(EK_IN); }
   if(G.room===7 && boss && !boss.dead && !G.taught.onIn){ G.taught.onIn=1; playCut(ON_IN); }
   if(G.room===8 && boss && !boss.dead && !G.taught.uzIn){ G.taught.uzIn=1; playCut(UZ_IN); }
+  if(G.room===9 && boss && !boss.dead && !G.taught.ikIn){ G.taught.ikIn=1; playCut(IK_IN); }
 }
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const rects=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
@@ -641,6 +643,7 @@ function spawnRoom(){
     if(ch==='X' && !G.slain.ekwensu)     boss = mkBoss(x,y,'ekwensu');
     if(ch==='O' && !G.slain.onwe)        boss = mkBoss(x,y,'onwe');
     if(ch==='U' && !G.slain.uzu)         boss = mkBoss(x,y,'uzu');
+    if(ch==='I' && !G.slain.ikuku)       boss = mkBoss(x,y,'ikuku');
   }
   seedAmbient();
   G.visited[G.room]=1;
@@ -707,7 +710,8 @@ const BOSS_STATS = {
   ogbunabali:[26,40,520,190],
   ekwensu:   [34,44,880,240],
   onwe:      [20,34,760,210],
-  uzu:       [30,42,700,150]
+  uzu:       [30,42,700,150],
+  ikuku:     [34,26,640,200]
 };
 function mkBoss(x,y,who){
   who=who||'ogbunabali';
@@ -1806,6 +1810,9 @@ function damage(e,amt,dir,kb,muffled,poiseDmg){
       } else if(e.who==='uzu'){
         G.outroT=110; G.outroWho='uzu';
         say("The fire goes out of it and it is only a shape of iron, cooling.",300);
+      } else if(e.who==='ikuku'){
+        G.outroT=110; G.outroWho='ikuku';
+        say("The wind goes out of the room. The sky above you does not change, which is worse.",320);
       }
       saveGame();
     }
@@ -2399,6 +2406,7 @@ function bossUpdate(b){
   if(b.lineT>0) b.lineT--;
   if(b.who==='ekwensu'){ ekwensuUpdate(b); return; }
   if(b.who==='uzu'){ uzuUpdate(b); return; }
+  if(b.who==='ikuku'){ ikukuUpdate(b); return; }
   if(b.who==='onwe'){ onweUpdate(b); return; }
 
   if(b.bound>0){
@@ -2501,6 +2509,86 @@ const EK_LINES=[
   "\"Nine of you have stood there. I kept all nine.\"",
   "\"You are not angry. You are only early.\""
 ];
+const IK_LINES=[
+  "\"You have been walking under a sky I am carrying.\"",
+  "\"Put your feet on something. I will take the rest.\"",
+  "\"Nothing down there is holding you up. It never was.\"",
+  "\"I have no mouth and I am still talking. Think about that.\""
+];
+// The only fight in the game that happens in the vertical. It never lands: it
+// sweeps the floor white so you have to get onto something, then stoops gold at
+// wherever you are standing so you have to leave it again. The room's platforms
+// are the fight; the floor is a place you visit.
+function ikukuUpdate(b){
+  if(b.hp < b.maxhp*0.5 && b.phase===1){
+    b.phase=2; b.stagger=28; shake(9); G.flash=12; S.brk();
+    say("\"Then I will take the air as well.\"",150);
+    burst(b.x+b.w/2,b.y+b.h/2,50,C.glass,3.4,54);
+  }
+  if(b.broken>0){ b.broken--; if(b.broken===0){ b.poise=b.poiseMax; b.stagger=Math.max(b.stagger,16); b.st='idle'; b.t=0; } }
+  if(b.stagger>0 || b.broken>0){
+    b.stagger=Math.max(0,b.stagger-1);
+    b.vx*=0.9; b.vy*=0.9; b.tell=''; moveEnt(b); return;     // it does not fall, even staggered
+  }
+  const dx=(P.x+P.w/2)-(b.x+b.w/2), adx=Math.abs(dx);
+  b.t++;
+  const F=n=>Math.round(n*(b.phase===2?0.76:1));
+  if(b.ceil==null) b.ceil=b.y;                                // the height it lives at
+  if(b.st==='idle'){
+    b.face = dx>0?1:-1;
+    // it drifts back up to its own line and follows you along it
+    b.vy += ((b.ceil-b.y)*0.03 - b.vy)*0.25;
+    b.vx += ((dx>0?1:-1)*0.9 - b.vx)*0.08;
+    if(b.cd>0) b.cd--;
+    else {
+      const r=rnd();
+      b.st = r<0.42 ? 'sweepWind' : (r<0.80 ? 'stoopWind' : 'liftWind');
+      if(b.st==='liftWind' && b.phase===1) b.st='sweepWind';   // phase two only
+      b.t=0;
+      if(b.lineT<=0 && rnd()<0.42){ b.line=IK_LINES[(b.said++)%IK_LINES.length]; b.lineT=170; }
+    }
+  }
+  // white — it drops to the floor line and sweeps it. Get off the ground.
+  else if(b.st==='sweepWind'){
+    b.tell='white'; b.vx*=0.8;
+    // just above the floor surface, not into it — the sweep is meant to skim the
+    // ground, and a boss that lands has stopped being the fight it was built to be
+    const floorY = R.h*T - 4*T - b.h - 2;
+    b.vy += ((floorY-b.y)*0.05 - b.vy)*0.2;
+    if(b.t>=F(34)){ b.st='sweep'; b.t=0; b.tell=''; b.vx=b.face*3.6; }
+  }
+  else if(b.st==='sweep'){
+    b.vy*=0.9;
+    const box={x:b.x-6,y:b.y,w:b.w+12,h:b.h+10};
+    if(rects(box,P)){ if(!tryParry(b,b.x)) hurtPlayer(19,b.face); }
+    if(b.t%3===0) parts.push({x:b.x+b.w/2,y:b.y+b.h,vx:-b.face*2,vy:(rnd()-.5),life:16,max:20,col:C.chalkDim,g:0,sz:1});
+    if(b.t>=F(30)){ b.st='rec'; b.t=0; }
+  }
+  // gold — it stoops at wherever you are standing. Leave.
+  else if(b.st==='stoopWind'){
+    b.tell='gold'; b.vx*=0.7; b.vy*=0.7;
+    if(b.t===1){ b.markX=P.x; b.markY=P.y; }
+    if(b.t>=F(32)){ b.st='stoop'; b.t=0; b.tell='';
+      const ddx=(b.markX-b.x), ddy=(b.markY-b.y), m=Math.max(1,Math.hypot(ddx,ddy));
+      b.vx=ddx/m*5.4; b.vy=ddy/m*5.4; }
+  }
+  else if(b.st==='stoop'){
+    if(rects(b,P)) hurtPlayer(24,b.face,true);
+    if(b.t>=F(26)){ b.st='rec'; b.t=0; shake(6); }
+  }
+  // phase two — it pulls the air upward under you, then lets go
+  else if(b.st==='liftWind'){ b.tell='white'; b.vx*=0.8; if(b.t>=F(30)){ b.st='lift'; b.t=0; b.tell=''; } }
+  else if(b.st==='lift'){
+    if(b.t<=40 && P.onGround===false) P.vy -= 0.22;
+    if(b.t<=40 && Math.abs(dx)<120) P.vy -= 0.10;
+    if(b.t%6===0) burst(P.x+5,P.y+P.h,2,C.glass,1.0,20);
+    if(b.t>=F(46)){ b.st='rec'; b.t=0; }
+  }
+  else if(b.st==='rec'){ b.tell=''; b.vx*=0.86; b.vy*=0.86; if(b.t>=F(36)){ b.st='idle'; b.t=0; b.cd=F(28); } }
+  moveEnt(b);
+  b.onGround=false;   // it flies; nothing about it ever rests on anything
+}
+
 const UZU_LINES=[
   "\"Everything that comes in here leaves it finished.\"",
   "\"You want to be permanent. I do that. Hold still.\"",
@@ -2780,6 +2868,7 @@ function update(){
     const who=G.outroWho||'ogbunabali';
     if(who==='ekwensu') playCut(EK_OUT);
     else if(who==='uzu') playCut(UZ_OUT);
+    else if(who==='ikuku') playCut(IK_OUT);
     else if(who==='onwe') playCut(ON_OUT, ()=>{ G.mode='ending'; ENDW.t=0; });
     else playCut(BOSS_OUT);
     return; } }
@@ -4592,7 +4681,53 @@ function drawUzu(b){
     vx:(rnd()-.5)*.6, vy:-.7-rnd()*.6, life:24, max:30, col:'#ffcf7a', g:-0.012, sz:1});
 }
 
+// It has no body to speak of: a long horizontal smear of moving air with a mask
+// carried in the middle of it. Everything about the silhouette says "this is not
+// standing on anything", which is the fight.
+function drawIkuku(b){
+  if(b.dead) return;
+  const x=Math.round(b.x-cam.x), y=Math.round(b.y-cam.y), f=b.face;
+  const gust = b.st==='sweep'||b.st==='stoop';
+  ctx.globalAlpha=.10+Math.sin(G.t/15)*.04; ctx.fillStyle=C.glass;
+  ctx.beginPath(); ctx.ellipse(x+b.w/2,y+b.h/2,42,18,0,0,7); ctx.fill(); ctx.globalAlpha=1;
+  // streamers: the body is the movement
+  for(let i=0;i<7;i++){
+    const t=G.t/6+i*1.1, len=16+((i*13)%18)+(gust?14:0);
+    const yy=y+b.h/2+Math.sin(t)*(7+i);
+    ctx.globalAlpha=.30-i*0.026+(gust?0.16:0);
+    pxf(x+b.w/2-f*len*0.5-len*0.5, yy, len, 1.2, i%2?C.glass:C.chalkDim);
+    ctx.globalAlpha=1;
+  }
+  ctx.globalAlpha=.55;
+  px(x+6,y+6,b.w-12,b.h-12,'#243a44');
+  pxf(x+6,y+6,b.w-12,1,'#4d7d8c');
+  ctx.globalAlpha=1;
+  maskFace(x+b.w/2, y+b.h/2-1, b.w*0.44, b.h*0.62, {
+    wood: b.flash>0?['#ffffff','#efe6cc','#b6ab8e','#6a6150']:['#cfc6ad','#a29878','#6b6353','#3a352c'],
+    socket:'#0a0f12',
+    eye: (b.st==='stoopWind'||b.st==='stoop') ? '#ffcf7a' : '#8fe6ff',
+    ichi:'rgba(0,0,0,0.45)'
+  });
+  if(b.st==='stoopWind'){
+    // it shows you where it is going before it goes
+    ctx.globalAlpha=.30+Math.sin(G.t/3)*.18; ctx.strokeStyle=C.gold; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x+b.w/2,y+b.h/2);
+    ctx.lineTo(b.markX-cam.x+5, b.markY-cam.y+9); ctx.stroke();
+    ctx.beginPath(); ctx.arc(b.markX-cam.x+5, b.markY-cam.y+9, 9, 0, 7); ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  if(b.st==='lift'){
+    for(let i=0;i<5;i++){
+      const ly=(G.t*2+i*14)%70;
+      ctx.globalAlpha=.34-ly/200;
+      pxf(P.x-cam.x+1+((i*3)%9), P.y-cam.y+18-ly, 1, 5, C.glass);
+      ctx.globalAlpha=1;
+    }
+  }
+}
+
 function drawBoss(b){
+  if(b.who==='ikuku'){ drawIkuku(b); return; }
   if(b.who==='ekwensu'){ drawEkwensu(b); return; }
   if(b.who==='onwe'){ drawOnwe(b); return; }
   if(b.who==='uzu'){ drawUzu(b); return; }
@@ -5011,6 +5146,19 @@ const ON_IN=[
 // It tells the truth from the first line to the last. After a boss who could not
 // be fought and a boss who was paid, this one simply wants to finish you, and
 // says so, and means something slightly different by it than you do.
+// It reframes the room rather than the player. Igwe's horror is that there is a
+// sunset hundreds of feet underground and nobody remarks on it; Ikuku is the
+// answer, and says so in its first line without being asked.
+const IK_IN=[
+ {art:'dawn', voice:'boss', text:"\"There you are. Under my sky, walking about like it is weather.\""},
+ {art:'dawn', voice:'you',  text:"There is a sunset here. You are hundreds of feet under the ground. You had not let yourself notice."},
+ {art:'dawn', voice:'boss', text:"\"Somebody has to hold it up. Put your feet on something and I will show you.\""}
+];
+const IK_OUT=[
+ {art:'dawn', voice:'narr', text:"The wind goes out of the room all at once, the way a held breath goes."},
+ {art:'dawn', voice:'you',  text:"The sky does not change. The sun sits where it sat. Whatever was holding it up, it was not only that."},
+ {art:'dawn', voice:'narr', text:"You go on towards the last door with the air very still behind you."}
+];
 const UZ_IN=[
  {art:'ash',  voice:'boss', text:"\"You are the one that keeps coming back. I have heard.\""},
  {art:'ash',  voice:'boss', text:"\"This is where things stop being changeable. That is all this place is.\""},
@@ -5708,6 +5856,8 @@ const BEASTS=[
   "Cannot be wounded while he is nobody. Nine strokes of nzu on a stone in the shaft carry his name; speak it and he acquires edges. Parries and executions keep him named longer."},
  {k:'boss_ekwensu', t:'EKWENSU', sub:'he who was paid', boss:1, b:
   "Never hides what he is doing. The cleave is white and can be turned; the gore and the stamp are gold and cannot. He was hired. He will tell you by whom if you last long enough."},
+ {k:'boss_ikuku', t:'IKUKU', sub:'the wind that is holding the sky up', boss:1, b:
+  "It never comes down and it never stands anywhere. It sweeps the floor white-edged, which means get off the ground, and then it stoops gold-edged at wherever you are standing, which means leave. The platforms in this room are not scenery. It also answers the riddle you were asked at a mirror: it speaks and has no mouth."},
  {k:'boss_uzu', t:'\u1ee4Z\u1ee4 \u1eccK\u1ee4', sub:'the smith of the fire that does not go out', boss:1, b:
   "Its guard closes about ten times faster than anything else in this place, so chipping at it is a way of spending an afternoon. Open it in one lump \u2014 a charged heavy, a word, the third stroke of the chain \u2014 or do not open it. The hammer is white. The pour is gold, and molten iron has never once been turned aside by anybody."},
  {k:'boss_onwe', t:'ONWE', sub:'the ninth child, wearing your face', boss:1, b:

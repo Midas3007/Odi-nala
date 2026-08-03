@@ -244,6 +244,28 @@ test.** After a boss that could not be fought, the player needs a boss that can.
 
 He needs no naming. He tells the truth unprompted. His fee was not paid in cowries.
 
+### Boss 5 — Ikuku, the wind (room 9)
+**The idea: it takes the ground away from you.**
+
+Named by Midas. Ikuku was already in the game before it was a boss — it is the answer to
+the mirror riddle *"It speaks and has no mouth"* — so the fight is a word the player has
+already met being handed a body.
+
+- 640 HP, 200 poise. **It never lands.** `ikukuUpdate` returns without the shared gravity
+  line and clears `onGround` every frame; a REGRESSION assertion holds it to that,
+  because a flying boss that comes to rest has stopped being the fight it was built as.
+- `sweepWind` (white) → it drops to just above the floor and skims it. **Get off the
+  ground.** `stoopWind` (**gold**) → it marks where you are standing, draws the line to
+  it, and commits. **Leave.** The two alternate, so the fight pushes you up and then off
+  again, and room 9's platforms stop being scenery.
+- The stoop commits to the mark, not to the player. Moving after it has drawn the line is
+  the counterplay, and it is asserted.
+- Phase 2 at 50% adds `liftWind`: it pulls the air upward under you and then lets go.
+- It reframes the room rather than the player. Igwe's horror is a sunset hundreds of feet
+  underground that nobody remarks on; Ikuku's first line is that somebody has to hold it
+  up. Its last is that the sky does not change when it dies, which is worse.
+- Gates the last door.
+
 ### Boss 4 — Ụzụ Ọkụ, the smith of the fire (room 8)
 **The idea: its guard reforges faster than you can chip it down.**
 
@@ -279,7 +301,7 @@ cowries. See `05-PROGRESSION-AND-NPCS.md` §Tutorial.
 ### Bosses not yet built — **[NOT BUILT]**
 | Where | Who | Idea |
 |---|---|---|
-| Room 9, the open sky | **[PROPOSED]** an alusi of the air | A fight with real verticality — the game has none |
+| Room 9, the open sky | ~~an alusi of the air~~ **[BUILT]** — Ikuku | The game's only fight in the vertical |
 | Room 5, the water | Idemili's python | Optional. Non-lethal — it tests you and lets you pass |
 | Room 4, the market | **do not** | The market must stay safe |
 | Room 8, the fire | ~~A forge-thing~~ **[BUILT]** — Ụzụ Ọkụ | Poise regenerates at 2.2/frame (3.4 in phase two) against a walker's 0.3 |
