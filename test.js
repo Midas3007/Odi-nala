@@ -1817,6 +1817,7 @@ section('Ikuku — the fight in the vertical');
       P().x = SAFE(b.x); P().hp = G().maxHP; P().inv = 9999;
       G().hitstop = 0; G().slow = 0; tick(1);
       if (b.tell) seen[b.tell] = (seen[b.tell] || 0) + 1;
+      if (seen.white && seen.gold) break;   // both seen: the rest proves nothing
     }
     check('it telegraphs white — the floor sweep can be turned', !!seen.white, JSON.stringify(seen));
     check('it telegraphs gold — the stoop cannot', !!seen.gold, JSON.stringify(seen));
@@ -1999,6 +2000,7 @@ section('Ụzụ Ọkụ — the guard that reforges');
       P().x = b.x - 48; P().y = b.y; P().hp = G().maxHP;
       G().hitstop = 0; G().slow = 0; tick(1);
       if (b.tell) seen[b.tell] = (seen[b.tell] || 0) + 1;
+      if (seen.white && seen.gold) break;   // both seen: the rest proves nothing
     }
     check('it telegraphs in white — something here can be turned', !!seen.white, JSON.stringify(seen));
     check('it telegraphs in gold — and something here cannot', !!seen.gold, JSON.stringify(seen));
@@ -3540,6 +3542,81 @@ section('the codex');
   check('the codex survives being navigated', G().mode === 'codex', 'mode=' + G().mode);
   press('KeyX', 1, 2);
   check('the codex opened from the title closes back to the title', G().mode === 'title', 'mode=' + G().mode);
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('the map bakes once, not every frame');
+(() => {
+  // The map used to redraw every tile of every room it knew about on every
+  // frame it was open — 12,000 of them at thirteen rooms, measured at five
+  // times the cost of a play frame. It is cached now, which means it can go
+  // stale, and a map that does not notice you walked somewhere new is worse
+  // than a slow one. The key is what stops that.
+  revive();
+  api.unlockAll();
+  G().visited = {}; G().mirrors = {};
+  api.resetPlayerAt(0, 9, 16); G().mode = 'play'; tick(2);
+
+  api.buildMapCache();
+  check('the map bakes when it is first drawn', api.MAP_CACHED());
+  const k0 = api.MAP_KEY();
+  api.buildMapCache();
+  check('and does not re-bake when nothing has changed', api.MAP_KEY() === k0, api.MAP_KEY());
+
+  // the three things it actually draws
+  G().visited[6] = 1;
+  check('seeing a new room changes the key', api.mapCacheKey() !== k0);
+  api.buildMapCache();
+  const k1 = api.MAP_KEY();
+  check('and re-bakes', k1 !== k0);
+
+  G().mirrors[6] = 1;
+  check('lighting a mirror changes the key', api.mapCacheKey() !== k1);
+  api.buildMapCache();
+  const k2 = api.MAP_KEY();
+  check('and re-bakes', k2 !== k1);
+
+  // Go somewhere already visited. Moving into an *unvisited* room changes the
+  // key for two reasons at once, and this assertion passed with G.room left out
+  // of the key entirely until that was noticed.
+  G().visited[1] = 1;
+  api.buildMapCache();
+  const k3 = api.MAP_KEY();
+  api.resetPlayerAt(1, 3, 16); G().mode = 'play'; tick(2);
+  check('standing in a different already-seen room changes the key — it is drawn brighter',
+    api.mapCacheKey() !== k3, 'was ' + k3 + ' now ' + api.mapCacheKey());
+
+  (() => {
+    // REGRESSION trap 1 in 09-TECHNICAL: buildMapCache swaps the module-level
+    // ctx for an offscreen one. If a throw skipped the swap back, every later
+    // frame would paint into a discarded canvas and the game would look frozen.
+    revive(); G().mode = 'map';
+    for (let i = 0; i < 20; i++) tick(1);
+    check('the map renders without killing the loop', G().mode === 'map');
+    // The harness paints into a stub, so drawing into a discarded canvas looks
+    // exactly like drawing into the real one — this is the one fact that does
+    // not, and without it removing the finally passed clean.
+    check('REGRESSION ctx came back after the offscreen swap', api.CTX_IS_BASE());
+    G().mode = 'play'; tick(4);
+    check('and play still draws afterwards', !G().crashed, 'crash: ' + G().crashErr);
+    check('ctx is still the real one a few frames later', api.CTX_IS_BASE());
+  })();
+
+  (() => {
+    // Opening the map must not cost more than playing. This is the whole point
+    // of the cache and it is the number that will regress silently.
+    revive(); api.unlockAll();
+    for (let i = 0; i < ROOMS.length; i++) G().visited[i] = 1;
+    api.resetPlayerAt(0, 9, 16); G().mode = 'play'; tick(30);
+    const t0 = Date.now(); for (let i = 0; i < 400; i++) tick(1);
+    const play = Date.now() - t0;
+    G().mode = 'map'; tick(2);
+    const t1 = Date.now(); for (let i = 0; i < 400; i++) tick(1);
+    const map = Date.now() - t1;
+    check('REGRESSION the map costs about what playing costs, not five times it',
+      map < play * 2.2 + 40, 'play ' + play + 'ms / map ' + map + 'ms per 400 frames');
+    G().mode = 'play';
+  })();
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════

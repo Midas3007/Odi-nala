@@ -75,6 +75,25 @@ Thumbnails at 2px per tile, **only for rooms visited**. Gold squares are doorway
 is an attuned mirror, red is a shrine. A blinking gold dot is you. Links drawn between
 visited rooms.
 
+**It is baked, not redrawn.** Every tile of every visited room used to be painted on
+every frame the map was open — 12,072 of them at thirteen rooms, measured at **2.79 ms a
+frame against 0.54 ms for playing**, which is five times the cost of the actual game in
+a screen where nothing moves. It bakes to an offscreen canvas exactly the way the
+parallax does, and re-bakes only when its key changes: which rooms you have seen, which
+mirrors are lit, and which room you are standing in. It costs 0.56 ms now.
+
+**The key is the whole safety of it.** A map that has not noticed you walked somewhere
+new is worse than a slow one, and every field of that key is a thing you can watch
+change on screen. There is a REGRESSION test per field, and one on the cost ratio, so a
+future change that quietly kills the cache fails rather than just gets slower.
+
+**`MAPPOS` has to be checked by eye against 480×270.** It is hand-placed pixel positions
+with no constraint on them, so three new rooms pushed two thumbnails off the right edge
+and dropped labels on top of other rooms, and nothing failed. It is laid out in four
+bands now — the warm strip on top, the opening rooms under it, the shaft down the right,
+the back half along the bottom — and adding a room means re-checking the whole layout,
+not just appending to the table.
+
 ## 8.4 Controls
 
 ### Keyboard
