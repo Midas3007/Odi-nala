@@ -272,7 +272,7 @@ const ROOMS = [
   "#..............................#",
   "#.............l....#############",
   "#.............##############...#",
-  "#..............................#",
+  "#..................b...........#",
   "#..............................#",
   "#....l.........................#",
   "#..#########...................#",
@@ -366,7 +366,7 @@ const ROOMS = [
   "#..................t......h............#",
   "#..............-----...................#",
   "#......................................#",
-  "#...........................l..........#",
+  "#...............s...........l..........#",
   "#......-----............-----..........#",
   "#......................................#",
   "E.....M....................o...........#",
@@ -395,7 +395,7 @@ const ROOMS = [
   "#.......-----.............-----.............-----......#",
   "#......................................................#",
   "E......M....##................##......................E#",
-  "E...S.....r..#........W..n....#.v.......r........X....E",
+  "E...S.....r..#........W..n....#.v...p...r........X....E",
   "########################################################",
   "########################################################",
   "########################################################",
@@ -625,6 +625,9 @@ function spawnRoom(){
     if(ch==='n') enemies.push(mkHealer(x,y));
     if(ch==='q') enemies.push(mkMimic(x,y));
     if(ch==='j') enemies.push(mkGrappler(x,y));
+    if(ch==='s') enemies.push(mkSwimmer(x,y));
+    if(ch==='b') enemies.push(mkCrawler2(x,y));
+    if(ch==='p') for(const u of mkPair(x,y)) enemies.push(u);
     if(ch==='F' && !G.weapons.oku) pickups.push({kind:'weapon', w:'oku', x:x*T+2, y:y*T+4, t:0});
     if(ch==='S') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'rest'});
     if(ch==='N') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'name'});
@@ -676,6 +679,24 @@ function mkMimic(x,y){ const e=base(x,y,16,24,44,34); e.kind='mimic'; e.cd=0; e.
 // turning a pair of hands aside — and once it has you the fight stops being about
 // reading and starts being about getting out.
 function mkGrappler(x,y){ const e=base(x,y,18,24,64,48); e.kind='grappler'; e.cd=40; e.home=e.x; e.hold=null; return e; }
+// Iyi Idemili had no enemy of its own. This one ignores the floor entirely: it
+// swims a slow figure of eight and darts along its own line, so the water room
+// finally fights differently from the corridors.
+function mkSwimmer(x,y){ const e=base(x,y,20,12,38,28); e.kind='swimmer'; e.cd=50; e.home={x:e.x,y:e.y}; e.ph=(x*7)%628/100; return e; }
+// Changes the vertical read: it lives on the ceiling and drops when you are under
+// it. Everything else in the game fights you at floor level.
+function mkCrawler2(x,y){ const e=base(x,y,14,10,32,22); e.kind='ceiling'; e.cd=0; e.anchorY=e.y; e.home=e.x; return e; }
+// A pair that is one enemy wearing two bodies. One spawn char makes both: the
+// shield stands in front and eats anything light, the spear stabs past it from
+// behind and is the only one of the two that reaches you at the wall. Kill either
+// and the survivor changes — the shield without its spear starts swinging, the
+// spear without its shield backs off. Neither half is a fight on its own.
+function mkPair(x,y){
+  const sh=base(x,y,16,22,58,72); sh.kind='pairshield'; sh.cd=30; sh.home=sh.x;
+  const sp=base(x,y,12,20,34,26); sp.kind='pairspear';  sp.cd=50; sp.home=sp.x;
+  sh.mate=sp; sp.mate=sh; sp.x = sh.x - 14;
+  return [sh,sp];
+}
 
 function mkBoss(x,y,who){
   who=who||'ogbunabali';
@@ -1691,7 +1712,7 @@ function swing(a,kind){
     e.hitId = P.swingId;
     let mult=1, blocked=false;
     const infront = ((P.x+P.w/2) > (e.x+e.w/2)) === (e.face>0);
-    if(e.kind==='warden' && e.broken<=0 && e.stagger<=0 && infront && kind!=='heavy'){
+    if((e.kind==='warden'||e.kind==='pairshield') && e.broken<=0 && e.stagger<=0 && infront && kind!=='heavy'){
       blocked=true; mult=0.15;
     }
     damage(e, a.dmg*mult*boon, P.face, blocked?0.5:a.kb, blocked, blocked?3:a.poise*boon);
@@ -1885,6 +1906,104 @@ function enemyUpdate(e){
   }
 
   e.t++;
+
+  if(e.kind==='pairshield'){
+    const mate = (e.mate && !e.mate.dead) ? e.mate : null;
+    if(e.cd>0) e.cd--;
+    if(e.st==='idle'){
+      e.tell=''; e.face = dx>0?1:-1;
+      const want = mate ? mate.x + e.face*16 : e.x;
+      e.vx = Math.abs(want-e.x)>3 ? Math.sign(want-e.x)*0.5 : (adx>40 ? e.face*0.42 : 0);
+      if(!solidAt(e.x+(e.vx>0?e.w+2:-2), e.y+e.h+2, null)) e.vx=0;
+      // alone it stops being a wall and starts being a threat
+      if(!mate && adx<36 && ady<26 && e.cd<=0){ e.st='wind'; e.t=0; e.tell='white'; e.vx=0; }
+    }
+    else if(e.st==='wind'){ e.vx=0; e.tell='white'; if(e.t>=30){ e.st='bash'; e.t=0; e.tell=''; } }
+    else if(e.st==='bash'){
+      if(e.t<=10){
+        const box={x:e.face>0?e.x+e.w-4:e.x-22, y:e.y+2, w:26, h:e.h-4};
+        if(rects(box,P)){ if(!tryParry(e,e.x)) hurtPlayer(14,e.face); }
+      }
+      if(e.t>=13){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.8; if(e.t>=38){ e.st='idle'; e.t=0; e.cd=60; } }
+  }
+
+  if(e.kind==='pairspear'){
+    const mate = (e.mate && !e.mate.dead) ? e.mate : null;
+    if(e.cd>0) e.cd--;
+    if(e.st==='idle'){
+      e.tell=''; e.face = dx>0?1:-1;
+      e.vx = mate ? (adx>52 ? e.face*0.44 : 0) : -Math.sign(dx||1)*0.5;
+      if(!solidAt(e.x+(e.vx>0?e.w+2:-2), e.y+e.h+2, null)) e.vx=0;
+      if(mate && adx<62 && ady<26 && e.cd<=0){ e.st='level'; e.t=0; e.tell='white'; e.vx=0; }
+    }
+    else if(e.st==='level'){ e.vx=0; e.tell='white'; if(e.t>=32){ e.st='thrust'; e.t=0; e.tell=''; } }
+    else if(e.st==='thrust'){
+      if(e.t<=12){
+        // it reaches past its own shield, which is why standing at the wall is not safe
+        const box={x:e.face>0?e.x+e.w-2:e.x-38, y:e.y+5, w:40, h:8};
+        if(rects(box,P)){ if(!tryParry(e,e.x)) hurtPlayer(15,e.face); }
+      }
+      if(e.t>=16){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.82; if(e.t>=42){ e.st='idle'; e.t=0; e.cd = mate?70:150; } }
+  }
+
+  if(e.kind==='swimmer'){
+    // no gravity, no ground: it holds a lane and lunges along it
+    if(e.cd>0) e.cd--;
+    e.ph+=0.021;
+    if(e.st==='idle'){
+      e.tell='';
+      const ty=e.home.y+Math.sin(e.ph)*20;
+      e.vy=(ty-e.y)*0.06;
+      e.vx=(e.home.x+Math.cos(e.ph*0.7)*34-e.x)*0.035;
+      e.face = dx>0?1:-1;
+      if(adx<108 && ady<30 && e.cd<=0){ e.st='coil'; e.t=0; e.tell='white'; }
+    }
+    else if(e.st==='coil'){
+      e.vx*=0.86; e.vy*=0.86; e.tell='white';
+      if(e.t>=26){ e.st='dart'; e.t=0; e.tell=''; e.vx=e.face*4.2; e.vy=(P.y-e.y)*0.05; }
+    }
+    else if(e.st==='dart'){
+      if(rects(e,P)){ if(!tryParry(e,e.x)) hurtPlayer(12,e.face); e.st='drift'; e.t=0; }
+      if(e.t>=24){ e.st='drift'; e.t=0; }
+    }
+    else if(e.st==='drift'){ e.vx*=0.9; e.vy*=0.9; if(e.t>=30){ e.st='idle'; e.t=0; e.cd=80; } }
+    moveEnt(e);                       // deliberately no gravity above this
+    return;
+  }
+
+  if(e.kind==='ceiling'){
+    // hangs, tracks you along the ceiling, drops gold when you walk underneath
+    if(e.cd>0) e.cd--;
+    if(e.st==='idle'){
+      e.tell=''; e.vy=0;
+      e.y += (e.anchorY-e.y)*0.25;
+      e.vx = adx>10 ? Math.sign(dx)*0.55 : 0;
+      e.face = dx>0?1:-1;
+      if(adx<16 && P.y>e.y && e.cd<=0){ e.st='tense'; e.t=0; e.tell='gold'; e.vx=0; }
+      moveEnt(e); return;
+    }
+    else if(e.st==='tense'){
+      e.vx=0; e.vy=0; e.tell='gold';
+      if(e.t>=22){ e.st='drop'; e.t=0; e.tell=''; e.vy=1.5; }
+    }
+    else if(e.st==='drop'){
+      if(rects(e,P)) { hurtPlayer(15,e.face,true); e.st='land'; e.t=0; }
+      if(e.onGround){ e.st='land'; e.t=0; shake(2); }
+    }
+    else if(e.st==='land'){
+      e.vx*=0.8;
+      if(e.t>=46){ e.st='climb'; e.t=0; }
+    }
+    else if(e.st==='climb'){
+      e.vx=0; e.vy=-1.1;
+      if(e.y<=e.anchorY){ e.y=e.anchorY; e.st='idle'; e.t=0; e.cd=70; }
+      moveEnt(e); return;
+    }
+  }
 
   if(e.kind==='grappler'){
     if(e.cd>0) e.cd--;
@@ -3035,7 +3154,7 @@ function drawTiles(){
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
     const ch=tileAt(R,x,y);
-    if('.wltWKBSNMhrvXOakiFdmoynqj'.indexOf(ch)>=0) continue;
+    if('.wltWKBSNMhrvXOakiFdmoynqjsbp'.indexOf(ch)>=0) continue;
     const sx=x*T-cam.x, sy=y*T-cam.y;
 
     if(ch==='E'){
@@ -3897,6 +4016,74 @@ function drawEnemy(e){
   }
   const flash = e.flash>0;
   const stag = e.stagger>0;
+
+  if(e.kind==='pairshield'){
+    const alone = !(e.mate && !e.mate.dead);
+    px(x+3,y+4,e.w-6,e.h-4, flash?C.chalk:'#1c1f18');
+    pxf(x+3,y+4,e.w-6,.5,'#3d4436');
+    px(x+4,y,e.w-8,6, flash?C.chalk:'#12150f');
+    pxf(x+6,y+2,1,1,'#c8952e'); pxf(x+e.w-7,y+2,1,1,'#c8952e');
+    // the shield: a tall oval slab on the facing side, hide over a wood frame
+    const sx = e.face>0 ? x+e.w-5 : x-4;
+    px(sx,y+1,9,e.h-1, flash?C.chalk:'#3a2b1c');
+    pxf(sx,y+1,9,1,'#6b5232');
+    pxf(sx+(e.face>0?8:0),y+1,1,e.h-1,'#1d150c');
+    for(let i=0;i<3;i++) pxf(sx+1.5,y+4+i*5,6,.5,'#5a442a');
+    pxf(sx+3.5,y+e.h/2-2,2,4,'#8e2323');
+    if(alone){ ctx.globalAlpha=.22+Math.sin(G.t/10)*.10; ctx.fillStyle=C.uhie;
+      ctx.beginPath(); ctx.arc(x+e.w/2,y+e.h/2,15,0,7); ctx.fill(); ctx.globalAlpha=1; }
+  }
+
+  if(e.kind==='pairspear'){
+    const reaching = e.st==='level'||e.st==='thrust';
+    px(x+3,y+5,e.w-6,e.h-5, flash?C.chalk:'#191c22');
+    pxf(x+3,y+5,e.w-6,.5,'#3a4048');
+    px(x+3.5,y,e.w-7,6, flash?C.chalk:'#0f1216');
+    px(x+(e.face>0?5:3),y+1,5,4,C.bone);
+    pxf(x+(e.face>0?6:4),y+2.5,1,1,'#1a1410');
+    // the spear: long, and it gets longer the moment it levels
+    const len = reaching ? 34 : 20;
+    const px0 = e.face>0 ? x+e.w-2 : x+2-len;
+    pxf(px0, y+9, len, 1.2, flash?C.chalk:'#6b5232');
+    pxf(px0, y+9, len, .5, '#8f6f42');
+    pxf(e.face>0? px0+len-4 : px0, y+8, 4, 3, '#b9b0a0');           // the head
+    if(e.st==='thrust'){ ctx.globalAlpha=.30; pxf(px0, y+8.5, len, 2, C.chalk); ctx.globalAlpha=1; }
+  }
+
+  if(e.kind==='swimmer'){
+    // A long horizontal body — the only enemy wider than it is tall by this much,
+    // which is what says "this one does not touch the floor".
+    const und=Math.sin(G.t/9+e.ph)*1.2;
+    px(x+2,y+3+und,e.w-4,6, flash?C.chalk:'#17313a');
+    pxf(x+2,y+3+und,e.w-4,.5,'#3f7d8c');
+    pxf(x+e.w-2.5,y+3+und,.5,6,'#0c1a20');
+    px(x+(e.face>0?e.w-6:2),y+2+und,4,5, flash?C.chalk:'#1e4450');   // head end
+    pxf(x+(e.face>0?e.w-5:3),y+3.5+und,1,1,'#8fe6ff');
+    for(let i=0;i<4;i++){                                             // fins along the spine
+      const fx=x+3+i*((e.w-6)/4);
+      pxf(fx,y+1.5+und+Math.sin(G.t/7+i)*0.6,1.5,2,'#2b5f6d');
+      pxf(fx,y+9+und-Math.sin(G.t/7+i)*0.6,1.5,2,'#2b5f6d');
+    }
+    pxf(x+(e.face>0?0:e.w-3),y+4+und,3,3,'#1e4450');                  // tail
+    ctx.globalAlpha=.16+Math.sin(G.t/11)*.06; ctx.fillStyle=C.glass;
+    ctx.beginPath(); ctx.ellipse(x+e.w/2,y+6+und,e.w*0.8,9,0,0,7); ctx.fill(); ctx.globalAlpha=1;
+  }
+
+  if(e.kind==='ceiling'){
+    // upside down, legs up into the stone. Read is the position, not the shape.
+    const drop = e.st==='drop'||e.st==='land';
+    px(x+2,y+2,e.w-4,e.h-4, flash?C.chalk:'#1d1a14');
+    pxf(x+2,y+2,e.w-4,.5,'#443c28');
+    for(let i=0;i<4;i++){
+      const lx=x+1.5+i*((e.w-3)/3.4), sw=Math.sin(G.t/8+i)*0.8;
+      pxf(lx+sw, drop? y+e.h-1 : y-3.5, 1, 4, '#332c1e');
+    }
+    pxf(x+3.5,y+4,1.5,1,'#c2402c'); pxf(x+e.w-5,y+4,1.5,1,'#c2402c');
+    if(e.st==='tense'){
+      ctx.globalAlpha=.28+Math.sin(G.t/3)*.16; ctx.fillStyle=C.gold;
+      ctx.beginPath(); ctx.ellipse(x+e.w/2,y+e.h+16,6,18,0,0,7); ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
 
   if(e.kind==='grappler'){
     // Wide and armless-looking at rest, then it becomes almost all arms. The
@@ -4776,7 +4963,7 @@ for(const k in NPCS) NPC_BY_CH[NPCS[k].ch]=k;
 // pickups, then enemy spawns, then whatever the NPC table declares. One source
 // of truth — the test suite reads this rather than keeping its own copy, so a
 // new spawn char cannot be added without the maps being checked against it.
-const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakinqj' + Object.keys(NPC_BY_CH).join('');
+const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakinqjsbp' + Object.keys(NPC_BY_CH).join('');
 
 function cutArt(name,cx,cy){
   if(name==='bones'){
@@ -5346,6 +5533,14 @@ const BEASTS=[
   "It rolls before it rises. Rolling, it only bruises. Risen, it bites \u2014 and that bite is white-edged and can be turned."},
  {k:'horned',  t:'MMANW\u1ee4 MP\u1eccKI', sub:'the horned masquerade', b:
   "Two attacks. The near one is white and can be parried. The charge is gold and cannot. Learn which shoulder drops first."},
+ {k:'pairshield', t:'\u1eccT\u1ee4 NA \u1eccKPARA', sub:'the shield of the pair', b:
+  "Two of them work as one. The shield does not attack while its partner lives \u2014 it only stands in the way, and anything light you throw at its face is wasted. Kill the spear and it stops being patient."},
+ {k:'pairspear',  t:'\u1eccKPARA NA \u1eccT\u1ee4', sub:'the spear of the pair', b:
+  "It reaches past its own shield, so the safe-looking spot directly in front of the wall is the one place it can certainly hit you. Go around, or break the shield, or kill this one and watch the other lose its patience."},
+ {k:'swimmer',  t:'AZ\u1ee4 IYI', sub:'the thing in Idemili\u2019s water', b:
+  "It has no business with the floor. It holds a lane in the water, coils white-edged, and comes along that lane in a straight line \u2014 which is the one useful thing about it, because a straight line can be stepped out of or turned."},
+ {k:'ceiling',  t:'\u1eccN\u1ee4 ELU', sub:'the one on the ceiling', b:
+  "It walks the stone above you and waits for you to walk under it. The drop is gold-edged and there is no turning it aside. Look up in rooms where the ceiling is close."},
  {k:'grappler', t:'ONYE NJIDE', sub:'the one that takes hold', b:
   "It does not swing. It reaches, and the reach is gold-edged, so a ward is no use to you \u2014 roll it or be taken. Once it has you, hit anything until it lets go. It lets go on its own eventually, but eventually is a long time to be held."},
  {k:'mimic',   t:'AR\u1ee4S\u1eca \u1eccJ\u1ecc', sub:'the idol that was waiting', b:

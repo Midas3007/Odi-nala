@@ -2,7 +2,7 @@
 
 ## 10.1 Where the project stands
 
-Shipping. Ten rooms, three bosses, nine enemy types, four weapons, four spells, a
+Shipping. Ten rooms, three bosses, fifteen enemy types, four NPCs, four weapons, four spells, a
 tutorial, a codex, an ending, fast travel, two save slots, a speedrun mode, and a
 test suite. Roughly 90 minutes for a first completion.
 
@@ -28,7 +28,7 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 | 2.1 | ~~Four NPCs~~ | **Done.** dibia, market woman, younger ọgbanje, mother's shade. |
 | 2.2 | Boss in room 9 (verticality) | The game has no vertical fight |
 | 2.3 | Boss in room 8 (fast-regenerating poise) | Forces burst play |
-| 2.4 | Six enemies: healer, grappler, shield-and-spear pair, mimic, swimmer, wall-crawler | The healer is the biggest mechanical gap |
+| 2.4 | ~~Six enemies~~ | **Done.** healer, mimic, grappler, pair, swimmer, wall-crawler. Roster is nine → fifteen. |
 | 2.5 | Endings B and C | `G.ending` already exists |
 | 2.6 | Weapon-specific heavy shapes | Highest-value combat addition |
 | 2.7 | Charms — 2–3 passive slots | |

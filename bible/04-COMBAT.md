@@ -139,7 +139,7 @@ Rules:
 5. It occupies a distinct *range band* — melee, mid, ranged, aerial.
 6. Its death drops cowries.
 
-### The twelve
+### The fifteen
 
 | Enemy | HP / Poise | Range | Idea | Tell |
 |---|---|---|---|---|
@@ -155,6 +155,10 @@ Rules:
 | **Healer** (`n`) | 30 / 24 | mid | Restores an ally's poise and closes a broken guard. Retreats; will not chase. | white |
 | **Mimic** (`q`) | 44 / 34 | melee | An idol that is an idol until you are inside its reach. | **gold** waking, white after |
 | **Grappler** (`j`) | 64 / 48 | melee | Takes hold of you. Mash out, or wait it out. | **gold** |
+| **Pair — shield** (`p`) | 58 / 72 | melee | Holds the line and eats light hits. Does not attack while its spear lives. | white (alone) |
+| **Pair — spear** (`p`) | 34 / 26 | mid | Reaches *past* its own shield. Backs off if the shield dies. | white |
+| **Swimmer** (`s`) | 38 / 28 | **aquatic** | No gravity. Holds a lane, then darts along it. | white |
+| **Ceiling** (`b`) | 32 / 22 | **aerial** | Hangs, tracks you, drops when you walk under. | **gold** |
 
 ### Enemy roster gaps — **[NOT BUILT]**
 Ranked by what the roster is missing mechanically:
@@ -181,7 +185,13 @@ Ranked by what the roster is missing mechanically:
    `hurtPlayer` overwrote `P.st` — which made the grappler weaker the more crowded the
    room was, exactly backwards, and left it holding nobody. Damage while pinned applies
    with a shortened i-frame and the hold continues.
-3. **A shield-and-spear pair that fights as a unit.**
+3. ~~**A shield-and-spear pair.**~~ **[BUILT]** `p` spawns both. The shield holds station
+   in front of the spear and **does not attack at all** while its partner lives; light
+   hits on it are wasted, exactly as with the warden. The spear reaches *past* the
+   shield, so the safe-looking spot at the wall is the one place it can certainly hit
+   you. Kill either and the survivor changes: the shield stops being patient and starts
+   swinging, the spear backs off and its cooldown doubles. Neither half is a fight on
+   its own, which is the point of the entry.
 4. ~~**A mimic prop.**~~ **[BUILT]** `q`, Arụsị Ọjọọ, in Ala Mmụọ. Asleep it is drawn by
    the *same `idolStatue()` call with the same arguments* as the room's real props — not
    a similar palette, the same one, because a palette that was slightly off gave it away
@@ -190,8 +200,18 @@ Ranked by what the roster is missing mechanically:
    unreadable — it always stands up first. Awake it stays awake, splits open and lights
    from inside, so the second one you meet is a read rather than another ambush. Two are
    placed for exactly that reason.
-5. **A swimmer** for Iyi Idemili — the water room has no unique enemy, which is a gap.
-6. **A wall-crawler** that changes the vertical read.
+5. ~~**A swimmer.**~~ **[BUILT]** `s`, Azụ Iyi, in Iyi Idemili. It returns before the
+   shared gravity line in `enemyUpdate`, so it is the one enemy with no relationship to
+   the floor at all: it holds a slow figure-of-eight lane, coils white, and darts along
+   that lane in a straight line. The straight line is deliberate — it is what makes an
+   enemy that ignores the floor still readable.
+6. ~~**A wall-crawler.**~~ **[BUILT]** `b`, Ọnụ Elu, in the shaft. It hangs from a
+   ceiling, tracks you along it, and drops **gold** when you walk underneath, then
+   climbs back up. It is the only enemy that makes the ceiling worth looking at.
+
+   **`tools/audit.py` inverts its geometry rule for `b`:** every other spawn char is
+   flagged if there is solid above it, but a ceiling-dweller with no ceiling would hang
+   in mid-air, so for `b` the audit requires solid above and clear air below.
 
 ## 4.7 Boss bible
 

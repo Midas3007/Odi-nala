@@ -101,7 +101,17 @@ def main(path):
     for i, r in enumerate(rooms):
         for y, row in enumerate(r['rows']):
             for x, ch in enumerate(row):
-                if ch in 'wltWvakirKBXOhF' + NPC_CHARS:
+                # 'b' hangs from the ceiling, so for it the rule inverts: it needs
+                # solid directly above and clear air below. Everything else must
+                # have neither its own tile nor the one above it inside rock.
+                if ch == 'b':
+                    if at(r['rows'], x, y) in SOLID:
+                        problems.append(f"room {i}: ceiling-dweller 'b' at ({x},{y}) is inside solid")
+                    elif at(r['rows'], x, y - 1) not in SOLID:
+                        problems.append(
+                            f"room {i}: ceiling-dweller 'b' at ({x},{y}) has no ceiling above it "
+                            f"(tile is '{at(r['rows'], x, y - 1)}') — it would hang in mid-air")
+                elif ch in 'wltWvakirKBXOhF' + NPC_CHARS:
                     if at(r['rows'], x, y) in SOLID or at(r['rows'], x, y - 1) in SOLID:
                         problems.append(
                             f"room {i}: spawn '{ch}' at ({x},{y}) is embedded in solid")

@@ -1387,6 +1387,140 @@ section('every menu mode opens and closes');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('the water, the ceiling, and the pair');
+(() => {
+  // The swimmer — the water room's own enemy, and the only thing in the game
+  // that ignores the floor.
+  revive(); api.unlockAll(); G().cheat = false;
+  at(5, 3, 16);
+  const sw = api.enemies.find(e => e.kind === 'swimmer');
+  check('Iyi Idemili finally has an enemy of its own', !!sw,
+    'enemies=' + api.enemies.map(e => e.kind).join(','));
+  if (sw) {
+    const y0 = sw.y;
+    for (let i = 0; i < 200; i++) { P().inv = 9999; P().x = 40; tick(1); }
+    check('the swimmer does not fall — it has no business with the floor',
+      !sw.onGround && Math.abs(sw.y - y0) < 60 && sw.y > 0, 'y ' + y0.toFixed(1) + ' → ' + sw.y.toFixed(1));
+    check('it moves on both axes', Math.abs(sw.y - y0) > 1, 'dy=' + (sw.y - y0).toFixed(1));
+    check('it stays inside the room', sw.y + sw.h < ROOMS[5].h * 16 && sw.x > 0,
+      'x=' + sw.x.toFixed(1) + ' y=' + sw.y.toFixed(1));
+    let sawWhite = false;
+    for (let i = 0; i < 300; i++) { P().inv = 9999; P().x = sw.x - 60; P().y = sw.y; tick(1); if (sw.tell === 'white') sawWhite = true; }
+    check('its dart is white, so it can be turned', sawWhite, 'tell=' + sw.tell + ' st=' + sw.st);
+    check('the swimmer has a bestiary entry', api.BEASTS.some(b => b.k === 'swimmer'));
+  }
+})();
+(() => {
+  // The wall-crawler — the only enemy that changes the vertical read.
+  revive(); api.unlockAll(); G().cheat = false;
+  at(2, 3, 16);
+  const c = api.enemies.find(e => e.kind === 'ceiling');
+  check('the shaft has something on its ceiling', !!c,
+    'enemies=' + api.enemies.map(e => e.kind).join(','));
+  if (c) {
+    check('it starts up at the ceiling, not on the floor', c.y <= c.anchorY + 2, 'y=' + c.y + ' anchor=' + c.anchorY);
+    // the row above the one it hangs in — its own row still holds the 'b' char
+    const cx = Math.floor((c.x + c.w / 2) / 16), crow = Math.floor(c.y / 16);
+    check('there is solid stone directly above it',
+      ['#', 'c'].indexOf(api.tileAt(ROOMS[2], cx, crow - 1)) >= 0,
+      'tile above row ' + crow + ' = ' + api.tileAt(ROOMS[2], cx, crow - 1));
+    // walk underneath it
+    let sawGold = false, dropped = false, hitBeforeTell = false;
+    for (let i = 0; i < 300 && !dropped; i++) {
+      P().hp = G().maxHP; P().inv = 0;
+      P().x = c.x; P().y = c.anchorY + 90;
+      G().hitstop = 0; tick(1);
+      if (c.tell === 'gold') sawGold = true;
+      if (P().hp < G().maxHP && !sawGold) hitBeforeTell = true;
+      if (c.st === 'drop') dropped = true;
+    }
+    check('walking underneath makes it drop', dropped, 'st=' + c.st);
+    check('REGRESSION the drop is telegraphed gold before it happens (Pillar 2)', sawGold, 'tell=' + c.tell);
+    check('REGRESSION it never lands a hit with no wind-up', !hitBeforeTell);
+    // and it goes back up
+    for (let i = 0; i < 400 && c.y > c.anchorY + 2; i++) { P().inv = 9999; P().x = 40; G().hitstop = 0; tick(1); }
+    check('and it climbs back to the ceiling afterwards', c.y <= c.anchorY + 4,
+      'y=' + c.y.toFixed(1) + ' anchor=' + c.anchorY);
+    check('the wall-crawler has a bestiary entry', api.BEASTS.some(b => b.k === 'ceiling'));
+  }
+})();
+(() => {
+  // The pair — one enemy in two bodies.
+  function pairScene() {
+    revive(); api.unlockAll(); G().cheat = false;
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1 }; G().slain = { ekwensu: 1 };
+    at(6, 30, 16);
+    return {
+      sh: api.enemies.find(e => e.kind === 'pairshield'),
+      sp: api.enemies.find(e => e.kind === 'pairspear')
+    };
+  }
+  const p0 = pairScene();
+  check('one spawn char makes both halves of the pair', !!p0.sh && !!p0.sp,
+    'enemies=' + api.enemies.map(e => e.kind).join(','));
+  if (!p0.sh || !p0.sp) return;
+  check('they know about each other', p0.sh.mate === p0.sp && p0.sp.mate === p0.sh);
+  check('the shield carries the poise, the spear carries the reach',
+    p0.sh.poiseMax > p0.sp.poiseMax && p0.sh.hp > p0.sp.hp,
+    'shield ' + p0.sh.hp + '/' + p0.sh.poiseMax + ' spear ' + p0.sp.hp + '/' + p0.sp.poiseMax);
+
+  // together: the shield does not attack, the spear does
+  (() => {
+    const { sh, sp } = pairScene();
+    let shieldAttacked = false, spearAttacked = false;
+    for (let i = 0; i < 400; i++) {
+      P().inv = 9999; P().hp = G().maxHP;
+      P().x = sh.x - 40; P().y = sh.y; G().hitstop = 0; tick(1);
+      if (sh.st === 'wind' || sh.st === 'bash') shieldAttacked = true;
+      if (sp.st === 'level' || sp.st === 'thrust') spearAttacked = true;
+    }
+    check('while the spear lives the shield only holds the line', !shieldAttacked, 'shield st=' + sh.st);
+    check('the spear is the half that reaches you', spearAttacked, 'spear st=' + sp.st);
+  })();
+
+  // shield eats light hits, like the warden
+  (() => {
+    const { sh } = pairScene();
+    P().x = sh.x - 12; P().y = sh.y; P().face = 1; P().inv = 9999;
+    G().weapons = { mma: 1 }; G().weapon = 'mma';
+    const hp0 = sh.hp;
+    revive(1); P().x = sh.x - 12; P().y = sh.y;
+    press('KeyZ', 1, 2); tick(30);
+    const light = hp0 - sh.hp;
+    check('a light hit on the shield is mostly wasted', light < api.CHAIN()[0].dmg * 0.5,
+      'took ' + light.toFixed(1) + ' of a ' + api.CHAIN()[0].dmg + ' stroke');
+  })();
+
+  // kill one and the survivor changes
+  (() => {
+    const { sh, sp } = pairScene();
+    sp.dead = true;
+    let shieldAttacked = false;
+    for (let i = 0; i < 300 && !shieldAttacked; i++) {
+      P().inv = 9999; P().hp = G().maxHP;
+      P().x = sh.x - 30; P().y = sh.y; G().hitstop = 0; tick(1);
+      if (sh.st === 'wind' || sh.st === 'bash') shieldAttacked = true;
+    }
+    check('kill the spear and the shield stops being patient', shieldAttacked, 'shield st=' + sh.st);
+  })();
+  (() => {
+    const { sh, sp } = pairScene();
+    sh.dead = true;
+    const d0 = Math.abs(sp.x - (sp.x - 30));
+    let closest = 1e9;
+    for (let i = 0; i < 200; i++) {
+      P().inv = 9999; P().x = sp.x - 30; P().y = sp.y; G().hitstop = 0; tick(1);
+      closest = Math.min(closest, Math.abs(sp.x - P().x));
+    }
+    check('kill the shield and the spear backs off instead of pressing', closest >= 20,
+      'it closed to ' + closest.toFixed(1) + 'px');
+  })();
+
+  check('both halves have bestiary entries',
+    api.BEASTS.some(b => b.k === 'pairshield') && api.BEASTS.some(b => b.k === 'pairspear'));
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the one that takes hold');
 (() => {
   function scene() {
