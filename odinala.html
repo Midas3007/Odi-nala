@@ -344,7 +344,7 @@ const ROOMS = [
   "#..............................................#",
   "#.......-----.............-----................#",
   "#...........###................................#",
-  "E....M......###..d............####.............E",
+  "E....M......###..d......m.....####.............E",
   "E.........w.###......t......W.####....w.....l..E",
   "################################################",
   "################################################",
@@ -1203,7 +1203,8 @@ const VOICE = {
   ala:   {f:96,  type:'square',   vol:.05,  jit:10, dur:.09,  growl:0},
   // one profile per NPC (07-AUDIO §7.3) — the people are told apart by pitch and
   // pace before a word of the text has been read
-  dibia: {f:104, type:'triangle', vol:.052, jit:11, dur:.085, growl:0}
+  dibia: {f:104, type:'triangle', vol:.052, jit:11, dur:.085, growl:0},
+  woman: {f:168, type:'sine',     vol:.045, jit:18, dur:.07,  growl:0}
 };
 function voiceBlip(kind,seedv){
   if(!AC) return;
@@ -1616,12 +1617,16 @@ function playerUpdate(){
         } else if(!G.msg) say(G.mirrors[sh.id]?"\u2193 step through":"\u2193 the glass wants a riddle",40);
       } else if(sh.kind==='npc'){
         const n=NPCS[sh.id];
-        if(n && tap('KeyE')){
+        const pr=n ? (typeof n.prompt==='function' ? n.prompt() : n.prompt) : 'E  speak';
+        if(n && pr && tap('KeyE')){
+          // beats() is read before the counter moves, so the first conversation
+          // is the first one, and an NPC who has said everything can return
+          // nothing and simply not respond
+          const b=n.beats();
           G.met[sh.id]=(G.met[sh.id]||0)+1;
-          playCut(n.beats());
           saveGame();
-          return;
-        } else if(!G.msg) say(n?n.prompt:'E  speak',40);
+          if(b && b.length){ playCut(b); return; }
+        } else if(pr && !G.msg) say(pr,40);
       } else if(sh.kind==='name' && !G.knowsName){
         if(tap('ArrowDown')||tap('KeyS')){
           G.knowsName=true; G.flash=10; shake(3); S.name();
@@ -2863,7 +2868,7 @@ function drawTiles(){
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
     const ch=tileAt(R,x,y);
-    if('.wltWKBSNMhrvXOakiFd'.indexOf(ch)>=0) continue;
+    if('.wltWKBSNMhrvXOakiFdm'.indexOf(ch)>=0) continue;
     const sx=x*T-cam.x, sy=y*T-cam.y;
 
     if(ch==='E'){
@@ -3430,6 +3435,31 @@ function drawNPC(s,x,y){
       const cx=x-1.5+i*3.6;
       pxf(cx,y+22.4,2.4,1.6,'#e6dcc2'); pxf(cx+.5,y+23.4,1.4,.6,'#8e8474');
     }
+  }
+  if(s.id==='woman'){
+    // Standing, and the widest thing about her is the ichafu — a horizontal top
+    // on a vertical body, which is the opposite read to the dibia's triangle.
+    // The tray at her feet is empty, and stays empty. She is selling nothing.
+    const sway=Math.sin(t/64)*0.4;
+    ctx.globalAlpha=.09+Math.sin(t/47)*.03; ctx.fillStyle=C.chalk;
+    ctx.beginPath(); ctx.arc(x+8,y+12,17,0,7); ctx.fill(); ctx.globalAlpha=1;
+
+    px(x+4,y+9+sway,8,12,'#2d2434');                               // wrapper, indigo-leaning
+    pxf(x+4,y+9+sway,8,1,'#544566');
+    pxf(x+11,y+9+sway,.5,12,'#191320');
+    for(let i=0;i<3;i++) pxf(x+4,y+12.5+i*3+sway,8,.5,'#3f3349');  // woven bands
+    pxf(x+2.5,y+10+sway,2,8,'#2d2434'); pxf(x+11.5,y+10+sway,2,8,'#2d2434');
+    pxf(x+2.5,y+10+sway,2,.5,'#544566'); pxf(x+11.5,y+10+sway,2,.5,'#544566');
+
+    px(x+5.5,y+3.5+sway,5,6,'#4a3928');                            // head
+    pxf(x+5.5,y+3.5+sway,5,.5,'#7a5f42');
+    pxf(x+6.5,y+6+sway,1,1,'#0c0908'); pxf(x+9,y+6+sway,1,1,'#0c0908');
+    px(x+3.5,y+1+sway,9,3,'#7d2f3a');                              // the ichafu, tied wide
+    pxf(x+3.5,y+1+sway,9,1,'#a8474f');
+    pxf(x+11.5,y+0+sway,2.5,3,'#7d2f3a');                          // the knot, off to one side
+
+    px(x+1,y+21,14,3,'#1b1712');                                   // the tray
+    pxf(x+1,y+21,14,1,'#3b3226');
   }
   if(!spoken){
     // a small chalk mote over anyone you have not spoken to, so the market does
@@ -4382,6 +4412,25 @@ const NPCS = {
        {art:'charm', voice:'dibia', text:"\"I cut one myself, once. Nine burials before it. The mother did the asking.\""},
        {art:'idols', voice:'you',   text:"He does not look up. He has told this to a hundred people who were not you."}
       ];
+    } },
+
+  // One line per visit. Across the whole game she describes a woman who used to
+  // shop here — and she is describing your mother, and does not know it, and for
+  // a good while neither does the player. The order is the entire effect: do not
+  // shuffle it. The last line is the one that lands, so it holds rather than
+  // looping back to the first — see the note in 05-PROGRESSION §5.5.
+  woman: { ch:'m', room:4, voice:'woman', prompt:'E  speak',
+    lines:[
+      "\"There was a woman came here every market day. Then there was not.\"",
+      "\"She bought the small yams. Said the big ones were showing off.\"",
+      "\"She laughed like she was getting away with something.\"",
+      "\"She stopped coming for a season. Came back thinner and bought the same yams.\"",
+      "\"Last time she was carrying cloth. White. Not very much of it.\"",
+      "\"I did not ask what it was for. You do not ask.\""
+    ],
+    beats(){
+      const i=Math.min((G.met.woman||0), this.lines.length-1);
+      return [{art:'idols', voice:'woman', text:this.lines[i]}];
     } }
 };
 const NPC_BY_CH={};

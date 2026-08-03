@@ -1470,6 +1470,60 @@ section('the people who are still here');
   }
 })();
 (() => {
+  // The market woman is a slow burn: one line per visit, in order, and the order
+  // is the whole effect (§5.5).
+  revive();
+  const w = api.NPCS.woman;
+  check('the market woman says one thing per visit', (() => {
+    G().met = {};
+    return w.beats().length === 1;
+  })(), 'beats=' + w.beats().length);
+
+  const said = [];
+  for (let visit = 0; visit < w.lines.length + 3; visit++) {
+    G().met = { woman: visit };
+    said.push(w.beats()[0].text);
+  }
+  check('each visit gives the next line, in order',
+    said.slice(0, w.lines.length).join('|') === w.lines.join('|'),
+    said.slice(0, w.lines.length).join(' / '));
+  check('past the end she holds on the last line rather than looping',
+    said[w.lines.length] === w.lines[w.lines.length - 1] &&
+    said[w.lines.length + 2] === w.lines[w.lines.length - 1],
+    'after the end: ' + said[w.lines.length]);
+  check('her thread never names your mother outright',
+    !/your mother|she was your/i.test(w.lines.join(' ')));
+  check('her last line is the one about the cloth',
+    /cloth|ask/i.test(w.lines[w.lines.length - 1]), w.lines[w.lines.length - 1]);
+  check('she and the dibia are both in the night market', w.room === api.NPCS.dibia.room);
+  check('she and the dibia are not on the same tile', (() => {
+    const r = ROOMS[w.room];
+    let a = -1, b = -1;
+    for (let y = 0; y < r.h; y++) {
+      const i = r.map[y].indexOf(w.ch), j = r.map[y].indexOf(api.NPCS.dibia.ch);
+      if (i >= 0) a = i; if (j >= 0) b = j;
+    }
+    return a >= 0 && b >= 0 && Math.abs(a - b) > 2;
+  })());
+
+  // played
+  revive(); G().cheat = false; G().met = {};
+  at(w.room, 2, 16);
+  const sh = api.shrines.find(s => s.kind === 'npc' && s.id === 'woman');
+  check('the market woman is spawned', !!sh);
+  if (sh) {
+    P().x = sh.x; P().y = sh.y; P().inv = 600;
+    tick(2);
+    press('KeyE', 1, 2);
+    check('talking to her opens a conversation', G().mode === 'cut', 'mode=' + G().mode);
+    skipCuts(); tick(3);
+    check('her visit counter advances', G().met.woman === 1, 'met=' + JSON.stringify(G().met));
+    press('KeyE', 1, 2);
+    skipCuts(); tick(3);
+    check('a second visit advances it again', G().met.woman === 2, 'met=' + JSON.stringify(G().met));
+  }
+})();
+(() => {
   // The world state changes what he says, which is the whole design (§5.5).
   revive(); G().slain = {};
   const early = api.NPCS.dibia.beats().map(b => b.text).join(' ');

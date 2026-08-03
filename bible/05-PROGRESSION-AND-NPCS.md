@@ -105,8 +105,8 @@ text. A thing that stands up and shows you.
 
 ## 5.5 NPCs — the gap and the plan
 
-**The first NPC is built.** The dibia sits in the night market. The other three are
-still [NOT BUILT]. Every other entity in the game is hostile or scenery.
+**Two of the four are built** — the dibia and the market woman, both in Ahịa Mmụọ. The
+younger ọgbanje and the mother's shade are still [NOT BUILT].
 
 ### Why it matters
 Blasphemous and Hollow Knight both use NPCs as *tonal punctuation* — the player spends
@@ -132,13 +132,22 @@ switched on `G.slain.ogbunabali` — before, he explains the iyi-uwa; after, he 
 name aloud and stops with his hand halfway to the cowries. Talking unlocks the `DIBIA`
 codex entry. He never recognises you, and there is no state in which he does.
 
-**2. The market woman selling nothing** — Ahịa Mmụọ.
+**2. The market woman selling nothing** — Ahịa Mmụọ. **[BUILT]**
 One line per visit, cycling. Over the course of the game she describes a woman who used
 to come to this market — what she bought, how she laughed, what she was carrying the
 last time. **She is describing your mother and she does not know it, and neither, for a
 while, does the player.**
 
 *Function:* the game's only slow-burn emotional thread. Costs almost nothing to build.
+
+*As built:* spawn char `m`, room 4 at (24,14), voice profile `woman`. Six lines, one per
+visit, indexed off `G.met.woman`. The order is the effect and must not be shuffled.
+
+**Deviation from the plan, deliberate:** the brief says the lines *cycle*. They do not.
+The sixth line is the burial cloth, and looping from there back to "there was a woman
+came here every market day" would undo it — the player would learn that the thread is a
+carousel rather than a life. She holds on the last line instead. If you want her to keep
+talking forever, write more lines; do not make her repeat the beginning.
 
 **3. The younger ọgbanje** — Iyi Idemili.
 Still in the cycle. Has died four times. Sits in the water. Asks you what is on the
