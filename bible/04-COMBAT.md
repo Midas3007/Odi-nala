@@ -108,9 +108,25 @@ Design rules for any new weapon:
   cowries), the firebrand is *found* in the fire room. **At least one weapon should
   always be found rather than bought.**
 
-**[NOT BUILT]** Weapon-specific heavy attacks. Currently each weapon has its own heavy
-*numbers* but the same *shape*. Giving Ogu a sweeping heavy and Nkwụ a rapid flurry
-would be the highest-value combat addition available.
+### Weapon-specific heavies — **[BUILT]**
+
+Each weapon's heavy now has its own **shape**, not just its own numbers. The shape is
+declared in `WEAPONS[k].heavy.kind` and branched in the `heavy` player state, so adding a
+weapon means adding a kind rather than editing a shared code path.
+
+| Weapon | Kind | Shape |
+|---|---|---|
+| **Mma** | `lunge` | One committed stroke forward. The baseline the others are read against — deliberately unchanged. |
+| **Nkwụ** | `flurry` | Four cuts inside one commitment, 5 frames apart, each ~1.35× of a quarter share. Each is its own swing, so each lands once. |
+| **Ogu** | `sweep` | Comes all the way round: the hitbox is built symmetrically about the player, so it catches what is **behind** you. The only attack in the game that does. |
+| **Mkpịsị Ọkụ** | `slam` | Downward, and it leaves **burning ground** — a patch that applies `burn` to anything standing in it every 14 frames for 260 frames. |
+
+Burning ground lives in `flames[]`, capped at 6 (§09.5 rule 3), cleared by `spawnRoom` so
+it does not follow you between rooms, and it casts a light so it reads at night.
+
+**The drawbacks are unchanged and still carry the balance.** The sweep is the slowest
+wind-up in the game; the flurry has the shortest reach; the slam roots you hardest and
+commits you downward. A shape that removed a weapon's cost would be a bug, not a buff.
 
 ## 4.5 Spell design — the four ọfọ
 

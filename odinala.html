@@ -581,6 +581,10 @@ function cycleSpell(d){
 let R = ROOMS[G.room];
 const cam = {x:0,y:0};
 const parts = [], hits = [], shots = [];
+// burning ground the firebrand's heavy leaves behind. Capped, like every other
+// unbounded array in here (09-TECHNICAL §9.5 rule 3).
+const flames = [];
+const FLAME_CAP = 6;
 let enemies = [], shrines = [], pickups = [], boss = null, shade = null;
 
 function say(text, dur=200){ G.msg = text; G.msgT = dur; }
@@ -615,7 +619,7 @@ const rects=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
 
 // ── room population ──────────────────────────────────────────────────────────
 function spawnRoom(){
-  enemies=[]; shrines=[]; pickups=[]; boss=null; shots.length=0; parts.length=0;
+  enemies=[]; shrines=[]; pickups=[]; boss=null; shots.length=0; parts.length=0; flames.length=0;
   for(let y=0;y<R.h;y++) for(let x=0;x<R.w;x++){
     const ch = R.map[y][x];
     if(ch==='w') enemies.push(mkWalker(x,y));
@@ -855,6 +859,7 @@ function drawAmbient(front){
 // warm points of light: charms, glass, market lamps
 function roomLights(){
   const L=[];
+  for(const fl of flames) L.push({x:fl.x, y:fl.y-4, r:30, c:'232,134,42', i:.30*Math.min(1,fl.t/60)});
   for(const sh of shrines){
     if(sh.kind==='rest') L.push({x:sh.x+8,y:sh.y+11,r:34,c:'216,164,66',i:.30});
     else if(sh.kind==='mirror') L.push({x:sh.x+8,y:sh.y+11,r:G.mirrors[sh.id]?40:22,
@@ -1301,7 +1306,7 @@ const WEAPONS = {
     chain:[ {wind:5, act:5, rec:12, dmg:9,  poise:10, reach:22, kb:1.6},
             {wind:5, act:5, rec:13, dmg:10, poise:12, reach:22, kb:1.8},
             {wind:9, act:7, rec:20, dmg:18, poise:24, reach:28, kb:3.4} ],
-    heavy:{wind:14, act:8, rec:26, dmg:34, poise:56, reach:34, kb:5.2},
+    heavy:{wind:14, act:8, rec:26, dmg:34, poise:56, reach:34, kb:5.2, kind:'lunge'},
     air:  {wind:4,  act:6, rec:10, dmg:9,  poise:10, reach:24, kb:1.4},
     ofo:1, tint:'#cfc6ad' },
 
@@ -1311,7 +1316,7 @@ const WEAPONS = {
             {wind:3, act:4, rec:8,  dmg:6,  poise:7,  reach:17, kb:1.0},
             {wind:3, act:4, rec:9,  dmg:7,  poise:8,  reach:18, kb:1.2},
             {wind:6, act:6, rec:16, dmg:13, poise:18, reach:22, kb:2.6} ],
-    heavy:{wind:10, act:7, rec:20, dmg:22, poise:34, reach:26, kb:3.4},
+    heavy:{wind:10, act:7, rec:20, dmg:22, poise:34, reach:26, kb:3.4, kind:'flurry', hits:4, gap:5},
     air:  {wind:3,  act:5, rec:8,  dmg:6,  poise:7,  reach:19, kb:1.0},
     ofo:2.1, tint:'#bfe2e8' },
 
@@ -1320,7 +1325,7 @@ const WEAPONS = {
     chain:[ {wind:8,  act:6, rec:16, dmg:13, poise:18, reach:34, kb:2.6},
             {wind:8,  act:6, rec:18, dmg:15, poise:22, reach:34, kb:2.8},
             {wind:13, act:8, rec:26, dmg:26, poise:40, reach:42, kb:5.0} ],
-    heavy:{wind:18, act:9, rec:30, dmg:44, poise:78, reach:48, kb:6.4},
+    heavy:{wind:18, act:9, rec:30, dmg:44, poise:78, reach:48, kb:6.4, kind:'sweep'},
     air:  {wind:6,  act:7, rec:13, dmg:13, poise:16, reach:36, kb:2.0},
     ofo:0.8, tint:'#c9a86a' },
 
@@ -1329,7 +1334,7 @@ const WEAPONS = {
     chain:[ {wind:7,  act:6, rec:16, dmg:11, poise:20, reach:26, kb:2.4},
             {wind:7,  act:6, rec:18, dmg:13, poise:24, reach:26, kb:2.6},
             {wind:12, act:8, rec:24, dmg:24, poise:44, reach:32, kb:4.6} ],
-    heavy:{wind:17, act:9, rec:28, dmg:40, poise:72, reach:38, kb:6.0},
+    heavy:{wind:17, act:9, rec:28, dmg:40, poise:72, reach:38, kb:6.0, kind:'slam'},
     air:  {wind:5,  act:7, rec:12, dmg:11, poise:18, reach:28, kb:1.8},
     ofo:1.1, burn:110, tint:'#e8862a' }
 };
@@ -1474,11 +1479,52 @@ function playerUpdate(){
       break; }
 
     case 'heavy': {
+      // Four weapons, four shapes. The numbers were always per-weapon; this is the
+      // half that was missing, and it is what makes the choice a choice rather
+      // than a stat line (04-COMBAT §4.4).
       P.t++;
-      if(P.t<WA().heavy.wind){ P.vx = P.face*0.35; }
-      if(P.t===WA().heavy.wind){ P.vx = P.face*2.7; S.swing(); shake(2); }
-      if(P.t>WA().heavy.wind && P.t<=WA().heavy.wind+WA().heavy.act) swing(WA().heavy,'heavy');
-      if(P.t>=WA().heavy.wind+WA().heavy.act+WA().heavy.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      const H = WA().heavy, kindH = H.kind || 'lunge';
+      if(P.t < H.wind){ P.vx = P.face*(kindH==='sweep' ? 0.2 : 0.35); }
+      if(P.t === H.wind){
+        S.swing(); shake(kindH==='slam' ? 3 : 2);
+        P.vx = P.face * (kindH==='flurry' ? 1.6 : kindH==='sweep' ? 1.1 : 2.7);
+        if(kindH==='slam') P.vy = 2.4;                  // it comes down
+      }
+      const act0 = H.wind, act1 = H.wind + H.act;
+
+      if(kindH==='flurry'){
+        // nkwụ: several quick cuts inside one commitment. Each one is its own
+        // swing, so each lands once — bumping swingId is what makes that true.
+        const n = H.hits||4, gap = H.gap||5;
+        for(let k=0;k<n;k++){
+          const at = act0 + k*gap;
+          if(P.t === at){ P.swingId++; P.hitOnce=false; if(k) S.swing(); }
+          if(P.t >= at && P.t < at+2) swing({...H, dmg:H.dmg/n*1.35, poise:H.poise/n*1.35}, 'heavy');
+        }
+        if(P.t >= act0 + n*gap + H.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      }
+      else if(kindH==='sweep'){
+        // ogu: it comes all the way round. Long, slow, and it does not care which
+        // side you are being surrounded from.
+        if(P.t>act0 && P.t<=act1) swing(H,'heavy',{both:true});
+        if(P.t===act1){ shake(4); }
+        if(P.t >= act1 + H.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      }
+      else if(kindH==='slam'){
+        // firebrand: down, not across, and it leaves the floor burning.
+        if(P.t>act0 && P.t<=act1) swing(H,'heavy');
+        if(P.t===act1){
+          shake(7); stop(8); nz(.26,.07,220);
+          burst(P.x+5,P.y+P.h,22,'#ffcf7a',3.0,32);
+          if(flames.length < FLAME_CAP)
+            flames.push({x:P.x+P.w/2 + P.face*14, y:P.y+P.h-2, w:34, h:6, t:260, tick:0});
+        }
+        if(P.t >= act1 + H.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      }
+      else {
+        if(P.t>act0 && P.t<=act1) swing(H,'heavy');
+        if(P.t >= act1 + H.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      }
       break; }
 
     case 'aircut': {
@@ -1738,8 +1784,13 @@ function playerUpdate(){
 }
 
 // -- resolving a swing -------------------------------------------------------
-function swing(a,kind){
-  const box={x: P.face>0 ? P.x+P.w-2 : P.x-a.reach+2, y:P.y-4, w:a.reach, h:P.h+6};
+function swing(a,kind,opts){
+  // `both` builds the box symmetrically around the player instead of in front of
+  // them — the staff's heavy comes round in a circle and catches what is behind.
+  const both = !!(opts && opts.both);
+  const box = both
+    ? {x: P.x+P.w/2-a.reach, y:P.y-6, w:a.reach*2, h:P.h+10}
+    : {x: P.face>0 ? P.x+P.w-2 : P.x-a.reach+2, y:P.y-4, w:a.reach, h:P.h+6};
   const boon = P.ikenga>0 ? (spellStat('ikenga')||{mult:1}).mult : 1;
   let connected=false, anyClean=false, anyMuff=false;
 
@@ -2948,6 +2999,25 @@ function update(){
   if(boss) bossUpdate(boss);
   shotsUpdate();
 
+  // burning ground: it does not chase anything, it is just somewhere it is now
+  // a bad idea to stand
+  for(let i=flames.length-1;i>=0;i--){
+    const fl=flames[i];
+    fl.box = {x:fl.x-fl.w/2, y:fl.y-fl.h, w:fl.w, h:fl.h+10};
+    fl.t--; fl.tick++;
+    if(fl.t<=0){ flames.splice(i,1); continue; }
+    if(fl.tick%14===0){
+      for(const e of enemies){
+        if(e.dead) continue;
+        if(rects(fl.box,e)){ e.burn=Math.max(e.burn||0,90); e.flash=3; }
+      }
+      if(boss && !boss.dead && rects(fl.box,boss)) boss.burn=Math.max(boss.burn||0,60);
+    }
+    if(fl.tick%4===0 && parts.length<240)
+      parts.push({x:fl.x-fl.w/2+rnd()*fl.w, y:fl.y-2, vx:(rnd()-.5)*.4, vy:-.6-rnd()*.5,
+                  life:18, max:24, col:rnd()<.4?'#ffcf7a':'#e8862a', g:-0.014, sz:1});
+  }
+
   for(let i=parts.length-1;i>=0;i--){
     const p=parts[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.vx*=0.98; p.life--;
     if(p.life<=0) parts.splice(i,1);
@@ -4046,6 +4116,22 @@ function drawNPC(s,x,y){
   }
 }
 
+function drawFlames(){
+  for(const fl of flames){
+    const x=fl.x-cam.x, y=fl.y-cam.y, fade=Math.min(1, fl.t/60);
+    ctx.globalAlpha=(.16+Math.sin(G.t/7)*.05)*fade; ctx.fillStyle='#e8862a';
+    ctx.beginPath(); ctx.ellipse(x, y-2, fl.w*0.62, 9, 0,0,7); ctx.fill(); ctx.globalAlpha=1;
+    for(let i=0;i<7;i++){
+      const fx=x-fl.w/2+ (i+0.5)*(fl.w/7);
+      const h=3+Math.abs(Math.sin(G.t/6+i*1.3))*5;
+      ctx.globalAlpha=(.55+Math.sin(G.t/5+i)*.2)*fade;
+      pxf(fx-1, y-h, 2, h, i%2?'#ffcf7a':'#e8862a');
+      ctx.globalAlpha=1;
+    }
+    ctx.globalAlpha=.5*fade; pxf(x-fl.w/2, y-1, fl.w, 1.5, '#8e2323'); ctx.globalAlpha=1;
+  }
+}
+
 function drawPickups(){
   for(const p of pickups){
     if(p.kind==='cowrie'){
@@ -5044,7 +5130,7 @@ function drawVignette(){
 function render(){
   ctx.save();
   if(G.shake>0.2){ ctx.translate((rnd()-.5)*G.shake*2,(rnd()-.5)*G.shake*2); }
-  drawBG(); drawTiles(); drawProps(); drawDecals(); drawShrines(); drawPickups(); drawShade(); drawShadows();
+  drawBG(); drawTiles(); drawProps(); drawDecals(); drawShrines(); drawPickups(); drawShade(); drawShadows(); drawFlames();
   for(const e of enemies) drawEnemy(e);
   if(boss) drawBoss(boss);
   drawShots(); drawPlayer(); drawParts();
@@ -6408,7 +6494,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   PAUSE_LABEL:()=>pauseLabel(pauseRows()[PAUSE.sel]), LORE_OPEN:loreOpen, BEAST_OPEN:beastOpen,
   CDX:()=>CDX, storyProgress, LORE, BEASTS, openCodex, BG_ROOM:()=>bgRoom,
   WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS,
-  ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C
+  ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C, get flames(){return flames}
 });
 cvs.focus();
 requestAnimationFrame(frame);

@@ -953,6 +953,164 @@ section('Ogbunabali — the lie is the mechanic');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('four weapons, four heavies');
+(() => {
+  const WEAPONS = api.WEAPONS;
+  // Every weapon declares a heavy shape, and no two weapons share one. The
+  // numbers were always per-weapon; the shape is what makes the choice a choice.
+  const kinds = {};
+  for (const k of Object.keys(WEAPONS)) {
+    const h = WEAPONS[k].heavy;
+    check(k + '’s heavy declares a shape', !!h.kind, 'kind=' + h.kind);
+    kinds[h.kind] = (kinds[h.kind] || 0) + 1;
+  }
+  check('no two weapons share a heavy shape',
+    Object.keys(kinds).every(x => kinds[x] === 1), JSON.stringify(kinds));
+  check('all four shapes are used', Object.keys(kinds).length === 4, JSON.stringify(kinds));
+
+  // Put a punchbag in front, and optionally one behind, then throw one heavy.
+  function bag(weapon, opts) {
+    revive();
+    api.unlockAll(); G().cheat = false;                 // real damage numbers
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1, exec: 1, bound: 1 };
+    G().slain = { ekwensu: 1 };
+    at(1, 6, 16);
+    G().weapons = { mma: 1, nkwu: 1, ogu: 1, oku: 1 };
+    G().weapon = weapon;
+    for (const e of api.enemies) e.dead = true;
+    const front = api.enemies[0];
+    if (!front) return null;
+    front.dead = false; front.hp = 9999; front.maxhp = 9999; front.poise = 9999; front.poiseMax = 9999;
+    front.x = P().x + 26; front.y = P().y; front.st = 'idle'; front.vx = 0; front.stagger = 0;
+    let behind = null;
+    if (opts && opts.behind && api.enemies[1]) {
+      behind = api.enemies[1];
+      behind.dead = false; behind.hp = 9999; behind.maxhp = 9999; behind.poise = 9999; behind.poiseMax = 9999;
+      behind.x = P().x - 30; behind.y = P().y; behind.st = 'idle'; behind.vx = 0; behind.stagger = 0;
+    }
+    P().face = 1; P().inv = 9999;
+    return { front: front, behind: behind };
+  }
+  // Pressing Z fires a *light* attack; the charge only builds through its
+  // recovery, so the hold has to outlast the slowest weapon's chain step before
+  // CHARGE_AT is reached. Hold, let the light attack resolve and the charge
+  // fill, and only then count what the heavy does. Damage taken during the
+  // charge is ignored — `seen` is reset the moment the heavy actually begins.
+  function throwHeavy(b, frames) {
+    const seen = { front: 0, behind: 0, began: false };
+    const pin = () => {
+      P().inv = 9999; G().hitstop = 0; G().slow = 0;
+      b.front.stagger = 0; b.front.vx = 0; b.front.x = P().x + 26; b.front.y = P().y;
+      if (b.behind) { b.behind.stagger = 0; b.behind.vx = 0; b.behind.x = P().x - 30; b.behind.y = P().y; }
+    };
+    api.up('KeyZ'); api.down('KeyZ');
+    for (let i = 0; i < 120 && P().charge < 26; i++) { pin(); tick(1); }
+    api.up('KeyZ');
+    let fh = b.front.hp, bh = b.behind ? b.behind.hp : 0;
+    for (let i = 0; i < (frames || 120); i++) {
+      pin();
+      tick(1);
+      if (P().st === 'heavy') seen.began = true;
+      if (b.front.hp < fh) { seen.front++; fh = b.front.hp; }
+      if (b.behind && b.behind.hp < bh) { seen.behind++; bh = b.behind.hp; }
+    }
+    return seen;
+  }
+
+  // mma — the baseline: one committed stroke
+  (() => {
+    const b = bag('mma');
+    if (!b) return;
+    const hit = throwHeavy(b);
+    check('mma’s heavy actually fires', hit.began, 'the charge never became a heavy');
+    check('mma’s heavy lands as a single stroke', hit.front === 1, 'landed on ' + hit.front + ' frames');
+  })();
+
+  // nkwụ — a flurry: several cuts inside one commitment
+  (() => {
+    const b = bag('nkwu');
+    if (!b) return;
+    const hit = throwHeavy(b);
+    check('nkwụ’s heavy actually fires', hit.began, 'the charge never became a heavy');
+    check('REGRESSION nkwụ’s heavy is a flurry, not one stroke', hit.front >= 3,
+      'landed ' + hit.front + ' times, expected the declared ' + WEAPONS.nkwu.heavy.hits);
+    check('the flurry lands about as many cuts as it declares',
+      hit.front <= WEAPONS.nkwu.heavy.hits, 'landed ' + hit.front);
+  })();
+
+  // ogu — a sweep: it comes all the way round
+  (() => {
+    const b = bag('ogu', { behind: true });
+    if (!b || !b.behind) { check('a second target could be placed behind', !!(b && b.behind)); return; }
+    const hit = throwHeavy(b);
+    check('ogu’s heavy actually fires', hit.began, 'the charge never became a heavy');
+    check('REGRESSION ogu’s heavy catches what is behind you', hit.behind > 0,
+      'behind was hit ' + hit.behind + ' times');
+    check('and still catches what is in front', hit.front > 0, 'front was hit ' + hit.front + ' times');
+  })();
+  (() => {
+    // and no other weapon does that — otherwise the sweep is not a shape
+    const b = bag('mma', { behind: true });
+    if (!b || !b.behind) return;
+    const hit = throwHeavy(b);
+    check('mma’s heavy does not reach behind you', hit.behind === 0, 'behind hit ' + hit.behind);
+  })();
+
+  // firebrand — a slam that leaves the floor burning
+  (() => {
+    const b = bag('oku');
+    if (!b) return;
+    check('there is no burning ground to start with', api.flames.length === 0, 'flames=' + api.flames.length);
+    throwHeavy(b, 90);
+    check('REGRESSION the firebrand’s heavy leaves burning ground', api.flames.length > 0,
+      'flames=' + api.flames.length);
+    if (api.flames.length) {
+      const fl = api.flames[0];
+      check('the fire is left on the floor, not floating', fl.y >= P().y, 'flame y=' + fl.y + ' player y=' + P().y);
+      check('it is in front of where you swung', fl.x > P().x, 'flame x=' + fl.x + ' player x=' + P().x);
+      // it burns what stands in it
+      b.front.burn = 0; b.front.x = fl.x - 6; b.front.hp = 9999;
+      const hp0 = b.front.hp;
+      for (let i = 0; i < 120; i++) {
+        G().hitstop = 0; P().inv = 9999;
+        b.front.x = fl.x - 6; b.front.stagger = 0;
+        tick(1);
+      }
+      check('standing in it burns you', b.front.hp < hp0, 'hp ' + hp0 + ' → ' + b.front.hp);
+      check('the fire goes out on its own', (() => {
+        for (let i = 0; i < 400 && api.flames.length; i++) { G().hitstop = 0; P().inv = 9999; tick(1); }
+        return api.flames.length === 0;
+      })(), 'flames=' + api.flames.length);
+    }
+  })();
+  (() => {
+    // it is capped, and it does not follow you between rooms
+    const b = bag('oku');
+    if (!b) return;
+    for (let n = 0; n < 10; n++) {
+      P().x = 100 + n * 6; P().face = 1;
+      throwHeavy(b, 50);
+    }
+    check('burning ground is capped', api.flames.length <= 6, 'flames=' + api.flames.length);
+    at(1, 20, 16);
+    check('and it does not follow you into the next room', api.flames.length === 0, 'flames=' + api.flames.length);
+  })();
+
+  // no weapon lost its numbers to the refactor
+  for (const k of Object.keys(WEAPONS)) {
+    const h = WEAPONS[k].heavy;
+    check(k + '’s heavy still has real frame data',
+      h.wind > 0 && h.act > 0 && h.rec > 0 && h.dmg > 0 && h.reach > 0,
+      JSON.stringify(h));
+    // and every heavy still returns control
+    const b = bag(k);
+    if (!b) continue;
+    throwHeavy(b, 200);
+    check(k + '’s heavy returns to idle', P().st === 'idle', 'st=' + P().st);
+  }
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the three endings');
 (() => {
   function atOnwe(spared) {

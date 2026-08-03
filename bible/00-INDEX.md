@@ -9,7 +9,7 @@ game without asking anyone, and arrive at the same answer the director would hav
 ## Status of the project
 
 The game is **playable, complete, and shipping**. There is a beginning, ten rooms,
-five bosses, three endings, and 1,036 automated assertions that all pass. This bible is
+five bosses, three endings, and 1,067 automated assertions that all pass. This bible is
 not a plan for a game that does not exist. It is the operating manual for a game
 that does, and the map for where it goes next.
 
