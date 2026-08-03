@@ -445,7 +445,7 @@ const ROOMS = [
   "#.........-i---...............................----.....#",
   "#............................-----.....................#",
   "E......M...............................................E",
-  "E...S......k...............i..v................k..F....E",
+  "E...S......k...j...........i..v................k..F....E",
   "##################.......###########.......#############",
   "##################.......###########.......#############",
   "##################.......###########.......#############",
@@ -591,7 +591,7 @@ const P = {
   inv:0, hurtT:0, dead:false, callT:0, anim:0, slamming:false, hitOnce:false,
   charge:0, rollCd:0, execTarget:null, swingId:0, airJumps:0,
   tut:{moved:0,jumps:0,hits:0,chain:0,heavy:0,rolls:0,parries:0,execs:0,heals:0,casts:0},
-  veil:0, veilT:0, ikenga:0, castT:0, castKey:''
+  veil:0, veilT:0, ikenga:0, castT:0, castKey:'', heldBy:null, grabT:0
 };
 
 function resetPlayerAt(room,tx,ty){
@@ -624,6 +624,7 @@ function spawnRoom(){
     if(ch==='i') enemies.push(mkEffigy(x,y));
     if(ch==='n') enemies.push(mkHealer(x,y));
     if(ch==='q') enemies.push(mkMimic(x,y));
+    if(ch==='j') enemies.push(mkGrappler(x,y));
     if(ch==='F' && !G.weapons.oku) pickups.push({kind:'weapon', w:'oku', x:x*T+2, y:y*T+4, t:0});
     if(ch==='S') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'rest'});
     if(ch==='N') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'name'});
@@ -671,6 +672,10 @@ function mkHealer(x,y){ const e=base(x,y,12,20,30,24); e.kind='healer'; e.cd=40;
 // have a fight you did not know was there. The surprise is that it was scenery,
 // never that the attack is unreadable: Pillar 2 still holds.
 function mkMimic(x,y){ const e=base(x,y,16,24,44,34); e.kind='mimic'; e.cd=0; e.woke=0; e.st='sleep'; return e; }
+// It does not swing at you, it takes hold of you. The grab is gold — there is no
+// turning a pair of hands aside — and once it has you the fight stops being about
+// reading and starts being about getting out.
+function mkGrappler(x,y){ const e=base(x,y,18,24,64,48); e.kind='grappler'; e.cd=40; e.home=e.x; e.hold=null; return e; }
 
 function mkBoss(x,y,who){
   who=who||'ogbunabali';
@@ -1335,7 +1340,7 @@ function playerUpdate(){
   if(P.veilT>0){ P.veilT--; if(P.veilT===0) P.veil=0; }
   if(P.comboWin>0) P.comboWin--; else P.combo=0;
 
-  const busy = ['atk','heavy','aircut','thrust','roll','ward','heal','call','hurt','pray','exec'].indexOf(P.st)>=0;
+  const busy = ['atk','heavy','aircut','thrust','roll','ward','heal','call','hurt','pray','exec','held'].indexOf(P.st)>=0;
   const a0 = CHAIN()[Math.min(P.combo,CHAIN().length-1)];
   const inRec = (P.st==='atk') && (P.t > a0.wind + a0.act);
 
@@ -1466,6 +1471,28 @@ function playerUpdate(){
       break; }
 
     case 'roll': P.t++; P.vx = P.face*3.1*(1-P.t/26); if(P.t>=22){P.st='idle';P.t=0;} break;
+
+    case 'held': {
+      P.t++;
+      const g = P.heldBy;
+      // Mashing shortens it, but it runs out on its own as well. A grab you
+      // cannot escape is a soft-lock wearing a monster costume, and priority 2
+      // outranks any amount of tension.
+      if(tap('KeyZ')||tap('KeyX')||tap('KeyC')||tap('Space')) P.grabT-=11;
+      P.grabT--;
+      P.vx=0; P.vy=0;
+      if(g && !g.dead){ P.x = g.x + (g.face>0 ? g.w-2 : -P.w+2); P.y = g.y+4; P.face = -g.face; }
+      if(P.t%24===0){
+        P.hp-=5; G.flash=3; shake(2); S.hurt();
+        burst(P.x+5,P.y+8,6,C.blood,1.8,20);
+      }
+      if(!g || g.dead || g.stagger>0 || g.broken>0 || P.grabT<=0 || P.hp<=0){
+        if(g){ g.hold=null; g.st='rec'; g.t=0; g.cd=110; }
+        P.heldBy=null; P.st='idle'; P.t=0; P.inv=46;
+        P.vx=P.face*2.4; P.vy=-2.6;
+        S.roll&&S.roll(); burst(P.x+5,P.y+8,12,C.chalk,2.4,24);
+      }
+      break; }
 
     case 'ward': P.t++;
       if(P.t>=14 && !keys.KeyC){ P.st='idle'; P.t=0; }
@@ -1770,7 +1797,14 @@ function hurtPlayer(dmg,dir,unblockable){
     return;
   }
 
-  P.hp-=dmg; P.inv=64; P.st='hurt'; P.t=0; P.vx=dir*2.4; P.vy=-2.2; P.charge=0;
+  // Being hit while something already has hold of you does not knock you loose:
+  // the grab is the dominant state, and popping out of it for free would make the
+  // grappler weaker the more crowded the room is, which is backwards. A shorter
+  // i-frame so a pack cannot shred you while you are pinned.
+  const pinned = P.st==='held';
+  P.hp-=dmg; P.charge=0;
+  if(pinned){ P.inv=Math.max(P.inv,24); }
+  else { P.inv=64; P.st='hurt'; P.t=0; P.vx=dir*2.4; P.vy=-2.2; }
   shake(5); stop(8); G.flash=6; S.hurt();
   burst(P.x+5,P.y+8,14,C.blood,2.6,28);
   decal(P.x+5, P.y+P.h);
@@ -1851,6 +1885,39 @@ function enemyUpdate(e){
   }
 
   e.t++;
+
+  if(e.kind==='grappler'){
+    if(e.cd>0) e.cd--;
+    if(e.st==='hold'){
+      // it stands still and squeezes; everything about breaking out lives in the
+      // player's 'held' state, and it lets go the moment it is staggered or dead
+      e.vx=0; e.tell='';
+      if(!e.hold || P.st!=='held'){ e.hold=null; e.st='rec'; e.t=0; }
+      return;
+    }
+    if(e.st==='idle'){
+      e.vx = e.face*0.5;
+      if(Math.abs(e.x-e.home)>60) e.face*=-1;
+      if(!solidAt(e.x+(e.face>0?e.w+2:-2), e.y+e.h+2, null)) e.face*=-1;
+      if(adx<58 && ady<26 && e.cd<=0){ e.st='reach'; e.t=0; e.tell='gold'; e.face=dx>0?1:-1; e.vx=0; }
+    }
+    else if(e.st==='reach'){
+      // a long, obvious gold wind-up: this is a roll, and it is meant to be one
+      e.vx=0; e.tell='gold';
+      if(e.t>=34){ e.st='seize'; e.t=0; e.tell=''; e.vx=e.face*2.6; }
+    }
+    else if(e.st==='seize'){
+      const box={x:e.face>0?e.x+e.w-6:e.x-22, y:e.y, w:28, h:e.h};
+      if(!e.hold && rects(box,P) && P.st!=='roll' && P.inv<=0 && !P.dead && !G.cheat){
+        e.hold=P; e.st='hold'; e.t=0; e.vx=0;
+        P.st='held'; P.t=0; P.heldBy=e; P.grabT=96; P.charge=0; P.vx=0; P.vy=0;
+        S.brk&&S.brk(); shake(5); stop(8);
+        burst(P.x+5,P.y+9,16,C.uhie,2.4,26);
+      }
+      if(e.t>=18){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.82; if(e.t>=44){ e.st='idle'; e.t=0; e.cd=90; } }
+  }
 
   if(e.kind==='mimic'){
     if(e.st==='sleep'){
@@ -2968,7 +3035,7 @@ function drawTiles(){
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
     const ch=tileAt(R,x,y);
-    if('.wltWKBSNMhrvXOakiFdmoynq'.indexOf(ch)>=0) continue;
+    if('.wltWKBSNMhrvXOakiFdmoynqj'.indexOf(ch)>=0) continue;
     const sx=x*T-cam.x, sy=y*T-cam.y;
 
     if(ch==='E'){
@@ -3831,6 +3898,28 @@ function drawEnemy(e){
   const flash = e.flash>0;
   const stag = e.stagger>0;
 
+  if(e.kind==='grappler'){
+    // Wide and armless-looking at rest, then it becomes almost all arms. The
+    // silhouette change is the tell you actually read at speed.
+    const reaching = e.st==='reach'||e.st==='seize'||e.st==='hold';
+    px(x+3,y+6,e.w-6,e.h-6, flash?C.chalk:'#241c1c');
+    pxf(x+3,y+6,e.w-6,.5, flash?C.chalk:'#4a3838');
+    pxf(x+e.w-3.5,y+6,.5,e.h-6,'#150f0f');
+    px(x+4,y,e.w-8,7, flash?C.chalk:'#171111');                 // low, hunched head
+    pxf(x+4,y,e.w-8,.5,'#3a2a2a');
+    pxf(x+6,y+3,1.5,1,'#c2402c'); pxf(x+e.w-7.5,y+3,1.5,1,'#c2402c');
+    for(let i=0;i<3;i++) pxf(x+5,y+10+i*4,e.w-10,.5,'#3a2a2a');
+    // the arms: tucked at rest, out and long while it reaches
+    const aw = reaching ? 11 : 4;
+    const axx = x + (e.face>0 ? e.w-3 : 3-aw) + (reaching ? e.face*3 : 0);
+    pxf(axx, y+8,  aw, 4, flash?C.chalk:'#2e2222'); pxf(axx, y+8,  aw, .5, '#4a3838');
+    pxf(axx, y+14, aw, 4, flash?C.chalk:'#2e2222'); pxf(axx, y+14, aw, .5, '#4a3838');
+    if(e.st==='hold'){
+      ctx.globalAlpha=.30+Math.sin(G.t/4)*.18; ctx.fillStyle=C.uhie;
+      ctx.beginPath(); ctx.arc(x+e.w/2+e.face*10, y+e.h/2, 14, 0, 7); ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
+
   if(e.kind==='mimic'){
     // Asleep it is drawn with idolStatue, exactly as the props in this room are,
     // and nothing distinguishes it. Awake, the wood splits and the same painter
@@ -4687,7 +4776,7 @@ for(const k in NPCS) NPC_BY_CH[NPCS[k].ch]=k;
 // pickups, then enemy spawns, then whatever the NPC table declares. One source
 // of truth — the test suite reads this rather than keeping its own copy, so a
 // new spawn char cannot be added without the maps being checked against it.
-const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakinq' + Object.keys(NPC_BY_CH).join('');
+const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakinqj' + Object.keys(NPC_BY_CH).join('');
 
 function cutArt(name,cx,cy){
   if(name==='bones'){
@@ -5257,6 +5346,8 @@ const BEASTS=[
   "It rolls before it rises. Rolling, it only bruises. Risen, it bites \u2014 and that bite is white-edged and can be turned."},
  {k:'horned',  t:'MMANW\u1ee4 MP\u1eccKI', sub:'the horned masquerade', b:
   "Two attacks. The near one is white and can be parried. The charge is gold and cannot. Learn which shoulder drops first."},
+ {k:'grappler', t:'ONYE NJIDE', sub:'the one that takes hold', b:
+  "It does not swing. It reaches, and the reach is gold-edged, so a ward is no use to you \u2014 roll it or be taken. Once it has you, hit anything until it lets go. It lets go on its own eventually, but eventually is a long time to be held."},
  {k:'mimic',   t:'AR\u1ee4S\u1eca \u1eccJ\u1ecc', sub:'the idol that was waiting', b:
   "There are a great many carved posts in the land of spirits and one of them has been watching you walk past it. It stands up gold-edged, which cannot be turned aside \u2014 but it does stand up first. Nothing here strikes without showing you."},
  {k:'healer',  t:'ONYE MMEZI', sub:'the one who closes what you open', b:

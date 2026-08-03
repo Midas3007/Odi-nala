@@ -139,7 +139,7 @@ Rules:
 5. It occupies a distinct *range band* — melee, mid, ranged, aerial.
 6. Its death drops cowries.
 
-### The eleven
+### The twelve
 
 | Enemy | HP / Poise | Range | Idea | Tell |
 |---|---|---|---|---|
@@ -154,6 +154,7 @@ Rules:
 | **Effigy** (`i`) | 66 / **96** | ranged | Rooted. Three-shot aimed volley. High poise — must be broken. | white |
 | **Healer** (`n`) | 30 / 24 | mid | Restores an ally's poise and closes a broken guard. Retreats; will not chase. | white |
 | **Mimic** (`q`) | 44 / 34 | melee | An idol that is an idol until you are inside its reach. | **gold** waking, white after |
+| **Grappler** (`j`) | 64 / 48 | melee | Takes hold of you. Mash out, or wait it out. | **gold** |
 
 ### Enemy roster gaps — **[NOT BUILT]**
 Ranked by what the roster is missing mechanically:
@@ -165,7 +166,21 @@ Ranked by what the roster is missing mechanically:
    legible. Staggering it cancels the channel outright — that is the counterplay, and it
    is why it is frail (30 HP against the warden's 78). It retreats from the player and
    only swings, white-telegraphed, when cornered.
-2. **A grappler.** Something that grabs and must be broken out of. Adds a real fear.
+2. ~~**A grappler.**~~ **[BUILT]** `j`, Onye Njide, in the fire room. A 34-frame **gold**
+   reach — a roll, never a ward — then a seize. On contact the player enters a new
+   `held` state: pinned, damaged every 24 frames, and freed by mashing Z/X/C or by the
+   grappler being staggered or killed.
+
+   **The escape is guaranteed and must stay that way.** `P.grabT` runs down on its own
+   whether or not the player touches anything, so a grab tops out around 96 frames. A
+   grab you cannot escape is a soft-lock wearing a costume, and priority 2 in the
+   operating manual outranks any amount of tension. There is a REGRESSION assertion on
+   exactly this.
+
+   Being hurt by *something else* while held does **not** eject you. It used to —
+   `hurtPlayer` overwrote `P.st` — which made the grappler weaker the more crowded the
+   room was, exactly backwards, and left it holding nobody. Damage while pinned applies
+   with a shortened i-frame and the hold continues.
 3. **A shield-and-spear pair that fights as a unit.**
 4. ~~**A mimic prop.**~~ **[BUILT]** `q`, Arụsị Ọjọọ, in Ala Mmụọ. Asleep it is drawn by
    the *same `idolStatue()` call with the same arguments* as the room's real props — not

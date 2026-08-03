@@ -187,7 +187,12 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **858 assertions, headless Node, no dependencies**, about 20 seconds. Its
+`test.js` — **878 assertions, headless Node, no dependencies**, about 30 seconds.
+
+`node test.js --quick` skips the two soaks and runs in about 7 seconds. That is the
+inner loop only — **it is not the gate**, it says so in its own output, and what you run
+before a commit is `node test.js` with no arguments. The soaks are 21 of the 30 seconds
+and they are not optional (rule 6 below). Its
 first section shells out to `tools/audit.py`, so a red audit is a red test run.
 
 ### How it works

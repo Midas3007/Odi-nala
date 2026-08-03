@@ -1387,6 +1387,161 @@ section('every menu mode opens and closes');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('the one that takes hold');
+(() => {
+  function scene() {
+    revive();
+    api.unlockAll(); G().cheat = false;              // cheat makes you ungrabbable
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1 };
+    at(8, 4, 16);
+    const g = api.enemies.find(e => e.kind === 'grappler');
+    if (g) { g.cd = 0; g.home = g.x; }
+    return g;
+  }
+  // Walk into its reach and let it take you.
+  function getGrabbed(limit, alone) {
+    const g = scene();
+    if (!g) return null;
+    if (alone !== false) for (const e of api.enemies) if (e !== g) e.dead = true;
+    for (let i = 0; i < (limit || 200) && P().st !== 'held'; i++) {
+      P().x = g.x - 30; P().y = g.y; P().inv = 0; P().hp = G().maxHP;
+      G().hitstop = 0; G().slow = 0;
+      tick(1);
+    }
+    G().hitstop = 0; G().slow = 0;   // the grab lands with stop(8) on it
+    return g;
+  }
+
+  const g0 = scene();
+  check('the fire room has a grappler', !!g0, 'enemies=' + api.enemies.map(e => e.kind).join(','));
+  if (!g0) return;
+  check('it obeys the enemy contract', g0.poiseMax > 0 && g0.hp > 0 && g0.w > 0);
+
+  (() => {
+    const g = getGrabbed();
+    check('walking into its reach gets you taken', P().st === 'held', 'st=' + P().st + ' g=' + g.st);
+    check('while held the grappler is holding', g.st === 'hold', 'g.st=' + g.st);
+    check('a grab telegraphs gold, so it is a roll not a ward (Pillar 2)', (() => {
+      const g2 = scene(); let sawGold = false;
+      for (let i = 0; i < 200 && P().st !== 'held'; i++) {
+        P().x = g2.x - 30; P().y = g2.y; P().inv = 0; tick(1);
+        if (g2.tell === 'gold') sawGold = true;
+      }
+      return sawGold;
+    })());
+  })();
+
+  (() => {
+    // REGRESSION — the escape must be guaranteed. A grab you cannot get out of
+    // is a soft-lock in a costume, and priority 2 outranks the tension.
+    const g = getGrabbed();
+    if (P().st !== 'held') { check('REGRESSION a grab always ends on its own', false, 'never got grabbed'); return; }
+    let frames = 0;
+    while (P().st === 'held' && frames++ < 200) {
+      G().hitstop = 0; G().slow = 0;
+      P().hp = G().maxHP;                       // survive it, so we test the timer not death
+      tick(1);
+    }
+    check('REGRESSION a grab ends on its own with no input at all', P().st !== 'held',
+      'still held after ' + frames + ' frames');
+    check('and it ends within a couple of seconds', frames < 140, 'took ' + frames + ' frames');
+    check('being released gives i-frames so you are not re-grabbed instantly', P().inv > 0, 'inv=' + P().inv);
+    G().hitstop = 0; tick(1);        // the grappler notices on its own next frame
+    check('the grappler lets go too', g.hold === null && g.st !== 'hold', 'g.st=' + g.st);
+  })();
+
+  (() => {
+    // mashing gets you out faster — that is the interaction
+    const g = getGrabbed();
+    if (P().st !== 'held') return;
+    let frames = 0;
+    while (P().st === 'held' && frames++ < 200) {
+      G().hitstop = 0; G().slow = 0; P().hp = G().maxHP;
+      api.up('KeyZ'); api.down('KeyZ');
+      tick(1);
+    }
+    api.up('KeyZ');
+    check('mashing breaks the hold sooner than waiting', frames < 60, 'took ' + frames + ' frames of mashing');
+  })();
+
+  (() => {
+    // hurting it frees you immediately
+    const g = getGrabbed();
+    if (P().st !== 'held') return;
+    g.stagger = 30;
+    G().hitstop = 0; tick(2);
+    check('staggering the grappler makes it drop you at once', P().st !== 'held', 'st=' + P().st);
+    check('and it is not still marked as holding', g.hold === null, 'hold=' + g.hold);
+  })();
+  (() => {
+    const g = getGrabbed();
+    if (P().st !== 'held') return;
+    g.dead = true;
+    G().hitstop = 0; tick(2);
+    check('killing it mid-hold releases you', P().st !== 'held', 'st=' + P().st);
+  })();
+
+  (() => {
+    // it hurts while it holds, but the hold cannot itself be a death sentence
+    const g = getGrabbed();
+    if (P().st !== 'held') return;
+    const hp0 = P().hp;
+    for (let i = 0; i < 30 && P().st === 'held'; i++) { G().hitstop = 0; tick(1); }
+    check('being held costs you life', P().hp < hp0, 'hp ' + hp0 + ' → ' + P().hp);
+    check('the player is never left in a state the soak does not know about',
+      ['idle', 'held', 'hurt', 'dead'].indexOf(P().st) >= 0, 'st=' + P().st);
+  })();
+
+  (() => {
+    // REGRESSION — a hit from something else must not pop you out of the hold.
+    // It used to: hurtPlayer overwrote P.st='held' with 'hurt', so a crowded room
+    // made the grappler weaker instead of more dangerous, and the grappler was
+    // left holding nobody.
+    // Keep the rest of the room alive — the fire room is crowded, which is the
+    // whole point — and watch what happens the first time something else lands.
+    const g = getGrabbed(200, false);
+    if (!g || P().st !== 'held') { check('REGRESSION a crowded grab could be tested', !!g); return; }
+    let ejectedByAHit = false, tookAHit = false, hp = P().hp;
+    for (let i = 0; i < 90 && P().st === 'held'; i++) {
+      G().hitstop = 0; G().slow = 0;
+      P().inv = 0;                       // let the room reach us
+      const before = P().st, hpBefore = P().hp;
+      tick(1);
+      if (P().hp < hpBefore) {
+        tookAHit = true;
+        if (P().st !== 'held' && P().grabT > 0) ejectedByAHit = true;
+      }
+    }
+    check('REGRESSION a hit from elsewhere does not pop you out of the grab for free',
+      !ejectedByAHit, 'the hold ended on a hit with ' + P().grabT + ' frames still to run');
+    check('the crowded room does land hits on a held player', tookAHit || P().grabT <= 0,
+      'nothing reached the player, so this proves nothing');
+  })();
+
+  (() => {
+    // rolling through the seize is the counterplay the gold tell promises
+    const g = scene();
+    P().x = g.x - 30; P().y = g.y; P().inv = 0;
+    let grabbed = false;
+    for (let i = 0; i < 300 && !grabbed; i++) {
+      G().hitstop = 0; G().slow = 0;
+      if (g.st === 'seize') { P().st = 'roll'; P().t = 8; }   // mid-roll i-frames
+      tick(1);
+      if (P().st === 'held') grabbed = true;
+    }
+    check('a roll through the seize is not grabbed', !grabbed, 'got taken anyway');
+  })();
+
+  check('a speedrunner cannot be grabbed', (() => {
+    const g = scene(); api.unlockAll();
+    for (let i = 0; i < 200; i++) { P().x = g.x - 20; P().inv = 0; tick(1); }
+    G().cheat = false;
+    return P().st !== 'held';
+  })());
+  check('the grappler has a bestiary entry', api.BEASTS.some(b => b.k === 'grappler'));
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the idol that was waiting');
 (() => {
   function scene(px_) {
@@ -1956,7 +2111,7 @@ section('sound');
 // checking for NaN and illegal states. Any new mode joins MODE_KEYS (11.6 §5).
 // ═════════════════════════════════════════════════════════════════════════════
 const MODE_KEYS = ['title', 'play', 'cut', 'map', 'riddle', 'travel', 'shop', 'pause', 'inv', 'codex', 'ending'];
-const PLAYER_STATES = ['idle', 'atk', 'heavy', 'aircut', 'thrust', 'roll', 'ward', 'heal',
+const PLAYER_STATES = ['idle', 'atk', 'heavy', 'aircut', 'thrust', 'roll', 'ward', 'heal', 'held',
                        'call', 'hurt', 'pray', 'exec', 'dead', 'slam'];
 const SOAK_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyZ', 'KeyX', 'KeyC',
                    'KeyV', 'KeyF', 'KeyN', 'KeyG', 'KeyB', 'KeyM', 'KeyE', 'Space', 'Enter',
@@ -2021,9 +2176,18 @@ function soak(label, frames, seed) {
   return seenModes;
 }
 
+// The soaks are 21 of the suite's 30 seconds. They are not optional (09-TECHNICAL
+// §9.6 rule 6 — they have caught real crashes), so `--quick` skips them for the
+// inner loop only and says loudly that it is not the gate. What you run before a
+// commit is `node test.js` with no arguments.
+const QUICK = process.argv.indexOf('--quick') >= 0;
 section('soak');
-soak('soak A', 12000, 20240817);
-soak('soak B', 14000, 991733);
+if (QUICK) {
+  console.log('    SKIPPED — --quick. This run is NOT the commit gate; run `node test.js` bare.');
+} else {
+  soak('soak A', 12000, 20240817);
+  soak('soak B', 14000, 991733);
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 console.log('');
@@ -2031,5 +2195,5 @@ if (failed) {
   console.log(failures.map((f, i) => '  FAIL ' + (i + 1) + '. ' + f).join('\n'));
   console.log('');
 }
-console.log('  ' + passed + ' assertions, ' + failed + ' failures');
+console.log('  ' + passed + ' assertions, ' + failed + ' failures' + (QUICK ? '   (--quick: soaks skipped, not the gate)' : ''));
 process.exit(failed ? 1 : 0);
