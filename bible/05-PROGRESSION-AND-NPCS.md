@@ -105,15 +105,15 @@ text. A thing that stands up and shows you.
 
 ## 5.5 NPCs — the gap and the plan
 
-**Two of the four are built** — the dibia and the market woman, both in Ahịa Mmụọ. The
-younger ọgbanje and the mother's shade are still [NOT BUILT].
+**All four are built.** The dibia and the market woman in Ahịa Mmụọ, the younger
+ọgbanje in Iyi Idemili, the mother's shade on the approach to Onwe.
 
 ### Why it matters
 Blasphemous and Hollow Knight both use NPCs as *tonal punctuation* — the player spends
 twenty minutes being attacked and then meets someone who is simply sad. Ọdịnala has no
 such punctuation, and the game is more monotone than it should be.
 
-### The four — **[NOT BUILT, PROPOSED]**
+### The four — **[BUILT]**
 
 **1. The dibia who buried your charm** — Ahịa Mmụọ, the night market. **[BUILT]**
 Dead now, still working. Sits behind a mat of chalk and cowries. **He does not recognise
@@ -149,19 +149,35 @@ came here every market day" would undo it — the player would learn that the th
 carousel rather than a life. She holds on the last line instead. If you want her to keep
 talking forever, write more lines; do not make her repeat the beginning.
 
-**3. The younger ọgbanje** — Iyi Idemili.
+**3. The younger ọgbanje** — Iyi Idemili. **[BUILT]**
 Still in the cycle. Has died four times. Sits in the water. Asks you what is on the
 other side of not going back. **You have no dialogue options and cannot answer.** The
 conversation just ends.
 
 *Function:* makes the player's choice visible by showing the road not taken.
 
-**4. Your mother's shade** — Ala Mmụọ, in the corridor before Onwe.
+*As built:* spawn char `o`, room 5 at (27,14), voice profile `child`. Five beats, the
+same five whatever you have done — he is the one character in the game who does not
+react to your progress, because he is not in your story. The last beat is the narrator,
+not a reply: you have nothing to tell him, he waits, he stops waiting. Four chalk strokes
+on his mask, for four burials. He is the smallest figure in the game, smaller than you.
+
+**4. Your mother's shade** — Ala Mmụọ, in the corridor before Onwe. **[BUILT]**
 She does not know you. She is not waiting for you. She is doing something ordinary.
 Brief — under thirty seconds — and completely unsentimental. If the player tries to
 interact more than twice, nothing further happens.
 
 *Function:* the emotional peak. It must be underplayed or it becomes cheap.
+
+*As built:* spawn char `y`, room 7 at (24,14) — ten tiles before Onwe, so you pass her on
+the way in. Voice profile `mother`. She is picking stones out of rice and does not look
+up. Four beats the first time, two the second, and on the third press **nothing happens
+at all**: `beats()` returns empty and her prompt returns an empty string, so the game
+stops inviting you to try. She is the only figure drawn under full alpha, because she is
+the only one who is not really here.
+
+She never says anything to you that she has not said to somebody else a thousand times.
+That is the entire design. Do not give her a line that only makes sense if she knows.
 
 ### NPC implementation rules
 - NPCs are **shrine-like objects**, not entities. They do not move, take damage, or path.

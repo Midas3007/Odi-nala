@@ -25,7 +25,7 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 ### Phase 2 — Content (the doubling)
 | # | Item | Value |
 |---|---|---|
-| 2.1 | Four NPCs | **Highest.** The game's biggest gap. |
+| 2.1 | ~~Four NPCs~~ | **Done.** dibia, market woman, younger ọgbanje, mother's shade. |
 | 2.2 | Boss in room 9 (verticality) | The game has no vertical fight |
 | 2.3 | Boss in room 8 (fast-regenerating poise) | Forces burst play |
 | 2.4 | Six enemies: healer, grappler, shield-and-spear pair, mimic, swimmer, wall-crawler | The healer is the biggest mechanical gap |

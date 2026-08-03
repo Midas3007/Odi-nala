@@ -1524,6 +1524,92 @@ section('the people who are still here');
   }
 })();
 (() => {
+  // The younger ọgbanje asks the question and you cannot answer it (§5.5).
+  revive(); G().met = {};
+  const beats = api.NPCS.ogbanje.beats();
+  const all = beats.map(b => b.text).join(' ');
+  check('the younger ọgbanje asks what is on the other side', /other side of not going back/i.test(all), all);
+  check('he says how many times he has been back', /four/i.test(all), all);
+  check('the conversation ends without you answering',
+    /nothing to tell him|stops waiting/i.test(beats[beats.length - 1].text), beats[beats.length - 1].text);
+  check('the last beat is the narrator, not a reply from you',
+    beats[beats.length - 1].voice === 'you' && beats[beats.length - 1].text.indexOf('"') < 0);
+  check('he says the same thing whatever you have done', (() => {
+    G().slain = { ogbunabali: 1, ekwensu: 1, onwe: 1 }; G().met = { ogbanje: 5 };
+    const late = api.NPCS.ogbanje.beats().map(b => b.text).join(' ');
+    G().slain = {}; G().met = {};
+    return late === all;
+  })(), 'he is not supposed to react to your progress');
+  check('he lives in the water room', api.NPCS.ogbanje.room === 5);
+
+  revive(); G().cheat = false; G().met = {};
+  at(5, 2, 16);
+  const sh = api.shrines.find(s => s.kind === 'npc' && s.id === 'ogbanje');
+  check('the younger ọgbanje is spawned', !!sh);
+  if (sh) {
+    P().x = sh.x; P().y = sh.y; P().inv = 600;
+    tick(2); press('KeyE', 1, 2);
+    check('he can be spoken to', G().mode === 'cut', 'mode=' + G().mode);
+    skipCuts(); tick(3);
+    check('and the conversation returns control', G().mode === 'play', 'mode=' + G().mode);
+  }
+})();
+(() => {
+  // The mother's shade. Brief, flat, and she stops responding (§5.5).
+  revive(); G().met = {};
+  const m = api.NPCS.mother;
+  const first = m.beats();
+  check('the mother has a first conversation', first.length > 0);
+  check('it is brief — four beats or fewer', first.length <= 4, 'beats=' + first.length);
+  const firstText = first.map(b => b.text).join(' ');
+  check('she does not know you', !/my child|you came back|is that you|son|daughter/i.test(firstText), firstText);
+  check('she is doing something ordinary', /rice|bowl|stones/i.test(firstText), firstText);
+  check('nothing in it is sentimental', !/love|missed|sorry|forgive|proud/i.test(firstText), firstText);
+  check('she never stops working to look at you', !/looks up|turns to you|smiles/i.test(firstText), firstText);
+
+  G().met = { mother: 1 };
+  const second = m.beats();
+  check('a second visit is shorter still', second.length > 0 && second.length < first.length,
+    'first=' + first.length + ' second=' + second.length);
+
+  G().met = { mother: 2 };
+  check('after twice, nothing further happens (§5.5)', m.beats().length === 0, 'beats=' + m.beats().length);
+  check('and she stops inviting you to try', (typeof m.prompt === 'function' ? m.prompt() : m.prompt) === '',
+    'prompt=' + (typeof m.prompt === 'function' ? m.prompt() : m.prompt));
+  G().met = {};
+  check('before that she does invite you', (typeof m.prompt === 'function' ? m.prompt() : m.prompt) !== '');
+  check('she stands in the room Onwe is in', m.room === 7);
+  check('she stands before Onwe, not past him', (() => {
+    const r = ROOMS[7];
+    let my = -1, oy = -1;
+    for (let y = 0; y < r.h; y++) {
+      const a = r.map[y].indexOf(m.ch), b = r.map[y].indexOf('O');
+      if (a >= 0) my = a; if (b >= 0) oy = b;
+    }
+    return my >= 0 && oy >= 0 && my < oy;
+  })(), 'she should be on the approach, not behind him');
+
+  // played, including pressing E a third time
+  revive(); G().cheat = false; G().met = {}; G().taught = { onIn: 1 }; G().slain = { onwe: 1 };
+  at(7, 2, 16);
+  const sh = api.shrines.find(s => s.kind === 'npc' && s.id === 'mother');
+  check('the mother is spawned', !!sh);
+  if (sh) {
+    P().x = sh.x; P().y = sh.y; P().inv = 600;
+    tick(2); press('KeyE', 1, 2); check('she can be spoken to once', G().mode === 'cut', 'mode=' + G().mode);
+    skipCuts(); tick(3);
+    press('KeyE', 1, 2); check('and a second time', G().mode === 'cut', 'mode=' + G().mode);
+    skipCuts(); tick(3);
+    G().msg = null;
+    press('KeyE', 1, 4);
+    check('a third press does nothing at all', G().mode === 'play', 'mode=' + G().mode);
+    check('and she offers no prompt any more', !/speak/i.test(G().msg || ''), 'msg=' + G().msg);
+    check('the player is left able to walk on', (() => {
+      const x0 = P().x; hold('ArrowRight', 30); release('ArrowRight', 2); return Math.abs(P().x - x0) > 0;
+    })());
+  }
+})();
+(() => {
   // The world state changes what he says, which is the whole design (§5.5).
   revive(); G().slain = {};
   const early = api.NPCS.dibia.beats().map(b => b.text).join(' ');
