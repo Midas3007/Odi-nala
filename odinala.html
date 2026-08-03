@@ -445,13 +445,14 @@ const ROOMS = [
   "#.........-i---...............................----.....#",
   "#............................-----.....................#",
   "E......M...............................................E",
-  "E...S......k...j...........i..v................k..F....E",
+  "E...S......k...j...........i..v....U...........k..F....E",
   "##################.......###########.......#############",
   "##################.......###########.......#############",
   "##################.......###########.......#############",
   "##################^^^^^^^###########^^^^^^^#############"],
   exits:[{tx:0,ty:14,tw:1,th:2,to:6,sx:52,sy:16},
-         {tx:55,ty:14,tw:1,th:2,to:9,sx:2,sy:16}] },
+         {tx:55,ty:14,tw:1,th:2,to:9,sx:2,sy:16,needs:'uzu',
+          locked:"The forge is still working. Nothing leaves this room unfinished."}] },
 
 { name:"Igwe \u2014 the open sky", tint:'#16202e',
   map:[
@@ -604,6 +605,7 @@ function resetPlayerAt(room,tx,ty){
   if(G.room===3 && boss && !boss.dead && !G.taught.bossIn){ G.taught.bossIn=1; playCut(BOSS_IN); }
   if(G.room===6 && boss && !boss.dead && !G.taught.ekIn){ G.taught.ekIn=1; playCut(EK_IN); }
   if(G.room===7 && boss && !boss.dead && !G.taught.onIn){ G.taught.onIn=1; playCut(ON_IN); }
+  if(G.room===8 && boss && !boss.dead && !G.taught.uzIn){ G.taught.uzIn=1; playCut(UZ_IN); }
 }
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const rects=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
@@ -638,6 +640,7 @@ function spawnRoom(){
     if(ch==='B' && !G.slain.ogbunabali) boss = mkBoss(x,y,'ogbunabali');
     if(ch==='X' && !G.slain.ekwensu)     boss = mkBoss(x,y,'ekwensu');
     if(ch==='O' && !G.slain.onwe)        boss = mkBoss(x,y,'onwe');
+    if(ch==='U' && !G.slain.uzu)         boss = mkBoss(x,y,'uzu');
   }
   seedAmbient();
   G.visited[G.room]=1;
@@ -698,9 +701,17 @@ function mkPair(x,y){
   return [sh,sp];
 }
 
+// w, h, hp, poise. One table, so the roster has a single definition that the
+// gate check, the bestiary and the test suite can all read.
+const BOSS_STATS = {
+  ogbunabali:[26,40,520,190],
+  ekwensu:   [34,44,880,240],
+  onwe:      [20,34,760,210],
+  uzu:       [30,42,700,150]
+};
 function mkBoss(x,y,who){
   who=who||'ogbunabali';
-  const stat={ ogbunabali:[26,40,520,190], ekwensu:[34,44,880,240], onwe:[20,34,760,210] }[who];
+  const stat=BOSS_STATS[who];
   const b=base(x,y,stat[0],stat[1],stat[2],stat[3]);
   b.kind='boss'; b.who=who; b.bound=(who==='ogbunabali')?0:9999;
   b.cd=90; b.phase=1; b.lineT=0; b.line=''; b.said=0; b.mirrorT=0;
@@ -1792,6 +1803,9 @@ function damage(e,amt,dir,kb,muffled,poiseDmg){
         say("The horns come apart in the air like smoke off a doused fire.",300);
       } else if(e.who==='onwe'){
         G.outroT=130; G.outroWho='onwe'; G.ending=1;
+      } else if(e.who==='uzu'){
+        G.outroT=110; G.outroWho='uzu';
+        say("The fire goes out of it and it is only a shape of iron, cooling.",300);
       }
       saveGame();
     }
@@ -2384,6 +2398,7 @@ function bossUpdate(b){
   if(b.flash>0) b.flash--;
   if(b.lineT>0) b.lineT--;
   if(b.who==='ekwensu'){ ekwensuUpdate(b); return; }
+  if(b.who==='uzu'){ uzuUpdate(b); return; }
   if(b.who==='onwe'){ onweUpdate(b); return; }
 
   if(b.bound>0){
@@ -2486,6 +2501,83 @@ const EK_LINES=[
   "\"Nine of you have stood there. I kept all nine.\"",
   "\"You are not angry. You are only early.\""
 ];
+const UZU_LINES=[
+  "\"Everything that comes in here leaves it finished.\"",
+  "\"You want to be permanent. I do that. Hold still.\"",
+  "\"Your mother is finished already. That is what finished looks like.\"",
+  "\"I am not lying to you. Nobody in this room has to.\""
+];
+// The forge does not lie and does not need to. Its guard comes back faster than
+// you can chip it down, so poise damage has to arrive in a lump: charge the heavy,
+// spend an \u1ecdf\u1ecd, land the chain's third stroke. Tap at it and you will be here all day.
+function uzuUpdate(b){
+  if(b.hp < b.maxhp*0.5 && b.phase===1){
+    b.phase=2; b.stagger=30; shake(9); G.flash=12; S.brk();
+    say("\"Now I will keep the fire in my hands.\"",150);
+    burst(b.x+b.w/2,b.y+b.h/2,50,'#e8862a',3.2,52);
+  }
+  if(b.broken>0){ b.broken--; if(b.broken===0){ b.poise=b.poiseMax; b.stagger=Math.max(b.stagger,16); b.st='idle'; b.t=0; } }
+  else {
+    // the thesis, in one line: the guard reforges roughly ten times faster than
+    // anything else in the game, and faster again once it has both hands free
+    b.poise = Math.min(b.poiseMax, b.poise + (b.phase===2?3.4:2.2));
+  }
+  if(b.stagger>0 || b.broken>0){
+    b.stagger=Math.max(0,b.stagger-1);
+    b.vx*=0.88; b.vy=Math.min(b.vy+0.46,9); b.tell=''; moveEnt(b); return;
+  }
+  const dx=(P.x+P.w/2)-(b.x+b.w/2), adx=Math.abs(dx);
+  b.t++;
+  const F=n=>Math.round(n*(b.phase===2?0.78:1));
+  if(b.st==='idle'){
+    b.face = dx>0?1:-1;
+    b.vx = (dx>0?1:-1)*(adx>64?0.95:0.35);
+    if(b.cd>0) b.cd--;
+    else {
+      const r=rnd();
+      if(adx<70 && r<0.44) b.st='hammerWind';
+      else if(r<0.74) b.st='pourWind';
+      else b.st='sparkWind';
+      b.t=0;
+      if(b.lineT<=0 && rnd()<0.42){ b.line=UZU_LINES[(b.said++)%UZU_LINES.length]; b.lineT=170; }
+    }
+  }
+  // white: the hammer. It is heavy and slow and it can be turned.
+  else if(b.st==='hammerWind'){ b.tell='white'; b.vx*=0.8; if(b.t>=F(32)){ b.st='hammer'; b.t=0; b.tell=''; } }
+  else if(b.st==='hammer'){
+    b.vx=b.face*1.1;
+    if(b.t<=12){
+      const box={x:b.face>0?b.x+b.w-8:b.x-34, y:b.y+6, w:42, h:b.h-6};
+      if(rects(box,P)){ if(!tryParry(b,b.x)) hurtPlayer(21,b.face); }
+    }
+    if(b.t===12){ shake(6); stop(6); burst(b.x+b.face*22+b.w/2,b.y+b.h-4,16,'#e8862a',2.6,26); }
+    if(b.t>=F(22)){ b.st='rec'; b.t=0; }
+  }
+  // gold: it tips the crucible. Nothing turns molten metal aside.
+  else if(b.st==='pourWind'){ b.tell='gold'; b.vx*=0.6; if(b.t>=F(30)){ b.st='pour'; b.t=0; b.tell=''; } }
+  else if(b.st==='pour'){
+    if(b.t%4===0 && b.t<=28){
+      shots.push({x:b.x+b.w/2+b.face*14, y:b.y+10, w:6,h:6, vx:b.face*(0.6+rnd()*0.5), vy:1.6+rnd(), t:0, ember:true});
+    }
+    if(b.t>=F(40)){ b.st='rec'; b.t=0; }
+  }
+  // phase 2 only: it strikes its own anvil and the floor answers
+  else if(b.st==='sparkWind'){ b.tell='white'; b.vx*=0.7; if(b.t>=F(28)){ b.st='spark'; b.t=0; b.tell=''; } }
+  else if(b.st==='spark'){
+    if(b.t===6){
+      shake(9); stop(7); nz(.3,.08,200);
+      burst(b.x+b.w/2,b.y+b.h,28,'#ffcf7a',3.2,34);
+      const n = b.phase===2 ? 3 : 2;
+      for(let k=0;k<n;k++) for(const d of [-1,1])
+        shots.push({x:b.x+b.w/2,y:b.y+b.h-8,w:10,h:10,vx:d*(2.2+k*0.7),vy:0,wave:true,t:0});
+    }
+    if(b.t>=F(34)){ b.st='rec'; b.t=0; }
+  }
+  else if(b.st==='rec'){ b.tell=''; b.vx*=0.82; if(b.t>=F(38)){ b.st='idle'; b.t=0; b.cd=F(30); } }
+  b.vy=Math.min(b.vy+0.46,9);
+  moveEnt(b);
+}
+
 function ekwensuUpdate(b){
   if(b.hp < b.maxhp*0.55 && b.phase===1){
     b.phase=2; b.stagger=34; shake(9); G.flash=12; S.brk();
@@ -2687,6 +2779,7 @@ function update(){
     saveGame();
     const who=G.outroWho||'ogbunabali';
     if(who==='ekwensu') playCut(EK_OUT);
+    else if(who==='uzu') playCut(UZ_OUT);
     else if(who==='onwe') playCut(ON_OUT, ()=>{ G.mode='ending'; ENDW.t=0; });
     else playCut(BOSS_OUT);
     return; } }
@@ -3154,7 +3247,7 @@ function drawTiles(){
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
     const ch=tileAt(R,x,y);
-    if('.wltWKBSNMhrvXOakiFdmoynqjsbp'.indexOf(ch)>=0) continue;
+    if('.wltWKBSNMhrvXOakiFdmoynqjsbpUI'.indexOf(ch)>=0) continue;
     const sx=x*T-cam.x, sy=y*T-cam.y;
 
     if(ch==='E'){
@@ -4451,9 +4544,58 @@ function bossBar(b,name,sub){
   }
   ctx.textAlign='left';
 }
+// A standing forge: an anvil of a body, a hammer arm, and a crucible that tips
+// when it pours. The one boss in the game lit from the inside rather than the top,
+// because everything in this room is lit by what it is holding.
+function drawUzu(b){
+  if(b.dead) return;
+  const x=Math.round(b.x-cam.x), y=Math.round(b.y-cam.y), f=b.face;
+  const heat=0.5+Math.sin(G.t/13)*0.16, ph2=b.phase===2;
+  ctx.globalAlpha=.14+Math.sin(G.t/17)*.05; ctx.fillStyle='#e8862a';
+  ctx.beginPath(); ctx.arc(x+b.w/2,y+b.h*0.6,34,0,7); ctx.fill(); ctx.globalAlpha=1;
+
+  // The room is orange on near-black, so the boss has to sit *above* the room's
+  // value or it reads as a shadow. Cold grey iron, hot seams, and a base wider
+  // than anything else in the room.
+  px(x-2,y+b.h-9,b.w+4,9, b.flash>0?C.chalk:'#4a423c');             // anvil base, widest
+  pxf(x-2,y+b.h-9,b.w+4,1.5,'#8a7d70');
+  pxf(x-2,y+b.h-1,b.w+4,1,'#1b1512');
+  px(x+5,y+10,b.w-10,b.h-18, b.flash>0?C.chalk:'#5a5049');          // body
+  pxf(x+5,y+10,b.w-10,1.5,'#9c8d7e');
+  pxf(x+b.w-6,y+10,1,b.h-18,'#241d18');
+  // the fire it is carrying, seen through the seams
+  ctx.globalAlpha=heat;
+  for(let i=0;i<3;i++) pxf(x+7,y+14+i*7,b.w-14,2.5,'#ff8a2a');
+  ctx.globalAlpha=1;
+  px(x+7,y+1,b.w-14,10, b.flash>0?C.chalk:'#3d3630');               // head/hood
+  pxf(x+7,y+1,b.w-14,1.5,'#7d7166');
+  ctx.globalAlpha=.6+Math.sin(G.t/8)*.25;
+  pxf(x+10,y+5,3,2,'#ffcf7a'); pxf(x+b.w-13,y+5,3,2,'#ffcf7a');     // eyes, forge-lit
+  ctx.globalAlpha=1;
+  // hammer arm, and in phase two it is holding the fire bare
+  const swing = (b.st==='hammer') ? Math.min(b.t,12)/12 : 0;
+  const hx = x + (f>0 ? b.w-2 : -12) + f*swing*14;
+  const hy = y + 12 + swing*16;
+  pxf(x+(f>0?b.w-4:2), y+14, 4, 10, '#4a423c');
+  pxf(hx, hy, 13, 7, b.flash>0?C.chalk:'#59504a');
+  pxf(hx, hy, 13, 1.5, '#9c8d7e');
+  if(ph2){ ctx.globalAlpha=heat; pxf(hx+2, hy+1, 8, 4, '#ffcf7a'); ctx.globalAlpha=1; }
+  // the crucible tips when it pours
+  if(b.st==='pourWind'||b.st==='pour'){
+    const tip = b.st==='pour' ? 1 : Math.min(b.t/30,1);
+    ctx.save(); ctx.translate(x+b.w/2+f*16, y+10); ctx.rotate(f*tip*0.9);
+    pxf(-5,-4,10,8,'#3a2c22'); pxf(-5,-4,10,1,'#6b5232');
+    ctx.globalAlpha=heat+0.3; pxf(-3,-2,6,4,'#ffcf7a'); ctx.globalAlpha=1;
+    ctx.restore();
+  }
+  if(G.t%3===0) parts.push({x:b.x+b.w/2+(rnd()-.5)*b.w, y:b.y+b.h-6,
+    vx:(rnd()-.5)*.6, vy:-.7-rnd()*.6, life:24, max:30, col:'#ffcf7a', g:-0.012, sz:1});
+}
+
 function drawBoss(b){
   if(b.who==='ekwensu'){ drawEkwensu(b); return; }
   if(b.who==='onwe'){ drawOnwe(b); return; }
+  if(b.who==='uzu'){ drawUzu(b); return; }
   if(b.dead) return;
   const x=Math.round(b.x-cam.x), y=Math.round(b.y-cam.y);
   const bound = b.bound>0;
@@ -4866,6 +5008,19 @@ const ON_IN=[
  {art:'twin',  voice:'boss', text:"\"You dug me up. I did not ask to be left behind.\""},
  {art:'twin',  voice:'narr', text:"The ninth child. The one who kept the promise. It has been standing here the whole time you were alive."}
 ];
+// It tells the truth from the first line to the last. After a boss who could not
+// be fought and a boss who was paid, this one simply wants to finish you, and
+// says so, and means something slightly different by it than you do.
+const UZ_IN=[
+ {art:'ash',  voice:'boss', text:"\"You are the one that keeps coming back. I have heard.\""},
+ {art:'ash',  voice:'boss', text:"\"This is where things stop being changeable. That is all this place is.\""},
+ {art:'ash',  voice:'you',  text:"It has been working the whole time you have been walking towards it. It does not stop now."}
+];
+const UZ_OUT=[
+ {art:'ash',  voice:'boss', text:"\"You did that in one piece. Good. That is what finished means.\""},
+ {art:'ash',  voice:'narr', text:"The fire goes out of the iron by degrees, the way it would in any yard, and then it is only a shape."},
+ {art:'ash',  voice:'you',  text:"It never told you a single lie. You are not sure that was a kindness."}
+];
 const ON_OUT=[
  {art:'twin',  voice:'boss', text:"\"...then go on. Be the one who stayed. See how heavy it is.\""},
  {art:'ash',   voice:'narr', text:"It does not fall. It thins, the way the last of a fire thins, and the mask comes down last."},
@@ -4963,7 +5118,7 @@ for(const k in NPCS) NPC_BY_CH[NPCS[k].ch]=k;
 // pickups, then enemy spawns, then whatever the NPC table declares. One source
 // of truth — the test suite reads this rather than keeping its own copy, so a
 // new spawn char cannot be added without the maps being checked against it.
-const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakinqjsbp' + Object.keys(NPC_BY_CH).join('');
+const TILE_CHARS = '#-.cE^ ' + 'SNMhF' + 'KBXO' + 'wltWrvakinqjsbp'+'UI' + Object.keys(NPC_BY_CH).join('');
 
 function cutArt(name,cx,cy){
   if(name==='bones'){
@@ -5553,6 +5708,8 @@ const BEASTS=[
   "Cannot be wounded while he is nobody. Nine strokes of nzu on a stone in the shaft carry his name; speak it and he acquires edges. Parries and executions keep him named longer."},
  {k:'boss_ekwensu', t:'EKWENSU', sub:'he who was paid', boss:1, b:
   "Never hides what he is doing. The cleave is white and can be turned; the gore and the stamp are gold and cannot. He was hired. He will tell you by whom if you last long enough."},
+ {k:'boss_uzu', t:'\u1ee4Z\u1ee4 \u1eccK\u1ee4', sub:'the smith of the fire that does not go out', boss:1, b:
+  "Its guard closes about ten times faster than anything else in this place, so chipping at it is a way of spending an afternoon. Open it in one lump \u2014 a charged heavy, a word, the third stroke of the chain \u2014 or do not open it. The hammer is white. The pour is gold, and molten iron has never once been turned aside by anybody."},
  {k:'boss_onwe', t:'ONWE', sub:'the ninth child, wearing your face', boss:1, b:
   "It fights the way you fight because it learned from watching you. It rolls behind you, chains three cuts, and reaches up through the ground. In its last quarter it stops copying and starts remembering."}
 ];
@@ -5961,7 +6118,7 @@ function unlockAll(){
   G.equipped = 'amadioha';
   for(let i=0;i<ROOMS.length;i++){ G.visited[i]=1; ROOMS[i].taken=true; }
   for(const k of Object.keys(MIRRORS)) G.mirrors[k]=true;
-  G.taught = {exec:1, bound:1, bossIn:1, bossOut:1};
+  G.taught = {exec:1, bound:1, bossIn:1, bossOut:1, ekIn:1, onIn:1, uzIn:1, ikIn:1};
   P.hp = G.maxHP; P.flasks = 5; P.ofo = 100; P.cowries = Math.max(P.cowries, 99999);
 }
 function relock(){
@@ -6005,7 +6162,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   startSpeedrun, unlockAll, relock, titleOpts, PAUSE_SEL:()=>PAUSE.sel,
   PAUSE_LABEL:()=>pauseLabel(pauseRows()[PAUSE.sel]), LORE_OPEN:loreOpen, BEAST_OPEN:beastOpen,
   CDX:()=>CDX, storyProgress, LORE, BEASTS, openCodex, BG_ROOM:()=>bgRoom,
-  WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS
+  WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS
 });
 cvs.focus();
 requestAnimationFrame(frame);

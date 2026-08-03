@@ -27,7 +27,7 @@ wired into `node test.js`, and the loop can no longer be killed by a throw.
 |---|---|---|
 | 2.1 | ~~Four NPCs~~ | **Done.** dibia, market woman, younger ọgbanje, mother's shade. |
 | 2.2 | Boss in room 9 (verticality) | The game has no vertical fight |
-| 2.3 | Boss in room 8 (fast-regenerating poise) | Forces burst play |
+| 2.3 | ~~Boss in room 8~~ | **Done.** Ụzụ Ọkụ. Poise refills 7× faster than a normal enemy. Gates room 9. |
 | 2.4 | ~~Six enemies~~ | **Done.** healer, mimic, grappler, pair, swimmer, wall-crawler. Roster is nine → fifteen. |
 | 2.5 | Endings B and C | `G.ending` already exists |
 | 2.6 | Weapon-specific heavy shapes | Highest-value combat addition |

@@ -414,7 +414,7 @@ ROOMS.forEach((r, i) => {
   ROOMS.forEach((r, i) => r.exits.forEach(ex => { if (ex.needs) gates.push({ from: i, to: ex.to, needs: ex.needs }); }));
   check('the world has progression gates', gates.length >= 2, 'gates=' + gates.length);
   for (const g of gates) {
-    check('gate ' + g.from + '→' + g.to + ' names a real boss', ['ogbunabali', 'ekwensu', 'onwe'].indexOf(g.needs) >= 0, g.needs);
+    check('gate ' + g.from + '→' + g.to + ' names a real boss', Object.keys(api.BOSS_STATS).indexOf(g.needs) >= 0, g.needs);
   }
   check('the bone road onward is gated behind Ekwensu', gates.some(g => g.from === 6 && g.needs === 'ekwensu'));
   check('the shaft onward is gated behind Ogbunabali', gates.some(g => g.needs === 'ogbunabali'));
@@ -950,6 +950,128 @@ section('Ogbunabali — the lie is the mechanic');
   at(3, 5, 16);
   press('KeyN', 1, 2);
   check('without the name, calling it does nothing', P().st !== 'call', 'st=' + P().st);
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+section('Ụzụ Ọkụ — the guard that reforges');
+(() => {
+  function scene() {
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1, exec: 1, bound: 1 };
+    G().slain = { ogbunabali: 1, ekwensu: 1 };
+    at(8, 30, 16);
+    skipCuts();
+    G().mode = 'play';
+    return api.boss;
+  }
+  const b0 = scene();
+  check('the fire room holds a boss', !!b0 && b0.who === 'uzu', 'boss=' + (b0 && b0.who));
+  if (!b0) return;
+
+  // §4.7 contract, point by point
+  check('it has its own stat line', !!api.BOSS_STATS.uzu, JSON.stringify(api.BOSS_STATS.uzu));
+  check('it is substantial but not the biggest thing in the game',
+    b0.maxhp > 400 && b0.maxhp < api.BOSS_STATS.ekwensu[2], 'hp=' + b0.maxhp);
+  check('its poise pool is deliberately small — the point is that it refills, not that it is deep',
+    b0.poiseMax < api.BOSS_STATS.ekwensu[3], 'poise=' + b0.poiseMax);
+
+  // 2 — the idea: the guard reforges fast
+  (() => {
+    const b = scene();
+    b.poise = 10; b.lastHit = -9999;
+    const p0 = b.poise;
+    P().inv = 9999; P().x = b.x - 200;
+    for (let i = 0; i < 30; i++) { G().hitstop = 0; tick(1); }
+    const gain = b.poise - p0;
+    check('REGRESSION its guard reforges fast — that is the whole boss', gain > 30,
+      'regained only ' + gain.toFixed(1) + ' poise in 30 frames');
+    // and much faster than an ordinary enemy, which trickles at 0.3/frame
+    check('it reforges far faster than an ordinary enemy does', gain / 30 > 1.5,
+      (gain / 30).toFixed(2) + ' per frame vs 0.3 for a walker');
+    check('it never overfills', b.poise <= b.poiseMax + 0.001, b.poise + '/' + b.poiseMax);
+  })();
+
+  // 3 — both tells
+  (() => {
+    const b = scene();
+    const seen = {};
+    P().inv = 9999;
+    for (let i = 0; i < 1200; i++) {
+      P().x = b.x - 48; P().y = b.y; P().hp = G().maxHP;
+      G().hitstop = 0; G().slow = 0; tick(1);
+      if (b.tell) seen[b.tell] = (seen[b.tell] || 0) + 1;
+    }
+    check('it telegraphs in white — something here can be turned', !!seen.white, JSON.stringify(seen));
+    check('it telegraphs in gold — and something here cannot', !!seen.gold, JSON.stringify(seen));
+  })();
+
+  // 4 — a phase change at 50% that adds
+  (() => {
+    const b = scene();
+    check('it starts in phase one', b.phase === 1, 'phase=' + b.phase);
+    b.hp = b.maxhp * 0.45;
+    P().inv = 9999; P().x = b.x - 60;
+    for (let i = 0; i < 10; i++) { G().hitstop = 0; tick(1); }
+    check('dropping it past half turns the phase', b.phase === 2, 'phase=' + b.phase);
+    check('the phase change announces itself', /both hands|fire in my hands/i.test(G().msg || ''), 'msg=' + G().msg);
+  })();
+
+  // 1 and 6 — it talks, and it has cutscenes at both ends
+  (() => {
+    // at() skips cutscenes by design, so this goes through resetPlayerAt directly
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().slain = {}; G().taught = {};
+    api.resetPlayerAt(8, 30, 16);
+    check('arriving in the fire room plays its cutscene in', G().mode === 'cut', 'mode=' + G().mode);
+    check('and the cutscene can be skipped like any other', skipCuts(), 'mode=' + G().mode);
+    check('arriving a second time does not replay it', (() => {
+      api.resetPlayerAt(8, 30, 16);
+      return G().mode !== 'cut';
+    })(), 'mode=' + G().mode);
+    G().mode = 'play';
+  })();
+
+  // 5 — killable, and the gate opens
+  (() => {
+    revive();
+    api.unlockAll();                       // cheat damage, so this is about the gate
+    G().slain = {};
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1 };
+    at(8, 30, 16);
+    const b = api.boss;
+    if (!b) { check('the forge boss can be killed', false, 'no boss'); return; }
+    let killed = false;
+    for (let i = 0; i < 80 && !killed; i++) {
+      P().x = b.x - 14; P().face = 1; G().hitstop = 0; G().slow = 0;
+      press('KeyZ', 1, 3); tick(20);
+      killed = !!b.dead;
+    }
+    check('the forge boss can be killed', killed, 'hp=' + b.hp);
+    check('killing it is recorded', !!G().slain.uzu, JSON.stringify(G().slain));
+    check('killing it enters it in the bestiary', !!G().seen.boss_uzu);
+    check('it has a bestiary entry to enter', api.BEASTS.some(x => x.k === 'boss_uzu'));
+  })();
+
+  (() => {
+    // the gate onward
+    const gate = ROOMS[8].exits.find(e => e.needs === 'uzu');
+    check('the way to the open sky is gated behind it', !!gate);
+    if (!gate) return;
+    function walkEast() {
+      revive(); api.unlockAll(); G().cheat = false;
+      G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1 };
+      at(8, 44, 16);
+      for (let i = 0; i < 400 && G().room === 8; i++) { P().inv = 9999; api.down('ArrowRight'); tick(1); }
+      api.up('ArrowRight');
+      return G().room;
+    }
+    G().slain = { ekwensu: 1 };
+    check('with the forge still working the way onward is shut', walkEast() === 8, 'room=' + G().room);
+    G().slain = { ekwensu: 1, uzu: 1 };
+    check('with it finished the way opens', walkEast() === gate.to, 'room=' + G().room);
+  })();
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════

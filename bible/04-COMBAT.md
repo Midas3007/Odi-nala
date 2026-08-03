@@ -244,6 +244,25 @@ test.** After a boss that could not be fought, the player needs a boss that can.
 
 He needs no naming. He tells the truth unprompted. His fee was not paid in cowries.
 
+### Boss 4 — Ụzụ Ọkụ, the smith of the fire (room 8)
+**The idea: its guard reforges faster than you can chip it down.**
+
+- 700 HP. **150 poise — deliberately shallow**, because the boss is not the size of the
+  pool, it is the rate it refills. It regains **2.2 poise a frame**, 3.4 in phase two,
+  against an ordinary enemy's 0.3.
+- Poise damage therefore has to arrive in a lump: a charged heavy, an ọfọ, the third
+  stroke of the chain. Tapping at it does nothing at all, and that is the lesson.
+- `hammerWind` (white) → a heavy overhead that can be turned. `pourWind` (**gold**) → it
+  tips the crucible and molten metal runs down the arena; nothing turns that aside.
+  `sparkWind` (white) → it strikes its own anvil and the floor answers in waves.
+- Phase 2 at 50%: 22% faster, and the anvil throws three waves each side instead of two.
+  It *adds*, per the contract.
+- **It never lies.** After a boss who could not be fought and a boss who was paid, this
+  one tells the plain truth from its first line to its last: this is where things stop
+  being changeable, and it would like to finish you. It means something slightly
+  different by that than you do.
+- Gates the way to the open sky.
+
 ### Boss 3 — Onwe (room 7)
 **The idea: it fights with your moveset.**
 
@@ -263,7 +282,7 @@ cowries. See `05-PROGRESSION-AND-NPCS.md` §Tutorial.
 | Room 9, the open sky | **[PROPOSED]** an alusi of the air | A fight with real verticality — the game has none |
 | Room 5, the water | Idemili's python | Optional. Non-lethal — it tests you and lets you pass |
 | Room 4, the market | **do not** | The market must stay safe |
-| Room 8, the fire | A forge-thing that reforges its own guard | Poise that regenerates fast, forcing burst |
+| Room 8, the fire | ~~A forge-thing~~ **[BUILT]** — Ụzụ Ọkụ | Poise regenerates at 2.2/frame (3.4 in phase two) against a walker's 0.3 |
 
 A realistic ceiling for this codebase is **8–10 bosses**. See `01-VISION.md`
 §1.10 for why forty is a different game.
