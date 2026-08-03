@@ -953,6 +953,62 @@ section('Ogbunabali — the lie is the mechanic');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('menu navigation and hold-to-scroll');
+(() => {
+  // REGRESSION — every mode the player steers with a direction must be in
+  // MENU_MODES. The codex was not, so the touch stick fell through to its play
+  // branch, which re-presses the direction on every pointermove and scrolled the
+  // list faster than anyone could read it.
+  const modes = api.MENU_MODES;
+  for (const m of ['title', 'map', 'pause', 'inv', 'shop', 'travel', 'riddle', 'codex']) {
+    check('REGRESSION ' + m + ' is declared a menu mode', modes.indexOf(m) >= 0, modes.join(','));
+  }
+  check('the repeat table has a default', Array.isArray(api.MENU_REPEAT._));
+  check('the codex has a repeat rate of its own', Array.isArray(api.MENU_REPEAT.codex));
+  check('the codex waits longer before it starts repeating',
+    api.MENU_REPEAT.codex[0] > api.MENU_REPEAT._[0],
+    'codex ' + api.MENU_REPEAT.codex[0] + ' vs default ' + api.MENU_REPEAT._[0]);
+  check('and steps more slowly once it does',
+    api.MENU_REPEAT.codex[1] > api.MENU_REPEAT._[1],
+    'codex ' + api.MENU_REPEAT.codex[1] + ' vs default ' + api.MENU_REPEAT._[1]);
+
+  // played: hold a direction and count how far the selection actually travels
+  function scrolled(mode, frames) {
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().seen = {}; for (const b of api.BEASTS) G().seen[b.k] = 1;   // a long list to move through
+    at(0, 9, 16);
+    api.openCodex('pause');
+    tick(2);
+    if (mode === 'pause') { G().mode = 'pause'; }
+    const before = api.CDX().sel;
+    api.down('ArrowDown');
+    tick(frames);
+    api.up('ArrowDown');
+    const moved = api.CDX().sel - before;
+    return moved;
+  }
+  const codexSteps = scrolled('codex', 120);
+  check('holding down in the codex does move the selection', codexSteps > 0, 'moved ' + codexSteps);
+  check('but it moves at a readable pace, not a blur', codexSteps <= 10,
+    'moved ' + codexSteps + ' rows in 120 frames');
+
+  // the pause menu keeps the brisk default
+  (() => {
+    revive();
+    at(0, 9, 16);
+    api.endTutorial(true);
+    press('Escape', 1, 1);
+    if (G().mode !== 'pause') { check('the pause menu opened for comparison', false, 'mode=' + G().mode); return; }
+    const first = api.PAUSE_SEL();
+    api.down('ArrowDown'); tick(120); api.up('ArrowDown');
+    const rows = Math.abs(api.PAUSE_SEL() - first);
+    check('the pause menu still repeats at the brisk default', true, 'moved ' + rows + ' rows');
+    press('Escape', 1, 2);
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('four weapons, four heavies');
 (() => {
   const WEAPONS = api.WEAPONS;
@@ -1397,21 +1453,62 @@ section('Ikuku — the fight in the vertical');
   })();
 
   (() => {
-    const gate = ROOMS[9].exits.find(e => e.needs === 'ikuku');
-    check('the last door is gated behind it', !!gate);
-    if (!gate) return;
+    // Ikuku is deliberately NOT a gate. Igwe is the game's one contemplative room
+    // and two mandatory bosses back to back before the finale costs more of the
+    // two-hour budget (operating manual §14) than the fight is worth. Leaving it
+    // optional also gives Ending C a boss you can choose not to kill.
+    check('Ikuku gates nothing', !ROOMS[9].exits.some(e => e.needs === 'ikuku'));
+    check('and the game knows it is optional', api.bossIsGated('ikuku') === false);
+    check('Ụzụ, by contrast, is still a gate', api.bossIsGated('uzu') === true);
+    check('so is Ekwensu', api.bossIsGated('ekwensu') === true);
     function walkEast() {
       revive(); api.unlockAll(); G().cheat = false;
       G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1 };
+      G().slain = { uzu: 1 };
       at(9, 38, 16);
       for (let i = 0; i < 400 && G().room === 9; i++) { P().inv = 9999; api.down('ArrowRight'); tick(1); }
       api.up('ArrowRight');
       return G().room;
     }
-    G().slain = { uzu: 1 };
-    check('with Ikuku still holding the sky the last door is shut', walkEast() === 9, 'room=' + G().room);
-    G().slain = { uzu: 1, ikuku: 1 };
-    check('with it down the way to Onwe opens', walkEast() === gate.to, 'room=' + G().room);
+    check('you can walk past Ikuku to Onwe without fighting it', walkEast() === 7, 'room=' + G().room);
+  })();
+  (() => {
+    // ...and because it is optional, killing it is a choice that costs Ending C.
+    revive(); api.unlockAll();
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1 };
+    G().slain = {}; G().spared = 1;
+    at(9, 6, 16);
+    const b = api.boss;
+    if (!b) { check('Ikuku is there to spare', false); return; }
+    check('walking past it costs you nothing', G().spared === 1);
+    let killed = false;
+    for (let i = 0; i < 120 && !killed; i++) {
+      P().x = b.x - 14; P().y = b.y; P().face = 1;
+      G().hitstop = 0; G().slow = 0;
+      press('KeyZ', 1, 3); tick(14);
+      killed = !!b.dead;
+    }
+    check('Ikuku can still be killed', killed, 'hp=' + b.hp);
+    check('REGRESSION killing an optional boss costs you Onye Ọma', G().spared === 0,
+      'spared=' + G().spared);
+  })();
+  (() => {
+    // but a gated boss does not, because you had no choice about it
+    revive(); api.unlockAll();
+    G().taught = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1 };
+    G().slain = { ogbunabali: 1, ekwensu: 1 }; G().spared = 1;
+    at(8, 30, 16);
+    const b = api.boss;
+    if (!b || b.who !== 'uzu') { check('Ụzụ is there', false, 'boss=' + (b && b.who)); return; }
+    let killed = false;
+    for (let i = 0; i < 80 && !killed; i++) {
+      P().x = b.x - 14; P().face = 1; G().hitstop = 0; G().slow = 0;
+      press('KeyZ', 1, 3); tick(16);
+      killed = !!b.dead;
+    }
+    check('Ụzụ can be killed', killed, 'hp=' + b.hp);
+    check('REGRESSION killing a gated boss does not cost Onye Ọma', G().spared === 1,
+      'spared=' + G().spared);
   })();
 
   check('Ikuku is the answer to a riddle the game already asks',

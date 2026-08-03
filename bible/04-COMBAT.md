@@ -280,7 +280,13 @@ already met being handed a body.
 - It reframes the room rather than the player. Igwe's horror is a sunset hundreds of feet
   underground that nobody remarks on; Ikuku's first line is that somebody has to hold it
   up. Its last is that the sky does not change when it dies, which is worse.
-- Gates the last door.
+- **Optional. It gates nothing.** Igwe is the game's one contemplative room and its
+  emotion is "vertigo, and something wrong you cannot name"; a compulsory fight
+  overwrites that, and two mandatory bosses back to back before the finale spends more
+  of the two-hour budget in §14 than the fight is worth. You can walk past it to Onwe.
+- Because it is optional, **killing it is a choice and it costs you Ending C.** Whether a
+  boss counts is derived by `bossIsGated()` from the exit tables rather than listed, so
+  ungating any boss in future automatically makes killing it avoidable.
 
 ### Boss 4 — Ụzụ Ọkụ, the smith of the fire (room 8)
 **The idea: its guard reforges faster than you can chip it down.**

@@ -216,8 +216,11 @@ oblique enough not to instruct.
 **`G.spared` is a flag, not a counter, and that is a deliberate deviation.** Enemies
 respawn every time you enter a room, so a tally of spared creatures is not well defined
 — you could farm it. A tally of *avoidable kills* is well defined, so `G.spared` starts
-at 1 and drops to 0 the first time anything that is not a boss and not the chalk teacher
-dies. Bosses are all gated and therefore unavoidable; the teacher comes apart whether you
+at 1 and drops to 0 the first time anything avoidable dies. What counts as avoidable is
+read off the world by `bossIsGated()`: a boss some exit is gated behind had to die, and a
+boss nothing is gated behind did not. Ikuku is optional, so killing it costs you this
+ending. The chalk teacher comes apart whether you fight it or skip it, so it never
+counts. Bosses are all gated and therefore unavoidable; the teacher comes apart whether you
 fight it or skip it.
 
 The stats card carries a `left standing` row so the run tells you which way it went.

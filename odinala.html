@@ -91,15 +91,24 @@ const C = {
 
 // ── input ────────────────────────────────────────────────────────────────────
 const keys = {}, pressed = {};
-const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut'];
+// Every mode the player navigates with a direction belongs here. Miss one and the
+// touch stick falls through to its *play* branch, which re-presses the direction
+// on every pointermove — the codex was doing exactly that, and holding the stick
+// machine-gunned the list past everything you were trying to read.
+const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut','codex'];
+// hold-to-scroll, per mode: [frames before it starts repeating, frames between].
+// The codex is slower on purpose. Its rows are things you read, not things you
+// count past, and its entries are long enough that overshooting costs a re-read.
+const MENU_REPEAT={ codex:[30,13], _:[20,6] };
 const heldFor={};
 // in a menu, holding a direction should keep stepping instead of stopping dead
 function menuRepeat(){
   if(MENU_MODES.indexOf(G.mode)<0){ for(const k in heldFor) heldFor[k]=0; return; }
   for(const c of ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyS','KeyA','KeyD']){
     if(keys[c]){
+      const rp = MENU_REPEAT[G.mode] || MENU_REPEAT._;
       heldFor[c]=(heldFor[c]||0)+1;
-      if(heldFor[c]>20 && (heldFor[c]-20)%6===0) pressed[c]=true;
+      if(heldFor[c]>rp[0] && (heldFor[c]-rp[0])%rp[1]===0) pressed[c]=true;
     } else heldFor[c]=0;
   }
 }
@@ -477,8 +486,7 @@ const ROOMS = [
   "####################........####################",
   "####################^^^^^^^^####################"],
   exits:[{tx:0,ty:14,tw:1,th:2,to:8,sx:53,sy:16},
-         {tx:47,ty:14,tw:1,th:2,to:7,sx:2,sy:16,needs:'ikuku',
-          locked:"The air will not let you past while it is still holding this sky."}] }
+         {tx:47,ty:14,tw:1,th:2,to:7,sx:2,sy:16}] }
 ];
 
 // normalise + index
@@ -491,6 +499,12 @@ for (const r of ROOMS){
 }
 
 const SOLID = ch => ch==='#' || ch==='c';
+// A boss is unavoidable exactly when some exit is gated behind it. Derived rather
+// than listed, so ungating a boss automatically makes killing it a choice.
+function bossIsGated(who){
+  for(const r of ROOMS) for(const ex of r.exits) if(ex.needs===who) return true;
+  return false;
+}
 function tileAt(r,tx,ty){
   if (tx<0||ty<0||tx>=r.w||ty>=r.h) return '#';
   if (r.broken[tx+','+ty]) return '.';
@@ -1871,9 +1885,13 @@ function damage(e,amt,dir,kb,muffled,poiseDmg){
     shake(e.kind==='boss'?10:3); stop(e.kind==='boss'?26:6);
     if(e.kind!=='boss') S.hit(); else S.die();
     G.slain[e.kind==='boss'?e.who:e.kind] = (G.slain[e.kind==='boss'?e.who:e.kind]||0)+1;
-    // Ending C asks that you put down nothing you did not have to. Bosses are
-    // gated and the chalk teacher comes apart either way, so neither counts.
-    if(e.kind!=='boss' && !e.trainer) G.spared = 0;
+    // Ending C asks that you put down nothing you did not have to. What counts as
+    // "had to" is read off the world rather than hardcoded: a boss that some exit
+    // is gated behind is unavoidable, and one that nothing is gated behind is a
+    // choice. Ikuku is optional, so killing it costs you Onye Ọma. The chalk
+    // teacher comes apart whether you fight it or skip it, so it never counts.
+    const forced = (e.kind==='boss') ? bossIsGated(e.who) : !!e.trainer;
+    if(!forced) G.spared = 0;
     if(e.kind==='boss'){
       if(e.who==='ogbunabali'){
         G.bossDead=true; G.hasSlam=true; G.outroT=110; G.outroWho='ogbunabali';
@@ -6494,7 +6512,8 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   PAUSE_LABEL:()=>pauseLabel(pauseRows()[PAUSE.sel]), LORE_OPEN:loreOpen, BEAST_OPEN:beastOpen,
   CDX:()=>CDX, storyProgress, LORE, BEASTS, openCodex, BG_ROOM:()=>bgRoom,
   WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS,
-  ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C, get flames(){return flames}
+  ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C, get flames(){return flames}, bossIsGated,
+  MENU_MODES, MENU_REPEAT
 });
 cvs.focus();
 requestAnimationFrame(frame);
