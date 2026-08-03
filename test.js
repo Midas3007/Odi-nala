@@ -953,6 +953,163 @@ section('Ogbunabali — the lie is the mechanic');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('music, beds and boss cards');
+(() => {
+  const TR = api.TRACKS, SC = api.SCALES, RT = api.ROOM_TRACK;
+
+  // every room names a track, and every named track exists
+  check('the room-track table is as long as the room list', RT.length === ROOMS.length,
+    RT.length + ' vs ' + ROOMS.length);
+  for (let i = 0; i < RT.length; i++) {
+    check('room ' + i + ' names a track that exists', !!TR[RT[i]], RT[i]);
+    check('room ' + i + '’s track names a scale that exists', !!SC[TR[RT[i]].sc], TR[RT[i]].sc);
+  }
+  // REGRESSION — the bone road had been reusing the shaft's arrangement
+  check('REGRESSION the bone road has an arrangement of its own', RT[6] !== RT[2],
+    'room 6 = ' + RT[6] + ', room 2 = ' + RT[2]);
+  check('and it is called bone', RT[6] === 'bone', RT[6]);
+  check('the bone road has a scale of its own', TR.bone.sc === 'bone' && !!SC.bone);
+  check('it is exposed — no pad', TR.bone.pad === 0, 'pad=' + TR.bone.pad);
+
+  // every arrangement is well formed
+  for (const k of Object.keys(TR)) {
+    const t = TR[k];
+    check(k + ' has a tempo and a scale', t.spb > 0 && !!SC[t.sc], JSON.stringify({ spb: t.spb, sc: t.sc }));
+    check(k + '’s bell is a 12-pulse timeline (§7.2)', Array.isArray(t.bell) && t.bell.length === 12,
+      'bell length ' + (t.bell || []).length);
+    for (const part of ['udu', 'ekwe', 'shk']) {
+      check(k + '’s ' + part + ' is 12 pulses', Array.isArray(t[part]) && t[part].length === 12,
+        part + ' length ' + (t[part] || []).length);
+    }
+    check(k + ' has four opi phrases of 12', Array.isArray(t.opi) && t.opi.length === 4 &&
+      t.opi.every(ph => ph.length === 12), 'opi ' + (t.opi || []).length);
+  }
+
+  // ── boss themes ───────────────────────────────────────────────────────────
+  check('Ekwensu has a theme of its own', api.BOSS_TRACK.ekwensu && !!TR[api.BOSS_TRACK.ekwensu]);
+  check('Onwe has a theme of its own', api.BOSS_TRACK.onwe && !!TR[api.BOSS_TRACK.onwe]);
+  check('bosses without one fall back to the house track', !api.BOSS_TRACK.ogbunabali);
+  check('Ekwensu’s theme is the densest bell in the set',
+    TR.ekwensu.bell.filter(x => x).length >= TR.night.bell.filter(x => x).length,
+    'ekwensu ' + TR.ekwensu.bell.filter(x => x).length + ' strokes');
+
+  // REGRESSION — Onwe's theme is the opening room's, backwards
+  (() => {
+    const night = TR.night, onwe = TR.onwe;
+    check('REGRESSION Onwe’s theme is the opening room’s arrangement reversed',
+      onwe.udu.join(',') === night.udu.slice().reverse().join(','),
+      'udu ' + onwe.udu.join('') + ' vs ' + night.udu.slice().reverse().join(''));
+    check('...its ekwe too', onwe.ekwe.join(',') === night.ekwe.slice().reverse().join(','));
+    check('...and its opi phrases, in reverse order and each reversed',
+      JSON.stringify(onwe.opi) === JSON.stringify(night.opi.map(a => a.slice().reverse()).reverse()));
+    check('REGRESSION but the bell does not reverse — the timeline never changes (§7.2)',
+      onwe.bell.join(',') === night.bell.join(','),
+      'onwe ' + onwe.bell.join('') + ' vs night ' + night.bell.join(''));
+    check('it keeps the opening room’s scale, so it is recognisably yours',
+      onwe.sc === night.sc, onwe.sc + ' vs ' + night.sc);
+    check('retrograde() does not mutate what it is given',
+      night.udu.join(',') === TR.night.udu.join(','));
+  })();
+
+  // REGRESSION — the tables having themes proves nothing on its own; what the
+  // player hears is whatever musicForRoom() picks. Found by mutation: reverting
+  // that one line to always play 'boss' left every table assertion green.
+  (() => {
+    function trackIn(room, slain, taught) {
+      revive();
+      api.unlockAll(); G().cheat = false;
+      G().slain = slain; G().taught = taught;
+      at(room, 4, 16);
+      skipCuts(); G().mode = 'play';
+      tick(2);
+      return api.MUS_NAME();
+    }
+    const T = { bossIn: 1, ekIn: 1, onIn: 1, uzIn: 1, ikIn: 1 };
+    check('REGRESSION Ekwensu’s room plays Ekwensu’s theme',
+      trackIn(6, { ogbunabali: 1 }, T) === 'ekwensu', 'playing ' + api.MUS_NAME());
+    check('REGRESSION Onwe’s room plays Onwe’s theme',
+      trackIn(7, { ogbunabali: 1, ekwensu: 1, uzu: 1 }, T) === 'onwe', 'playing ' + api.MUS_NAME());
+    check('Ogbunabali still takes the house boss track',
+      trackIn(3, {}, T) === 'boss', 'playing ' + api.MUS_NAME());
+    check('REGRESSION the bone road with its boss down plays the bone road',
+      trackIn(6, { ogbunabali: 1, ekwensu: 1 }, T) === 'bone', 'playing ' + api.MUS_NAME());
+    check('an ordinary room plays its own track',
+      trackIn(1, { ekwensu: 1 }, T) === 'forest', 'playing ' + api.MUS_NAME());
+  })();
+
+  // ── ambient beds ──────────────────────────────────────────────────────────
+  check('every track has an ambient bed', Object.keys(TR).every(k => !!api.BEDS[k]),
+    'missing: ' + Object.keys(TR).filter(k => !api.BEDS[k]).join(','));
+  for (const k of Object.keys(api.BEDS)) {
+    const b = api.BEDS[k];
+    check(k + '’s bed has a frequency and a gain', b.f > 0 && b.g > 0, JSON.stringify(b));
+    check(k + '’s bed is quiet enough to sit under the music', b.g <= 0.03, 'g=' + b.g);
+  }
+  check('the fire room’s bed is the lowest', api.BEDS.fire.f < api.BEDS.sky.f);
+  check('the sky’s bed is the thinnest and highest', api.BEDS.sky.f > api.BEDS.forest.f);
+  check('Onwe’s bed is the opening room’s own air, which is the joke',
+    api.BEDS.onwe.f === api.BEDS.night.f,
+    'onwe ' + api.BEDS.onwe.f + ' vs night ' + api.BEDS.night.f);
+  check('Ekwensu’s bed is the lowest in the game',
+    Object.keys(api.BEDS).every(k => api.BEDS[k].f >= api.BEDS.ekwensu.f),
+    'ekwensu f=' + api.BEDS.ekwensu.f);
+
+  // ── boss title cards ──────────────────────────────────────────────────────
+  for (const who of Object.keys(api.BOSS_STATS)) {
+    const c = api.bossCard(who);
+    check(who + ' has a title card with a name', !!c.t && c.t.length > 0, JSON.stringify(c));
+    check(who + '’s card name comes from its bestiary entry',
+      api.BEASTS.some(b => b.k === 'boss_' + who && b.t === c.t),
+      'card says ' + c.t);
+  }
+  (() => {
+    // played: walk into a boss room and the card comes up, then goes away
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().slain = {}; G().taught = {}; G().cardT = 0; G().cardWho = '';
+    audioReset();
+    api.resetPlayerAt(3, 5, 16);
+    check('arriving at a boss raises its title card', G().cardT > 0, 'cardT=' + G().cardT);
+    check('the card names the boss in that room', G().cardWho === 'ogbunabali', G().cardWho);
+    check('the encounter has a stinger', audioTotal() > 0, 'audio=' + audioTotal());
+    skipCuts(); G().mode = 'play';
+    for (let i = 0; i < 260; i++) { P().inv = 9999; G().hitstop = 0; tick(1); }
+    check('the card goes away on its own', G().cardT === 0, 'cardT=' + G().cardT);
+    check('it never took control away — the fight ran underneath it',
+      G().mode === 'play', 'mode=' + G().mode);
+  })();
+  (() => {
+    // REGRESSION 08-UI-UX §8.2c: the arrival cutscene plays once, the card does not.
+    // You died and walked back; the fight should still tell you what it is.
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().slain = {}; G().taught = {}; G().cardT = 0; G().cardWho = '';
+    api.resetPlayerAt(3, 5, 16);
+    const firstCut = JSON.stringify(G().taught);
+    check('the first arrival gates its cutscene', G().taught.bossIn === 1, firstCut);
+    skipCuts(); G().mode = 'play';
+    for (let i = 0; i < 260; i++) { P().inv = 9999; G().hitstop = 0; tick(1); }
+    check('card cleared before the second arrival', G().cardT === 0, 'cardT=' + G().cardT);
+    audioReset();
+    api.resetPlayerAt(3, 5, 16);
+    check('coming back to a live boss raises the card again',
+      G().cardT > 0, 'cardT=' + G().cardT);
+    check('and it still names the right boss', G().cardWho === 'ogbunabali', G().cardWho);
+    check('and stings again', audioTotal() > 0, 'audio=' + audioTotal());
+    G().mode = 'play';
+  })();
+  (() => {
+    // a dead boss's room raises no card
+    revive();
+    api.unlockAll(); G().cheat = false;
+    G().slain = { ogbunabali: 1 }; G().taught = {}; G().cardT = 0; G().cardWho = '';
+    api.resetPlayerAt(3, 5, 16);
+    check('a room whose boss is already dead raises no card', G().cardT === 0, 'cardT=' + G().cardT);
+    G().mode = 'play';
+  })();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('charms');
 (() => {
   const CH = api.CHARMS, ORDER = api.CHARM_ORDER;

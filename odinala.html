@@ -518,7 +518,7 @@ const G = {
   knowsName:false, hasSlam:false, bossDead:false, maxHP:100, taught:{},
   slain:{}, seen:{}, deaths:0, ending:0, playT:0,
   checkpoint:{room:0, tx:9, ty:16},
-  visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0, met:{}, spared:1,
+  visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0, met:{}, spared:1, cardT:0, cardWho:'',
   spells:{amadioha:1, ala:0, idemili:0, ikenga:0},
   skills:{riposte:0, swift:0, charm:0, flasks:3, heartUps:0},
   equipped:'amadioha', weapons:{mma:1}, weapon:'mma', charms:{}, worn:[], boneUsed:0, storyDone:false, tutDone:false, cheat:false, sel:0, sub:0, note:'', noteT:0
@@ -649,10 +649,15 @@ function resetPlayerAt(room,tx,ty){
   spawnRoom();
   cam.x = clamp(P.x-W/2, 0, R.w*T-W);
   cam.y = clamp(P.y-H/2, 0, R.h*T-H);
+  if(G.room===3 && boss && !boss.dead){ showBossCard(boss.who); }
   if(G.room===3 && boss && !boss.dead && !G.taught.bossIn){ G.taught.bossIn=1; playCut(BOSS_IN); }
+  if(G.room===6 && boss && !boss.dead){ showBossCard(boss.who); }
   if(G.room===6 && boss && !boss.dead && !G.taught.ekIn){ G.taught.ekIn=1; playCut(EK_IN); }
+  if(G.room===7 && boss && !boss.dead){ showBossCard(boss.who); }
   if(G.room===7 && boss && !boss.dead && !G.taught.onIn){ G.taught.onIn=1; playCut(ON_IN); }
+  if(G.room===8 && boss && !boss.dead){ showBossCard(boss.who); }
   if(G.room===8 && boss && !boss.dead && !G.taught.uzIn){ G.taught.uzIn=1; playCut(UZ_IN); }
+  if(G.room===9 && boss && !boss.dead){ showBossCard(boss.who); }
   if(G.room===9 && boss && !boss.dead && !G.taught.ikIn){ G.taught.ikIn=1; playCut(IK_IN); }
 }
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
@@ -1017,7 +1022,25 @@ const S={
 // changes, udu and ekwe arguing underneath it, ichaka keeping the air moving, and
 // an opi flute calling over the top with something else answering.
 const MUS = { bus:null, delay:null, on:true, next:0, step:0, timer:null, track:null,
-              drone:null, droneG:null, vol:0.55, bar:0 };
+              drone:null, droneG:null, vol:0.55, bar:0,
+              bed:null, bedF:null, bedG:null };
+// A continuous filtered-noise bed under each arrangement — wind, water, crowd,
+// fire. Keyed by track rather than by room on purpose: it is not a sixth
+// room-indexed table to keep in sync, and rooms that share an arrangement should
+// share the air in them.
+const BEDS = {
+  night:  {f:420,  q:0.5, g:0.008},   // almost nothing. Night air.
+  forest: {f:760,  q:0.7, g:0.016},   // wind through leaves
+  shaft:  {f:240,  q:0.9, g:0.012},   // a hollow underground room
+  bone:   {f:1150, q:0.6, g:0.014},   // dry wind over open ground
+  market: {f:640,  q:1.6, g:0.013},   // a crowd heard through a wall
+  water:  {f:1500, q:1.1, g:0.015},   // moving water
+  fire:   {f:300,  q:0.5, g:0.020},   // the roar, felt more than heard
+  sky:    {f:1900, q:0.5, g:0.011},   // thin high air
+  boss:   {f:180,  q:0.8, g:0.010},
+  ekwensu:{f:150,  q:0.9, g:0.012},   // lower than anything else: it is enormous
+  onwe:   {f:420,  q:0.5, g:0.008}    // your own room's air, because that is the joke
+};
 
 const SCALES = {
   night:  [110.00,130.81,146.83,164.81,196.00],       // A minor pentatonic
@@ -1027,6 +1050,7 @@ const SCALES = {
   water:  [220.00,261.63,293.66,329.63,392.00],       // A minor, up an octave
   fire:   [116.54,138.59,155.56,185.00,207.65],       // C# minor, hot and close
   sky:    [196.00,220.00,246.94,293.66,329.63],       // G, open and high
+  bone:   [130.81,146.83,174.61,196.00,233.08],       // C minor pentatonic: dry, walking
   boss:   [130.81,138.59,174.61,196.00,207.65]        // C with a flat second: wrong on purpose
 };
 
@@ -1068,6 +1092,20 @@ const TRACKS = {
            [0,0,0,2,0,0,0,0,0,0,0,0],
            [0,0,0,0,0,0,0,0,1,0,0,0],
            [0,0,0,0,0,0,0,0,0,0,0,0] ] },
+
+  // Okọchị Ọkpụkpụ. Endurance, not menace: a tread that does not stop, a bare
+  // fifth of an answer every other bar, and no pad, because nothing out here is
+  // holding you up.
+  bone:   { spb:.180, sc:'bone',   mix:.78, pad:0,
+    bell:BELL7,
+    udu: [1,0,0,0,2,0,1,0,0,0,2,0],
+    ekwe:[0,0,1,0,0,0,0,0,1,0,0,0],
+    shk: [0,0,0,0,0,0,0,0,0,0,0,0],
+    gtr: null,
+    opi: [ [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,2,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0],
+           [3,0,0,0,0,0,0,1,0,0,0,0] ] },
 
   market: { spb:.152, sc:'market', mix:1, pad:0,
     bell:BELL7,
@@ -1122,7 +1160,48 @@ const TRACKS = {
            [1,0,1,0,1,0,1,0,1,0,1,0],
            [0,0,0,0,0,0,5,0,4,0,2,0] ] }
 };
-const ROOM_TRACK = ['night','forest','shaft','boss','market','water','shaft','night','fire','sky'];
+const ROOM_TRACK = ['night','forest','shaft','boss','market','water','bone','night','fire','sky'];
+// A boss with a theme of its own gets one; the rest take the house boss track.
+// Ekwensu is the largest thing in the game and has no trick: the arrangement is
+// the same honesty — everything on the beat, nothing hidden, the densest bell in
+// the set and a drum that does not let up.
+TRACKS.ekwensu = { spb:.138, sc:'shaft', mix:1, pad:1,
+  bell:BELL_B,
+  udu: [1,0,2,1,0,2,1,0,2,1,0,2],
+  ekwe:[2,1,0,2,1,0,2,1,0,2,1,0],
+  shk: [0,0,1,0,0,1,0,0,1,0,0,1],
+  gtr: null,
+  opi: [ [4,0,0,0,3,0,0,0,2,0,0,0],
+         [0,0,3,0,0,0,4,0,0,0,3,0],
+         [2,0,0,1,0,0,2,0,0,1,0,0],
+         [0,0,0,0,0,4,0,0,0,0,3,0] ] };
+// ...and Onwe is you, backwards.
+TRACKS.onwe = retrograde(TRACKS.night, { spb:.186, mix:.92 });
+const BOSS_TRACK = { ekwensu:'ekwensu', onwe:'onwe' };
+// The card on encounter. Names are read out of BEASTS so a boss cannot have a
+// title card and no bestiary entry, or the two drift apart.
+function bossCard(who){
+  const e = BEASTS.filter(b=>b.k==='boss_'+who)[0];
+  return e ? {t:e.t, sub:e.sub} : {t:String(who).toUpperCase(), sub:''};
+}
+function showBossCard(who){
+  G.cardWho = who; G.cardT = 190;
+  // the stinger 07-AUDIO §7.6 asks for: one struck bell, low, once
+  tone(88,.9,'sine',.055,44); tone(262,.5,'triangle',.03,131); nz(.22,.05,180);
+}
+
+// Onwe fights with your moveset, so its theme is your own opening room's
+// arrangement played backwards. Everything reverses except the bell: 07-AUDIO
+// §7.2 is explicit that the timeline never changes while everything else argues
+// around it, and reversing the spine as well would just sound like a different
+// track rather than like your room running the wrong way.
+function retrograde(tr, over){
+  const rev = a => a ? a.slice().reverse() : a;
+  return Object.assign({}, tr, {
+    udu: rev(tr.udu), ekwe: rev(tr.ekwe), shk: rev(tr.shk), gtr: rev(tr.gtr),
+    opi: tr.opi.map(rev).reverse()
+  }, over || {});
+}
 
 function musBus(){
   if(!AC || MUS.bus) return;
@@ -1243,6 +1322,27 @@ function mPad(t,f,dur,kind){
     lp.connect(g); g.connect(MUS.bus);
   }catch(e){}
 }
+// One looping noise source for the whole game; only the filter and the gain ever
+// move, so changing rooms costs two setTargetAtTime calls rather than a new node
+// graph. It hangs off MUS.bus, so muting the music mutes the bed with it.
+function musicSetBed(spec){
+  if(!AC) return; musBus();
+  try{
+    if(!MUS.bed){
+      const n=Math.floor(AC.sampleRate*2), b=AC.createBuffer(1,n,AC.sampleRate), d=b.getChannelData(0);
+      for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*0.5;
+      MUS.bed=AC.createBufferSource(); MUS.bed.buffer=b; MUS.bed.loop=true;
+      MUS.bedF=AC.createBiquadFilter(); MUS.bedF.type='bandpass';
+      MUS.bedG=AC.createGain(); MUS.bedG.gain.value=0;
+      MUS.bed.connect(MUS.bedF); MUS.bedF.connect(MUS.bedG); MUS.bedG.connect(MUS.bus);
+      MUS.bed.start();
+    }
+    const t=AC.currentTime;
+    MUS.bedF.frequency.setTargetAtTime(spec?spec.f:600, t, .9);
+    MUS.bedF.Q.setTargetAtTime(spec?(spec.q||0.7):0.7, t, .9);
+    MUS.bedG.gain.setTargetAtTime(spec?spec.g:0, t, 1.4);
+  }catch(e){}
+}
 function musicSetDrone(f){
   if(!AC) return; musBus();
   try{
@@ -1287,10 +1387,11 @@ function musicPlay(name){
   const tr=TRACKS[name]; if(!tr || MUS.track===tr) return;
   MUS.track=tr; MUS.step=0; MUS.next=AC.currentTime+.08;
   musicSetDrone(SCALES[tr.sc][0]/2);
+  musicSetBed(BEDS[name]);
   if(!MUS.timer && typeof setInterval!=='undefined') MUS.timer=setInterval(musicSched,60);
 }
 function musicForRoom(){
-  if(boss && !boss.dead) musicPlay('boss');
+  if(boss && !boss.dead) musicPlay(BOSS_TRACK[boss.who] || 'boss');
   else musicPlay(ROOM_TRACK[G.room]||'night');
 }
 function musicToggle(){
@@ -3034,6 +3135,7 @@ function update(){
   G.t++;
   if(G.mode==='play') G.playT++;
   if(G.noteT>0) G.noteT--; else G.note='';
+  if(G.cardT>0) G.cardT--;
   if(G.outroT>0){ G.outroT--; if(G.outroT===0){
     saveGame();
     const who=G.outroWho||'ogbunabali';
@@ -5191,6 +5293,25 @@ function wrapText(t,cx,cy,maxw,lh){
   lines.forEach((l,i)=>ctx.fillText(l,cx,start+i*lh));
 }
 
+// It fades in, holds, and fades out, and it never blocks anything: the fight has
+// already started underneath it.
+function drawBossCard(){
+  if(!G.cardT || !G.cardWho) return;
+  const c=bossCard(G.cardWho), t=190-G.cardT;
+  const a = Math.min(1, t/22) * Math.min(1, G.cardT/34);
+  ctx.globalAlpha=a*0.55; px(0,H/2-22,W,30,'#05070b'); ctx.globalAlpha=1;
+  ctx.globalAlpha=a*0.8; pxf(0,H/2-22,W,.5,C.goldDim); pxf(0,H/2+7.5,W,.5,C.goldDim); ctx.globalAlpha=1;
+  ctx.textAlign='center';
+  ctx.globalAlpha=a;
+  ctx.font='13px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone;
+  ctx.fillText(c.t, W/2, H/2-6);
+  if(c.sub){
+    ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.goldDim;
+    ctx.fillText(c.sub, W/2, H/2+4);
+  }
+  ctx.globalAlpha=1; ctx.textAlign='left';
+}
+
 function drawVignette(){
   const g=ctx.createRadialGradient(W/2,H/2,60,W/2,H/2,W*0.62);
   g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.72)');
@@ -5209,6 +5330,7 @@ function render(){
   drawLights();
   ctx.restore();
   drawVignette(); drawGrain(); drawTutorial();
+  drawBossCard();
   // ...and the edge of the world lights while any gold is in the air
   if(wearing('ogene')){
     let gold=false;
@@ -6640,6 +6762,8 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   CDX:()=>CDX, storyProgress, LORE, BEASTS, openCodex, BG_ROOM:()=>bgRoom,
   WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS,
   ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C, get flames(){return flames}, bossIsGated,
+  TRACKS, SCALES, BEDS, ROOM_TRACK, BOSS_TRACK, retrograde, bossCard,
+  MUS_NAME:()=>{ for(const k in TRACKS) if(TRACKS[k]===MUS.track) return k; return null; },
   MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
   CHM_SEL:()=>CHM.sel
 });

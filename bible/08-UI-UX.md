@@ -118,6 +118,31 @@ The default is `[20, 6]`. **The codex is deliberately slower at `[30, 13]`**, be
 rows are things you read rather than things you count past, and overshooting an entry
 costs a re-read rather than one more tap.
 
+## 8.2c Boss title cards — **[BUILT]**
+
+A thin band across the middle of the screen: the boss's name in serif, its epithet under
+it in small type, two gold rules top and bottom, over a 55% dark wash. It fades in over
+22 frames, holds, and fades out over the last 34 of its 190.
+
+Rules that made it work:
+
+- **It does not stop the game.** No pause, no input lock, no key to dismiss. The fight is
+  already happening underneath it and the player can already be moving. A card you have
+  to dismiss is a modal, and §8.1 does not allow modals.
+- **The band is thin and the middle is clear.** It sits across `H/2` at 30px so the boss
+  and the player both stay visible through it. A full-screen card would hide the first
+  tell of the fight, which is the one the player most needs to see.
+- **Name and epithet come from `BEASTS`** via `bossCard()`, so the card and the bestiary
+  cannot disagree. There is no second table of boss names, and there must not be — a boss
+  whose card says one thing and whose codex entry says another is the drift `tools/audit.py`
+  exists to prevent, in a place the audit cannot see.
+- **It is raised on every entry to a room with a live boss**, from `resetPlayerAt()`,
+  alongside the stinger (07-AUDIO §7.6) — including after a death. The arrival *cutscene*
+  beside it is gated on `G.taught.*` and plays once; the card is deliberately **not**,
+  because it is a label on the fight rather than a story beat, and the walk back after
+  dying should announce what you are walking back to. Once the boss is dead the room stops
+  raising it, which is what `!boss.dead` is for. There is a REGRESSION test on both halves.
+
 ## 8.5 Accessibility
 
 Some of this is built; much is not. **[NOT BUILT]** markers are honest.

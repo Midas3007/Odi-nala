@@ -55,15 +55,46 @@ music. A track in 16 steps is a different genre.
 |---|---|---|---|---|
 | `night` | 0, 7 | A minor pentatonic | 0.195 | Sparse bell, no shaker. Almost silence. |
 | `forest` | 1 | D minor pentatonic | 0.168 | Full seven-stroke, shaker running |
-| `shaft` | 2, 6 | E minor, low | 0.235 | Slowest. Almost no percussion. |
+| `shaft` | 2 | E minor, low | 0.235 | Slowest. Almost no percussion. |
+| `bone` | 6 | C minor pentatonic | 0.180 | Dry and walking. **No pad** — the one track with nothing under it. |
 | `market` | 4 | C major-ish | **0.152** | **Highlife** — guitar, full rattle, fastest |
 | `water` | 5 | A minor, +8ve | 0.205 | Airy, bells, delay-heavy |
 | `fire` | 8 | C# minor | 0.146 | Hot, close, dense ekwe |
 | `sky` | 9 | G major | 0.230 | Open, high, spacious |
 | `boss` | 3 | **C with a flat second** | **0.132** | The same bell, knocked wrong. War drums. Pad. |
+| `ekwensu` | 6, boss alive | E minor, low | 0.138 | The shaft scale played at boss tempo — the bone road's own ground, sped up under you. |
+| `onwe` | 7, boss alive | A minor pentatonic | 0.186 | **`night` in retrograde.** See below. |
 
 The boss track is the forest track's structure with a poisoned scale. That relationship
 should be preserved in any new boss music.
+
+**The bone road is deliberately padless.** Every other track has the Nollywood strings
+under it somewhere. The road of bones is the one place in the game where nothing is
+holding you up, and the arrangement says so before the room does.
+
+### Onwe's theme — built, not written
+
+`TRACKS.onwe = retrograde(TRACKS.night, { spb:.186, mix:.92 })`.
+
+`retrograde()` reverses every pattern array — udu, ekwe, shaker, guitar — and reverses
+both the order of the four `opi` phrases and the notes inside each. The bell timeline is
+**not** reversed, because it never changes for anything (§7.2).
+
+This is a function and not a transcribed copy on purpose: Onwe is the player's mirror, so
+if the opening theme is ever edited, Onwe's theme must change with it. A hand-copied
+retrograde would silently drift the day someone retunes `night`, and the mirror would
+stop being a mirror. **If you edit `night`, do not touch `onwe` — it already followed.**
+
+### Beds
+
+`BEDS` is one continuous filtered-noise source per track — wind, water, crowd, fire —
+started once and never restarted. `musicSetBed()` moves only the bandpass frequency and
+the gain, both on 0.8 s ramps, so a room change is a shift in the air rather than a cut.
+
+It is **keyed by track, not by room**, on purpose: a sixth room-indexed table is a sixth
+table to drift (§9), and rooms that share an arrangement should share the air in them.
+The bed hangs off `MUS.bus`, so `P` mutes it with everything else — a bed on its own
+output would keep hissing through a mute, which is the bug this note exists to prevent.
 
 ### Melody: call and response
 Each track carries **four 12-step phrases** in `opi[]`, cycling by bar. On step 6, if
@@ -81,11 +112,11 @@ down, at 0.042 gain, retuned with a 0.6 s time constant when the room changes.
 ### Music rules
 - **Never fade the music out for a cutscene.** The room's track continues under it. This
   is a Nollywood convention and it is correct.
-- **The track changes on room entry**, via `musicForRoom()`. Boss rooms with a live boss
-  override.
+- **The track changes on room entry**, via `musicForRoom()`. A boss room with a live boss
+  overrides — `BOSS_TRACK` names the theme, and anything not in it falls back to `boss`.
+  Ụzụ and Ikuku take that fallback and are still owed themes of their own.
 - **`P` mutes everything** and the HUD speaker icon reflects it.
-- **New room = new arrangement**, even if it reuses a scale. Room 6 currently reuses
-  `shaft` and this is flagged as a gap.
+- **New room = new arrangement**, even if it reuses a scale.
 
 ## 7.3 Voices
 
@@ -161,12 +192,18 @@ this **wrong** in an early version and shipped silent. The fix, which must be pr
 
 **Never simplify this.** Every step exists because a real browser needed it.
 
-## 7.6 Audio not yet built — **[NOT BUILT]**
+## 7.6 The encounter stinger — **[BUILT]**
 
-- A dedicated track for the bone road (currently reuses `shaft`)
-- Distinct boss themes for Ekwensu and Onwe (both currently use `boss`)
-- **Onwe's theme should be the player's own room's theme played backwards or in
-  retrograde** — the mirror idea carried into the score. **[PROPOSED]**
-- Ambient beds per room: wind in the forest, water drips, market crowd murmur
-- A stinger on boss encounter
+`showBossCard()` fires one struck bell — an 88 Hz sine, a 262 Hz triangle a fifth and an
+octave above it, and a short noise transient — and nothing else. **It does not interrupt
+the music**, for the same reason a cutscene does not (§7.2): the room's track carries on
+under it and the bell lands on top.
+
+It is fired from the boss's arrival, once, from the same place the card is raised, so the
+sound and the name cannot come apart. All five bosses use it.
+
+## 7.7 Audio not yet built — **[NOT BUILT]**
+
+- Themes for **Ụzụ Ọkụ and Ikuku** — both still take the `BOSS_TRACK` fallback to `boss`
 - Ducking the music under cutscene voices
+- More voice profiles as more characters are added (§7.3)
