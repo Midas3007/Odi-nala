@@ -55,6 +55,19 @@ dispatch.
 - **No confirmation dialogs.** Purchases are instant. The only irreversible action in
   the game is starting a new save, and that has its own title entry.
 
+### The title screen — **[BUILT] key art**
+
+The title was a word on a black field. It is now the game's own opening image, assembled
+out of painters that already exist — **the ogilisi over the row of graves, the moon
+behind it, and the ninth grave open at the end of the row** — so it costs no assets and
+cannot drift from what the rooms actually look like.
+
+The lockup is the word, a gold rule, and **nine strokes of nzu**: the same nine that are
+on the player's mask and on the name stone. Do not add a tenth.
+
+The ground band sits at `H-58`. At `H-40` it ran under the control hint and the open
+grave read as a stray black box behind the text.
+
 ### The title screen
 `CONTINUE` shows real progress: a text beat (*"the name, read off the stone"*), a
 percentage, and a gold bar. Ten story beats tracked in `storyProgress()`.
@@ -161,6 +174,22 @@ Rules that made it work:
   because it is a label on the fight rather than a story beat, and the walk back after
   dying should announce what you are walking back to. Once the boss is dead the room stops
   raising it, which is what `!boss.dead` is for. There is a REGRESSION test on both halves.
+
+## 8.4b Looking around — **[BUILT]**
+
+`LOOK AROUND` on the pause menu. The world stops, the HUD goes, and the camera comes off
+its leash — arrows to pan, `Z` to pan faster, `C` to put the HUD back, `X` to return.
+
+- **The world genuinely stops.** `update()` does not run, so nothing ages, nothing moves,
+  and nothing can kill you while you are looking at it. There is a REGRESSION test that
+  the player's position and health are untouched.
+- **The pan is clamped to the room.** Polish item 64 is that the camera never shows
+  outside the world, and a free camera is the single thing that would break it.
+- **It moves the camera, not an offset.** The first version carried a delta that the
+  renderer added to `cam` every frame, so the camera ran away from itself and the clamp
+  handed back a delta of zero — it looked like the controls did nothing.
+- **The only chrome is one line of hint text**, pulsing at 30–44% alpha, at the very
+  bottom. Anything more is in the photograph.
 
 ## 8.5 Accessibility
 

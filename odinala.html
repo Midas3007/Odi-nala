@@ -99,8 +99,13 @@ const keys = {}, pressed = {};
 // of these, and it used to keep its own copy of the list — which had silently
 // missed 'charm' since 2f, so the charm screen was never soak-tested at all.
 // One list, exported, and it cannot drift again.
-const MODES=['title','play','cut','map','riddle','travel','shop','pause','inv','codex','charm','opts','ending'];
-const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut','codex','charm','opts'];
+const MODES=['title','play','cut','map','riddle','travel','shop','pause','inv','codex','charm','opts','photo','ending'];
+// 'photo' is in here even though it is a camera pan and not a menu: 08-UI-UX
+// §8.2b states the rule absolutely, and a mode missing from this list gets
+// clearDirs()+down() on every pointermove. photoUpdate reads keys[] rather
+// than tap() so the repeat rate never touches it; the cost is that a stick
+// pan snaps to one axis, which on a phone is no loss.
+const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut','codex','charm','opts','photo'];
 // hold-to-scroll, per mode: [frames before it starts repeating, frames between].
 // The codex is slower on purpose. Its rows are things you read, not things you
 // count past, and its entries are long enough that overshooting costs a re-read.
@@ -5916,6 +5921,15 @@ function render(){
   if(G.flash>0){ ctx.globalAlpha=Math.min(G.flash,OPT.noFlash?3:99)/22;
     ctx.fillStyle=C.chalk; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
   if(G.fade>0){ ctx.globalAlpha=G.fade; ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
+  if(G.mode==='photo'){
+    if(PHOTO.hud) drawHUD();
+    // The only chrome, and it fades so it is out of the way of a screenshot.
+    ctx.globalAlpha=.30+Math.sin(G.t/40)*.14;
+    ctx.textAlign='center'; ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim;
+    ctx.fillText('arrows  look      Z  faster      C  hud      X  back', W/2, H-7);
+    ctx.textAlign='left'; ctx.globalAlpha=1;
+    return;
+  }
   drawHUD();
 }
 
@@ -5940,24 +5954,76 @@ function titleUpdate(){
     else { wipeSave(); G.mode='play'; startNew(); }
   }
 }
-function renderTitle(){
+// 3.7. The title was a word on a black field. The key art is the game's own
+// opening image assembled out of painters that already exist — the ogilisi over
+// the row of graves, the moon behind it, the hole at the end of the row — so it
+// costs no assets and cannot drift from what the rooms actually look like.
+function titleArt(){
+  const keep=G.seed; G.seed=7;
   ctx.fillStyle='#07090a'; ctx.fillRect(0,0,W,H);
-  G.seed=7;
+  const drift=Math.sin(G.t/260)*6;
   ctx.globalAlpha=.5;
   for(let i=0;i<40;i++){ const x=rnd()*W, y=rnd()*H; px(x,y,1,1,'#1a201c'); }
   ctx.globalAlpha=1;
+  // the moon, low and to the right, the way room 0 holds it
+  const mx=W-96+drift*0.4, my=58;
+  ctx.globalAlpha=.08; ctx.fillStyle='#cfc6ad';
+  ctx.beginPath(); ctx.arc(mx,my,30,0,7); ctx.fill();
+  ctx.globalAlpha=.55; ctx.fillStyle='#d8d0b6';
+  ctx.beginPath(); ctx.arc(mx,my,14,0,7); ctx.fill();
+  ctx.fillStyle='#07090a';
+  ctx.beginPath(); ctx.arc(mx+6,my-4,13,0,7); ctx.fill(); ctx.globalAlpha=1;
+  // the ground, the row, and the hole at the end of it
+  // The row sits clear of the footer: at H-40 the ground band ran under the
+  // control hint and the open grave read as a stray black box behind the text.
+  const gy=H-58;
+  px(0,gy,W,58,'#090b09');
+  ctx.globalAlpha=.9; pxf(0,gy,W,1,'#161a15'); ctx.globalAlpha=1;
+  for(let i=0;i<8;i++){
+    const bx=150+i*36;
+    ctx.fillStyle='#0e100d';
+    ctx.beginPath(); ctx.ellipse(bx,gy,11,5,0,3.14159,0); ctx.fill();
+    ctx.globalAlpha=.6; ctx.fillStyle='#171a14';
+    ctx.beginPath(); ctx.ellipse(bx,gy-1,9,3.4,0,3.14159,0); ctx.fill(); ctx.globalAlpha=1;
+    px(bx-1,gy-6,2,4,'#070907');
+  }
+  // the ninth, open, and lit at the lip the way room 10 draws it
+  const hx=104, hw=30;
+  const hg=ctx.createLinearGradient(0,gy,0,gy+20);
+  hg.addColorStop(0,'#14110c'); hg.addColorStop(1,'#000');
+  ctx.fillStyle=hg; ctx.fillRect(hx,gy,hw,20);
+  ctx.globalAlpha=.85; pxf(hx,gy,hw,1,'#2a2418'); ctx.globalAlpha=1;
+  for(let i=0;i<9;i++){ ctx.globalAlpha=.4-(i%3)*.08;
+    pxf(hx+hw+5+i*3, gy-5, .5, 4, C.chalk); }
+  ctx.globalAlpha=1;
+  // and the tree that marks the boundary
+  try{
+    treeShape(58+drift*0.2, gy+3, 168, { seed:4,
+      bark:['#161a13','#0b0e0a','#040604'],
+      leaf:['#0a1109','#0d160c','#060b06'], rim:'#1c2c19' });
+  }catch(e){}
+  G.seed=keep;
+}
+function renderTitle(){
+  titleArt();
   ctx.textAlign='center';
+  // the lockup: the word, a rule under it, and nine strokes of nzu — the same
+  // nine that are on the player's mask and on the name stone
   ctx.font='30px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone;
   ctx.fillText('ỌDỊNALA', W/2, 78);
+  ctx.globalAlpha=.45; pxf(W/2-74,86,148,.5,C.goldDim); ctx.globalAlpha=1;
+  for(let i=0;i<9;i++){ ctx.globalAlpha=.5-(i%3)*.09;
+    pxf(W/2-17+i*4.2, 89, .5, 4, C.chalk); }
+  ctx.globalAlpha=1;
   ctx.font='9px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
-  ctx.fillText('the ọgbanje who would not go back', W/2, 96);
+  ctx.fillText('the ọgbanje who would not go back', W/2, 104);
   glyph(W/2-92,80,7,C.gold,G.t/60); glyph(W/2+92,80,7,C.gold,-G.t/60);
 
   ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim;
   if(!TITLE.page){
     const o=titleOpts();
-    const label={continue:'CONTINUE', new:'BEGIN AGAIN', speedrun:'SPEEDRUN  \u2014  everything open', codex:'THE CODEX', controls:'HOW TO FIGHT'};
-    let ry=140;
+    const label={continue:'CONTINUE', new:'BEGIN AGAIN', speedrun:'SPEEDRUN  \u2014  everything open', codex:'THE CODEX', controls:'HOW TO FIGHT', opts:'HOW YOU PLAY'};
+    let ry=136;
     for(let i=0;i<o.length;i++){
       const y=ry, on=i===TITLE.sel;
       ry += (o[i]==='continue') ? 28 : 19;
@@ -7109,9 +7175,35 @@ function renderOpts(){
                          : 'Z change   X back', W/2, H-10);
   ctx.textAlign='left';
 }
+// ── 3.9 photo mode ──────────────────────────────────────────────────────────
+// The world stops, the HUD goes, and the camera comes off its leash. It reads
+// keys[] directly rather than tap(), so the menu repeat rate has nothing to do
+// with how a pan feels.
+const PHOTO={ hud:0, moved:0 };
+function openPhoto(){ PHOTO.hud=0; PHOTO.moved=0; G.mode='photo'; }
+function photoUpdate(){
+  // It moves the camera itself rather than carrying an offset that the renderer
+  // re-applies. The offset version added itself to cam every frame, so the
+  // camera ran away and the clamp handed back a delta of zero.
+  const sp = (keys['KeyZ']?3.4:1.5);
+  let dx=0, dy=0;
+  if(keys['ArrowLeft']||keys['KeyA'])  dx-=sp;
+  if(keys['ArrowRight']||keys['KeyD']) dx+=sp;
+  if(keys['ArrowUp']||keys['KeyW'])    dy-=sp;
+  if(keys['ArrowDown']||keys['KeyS'])  dy+=sp;
+  // Clamped to the room. 10-ROADMAP polish item 64 is that the camera never
+  // shows outside the world, and a free camera is the one thing that breaks it.
+  const maxx=Math.max(0,R.w*T-W), maxy=Math.max(0,R.h*T-H);
+  const nx=clamp(cam.x+dx,0,maxx), ny=clamp(cam.y+dy,0,maxy);
+  if(nx!==cam.x||ny!==cam.y) PHOTO.moved=1;
+  cam.x=nx; cam.y=ny;
+  if(tap('KeyC')) PHOTO.hud=PHOTO.hud?0:1;
+  if(tap('KeyX')||tap('Escape')||tap('KeyK')) G.mode='play';
+}
+
 function openOpts(from){ OPTS.from=from||'pause'; OPTS.sel=1; OPTS.top=0; OPTS.wait=false; G.mode='opts'; }
 function pauseRows(){
-  const r=['resume','weapon','spell','charms','inventory','codex','map','opts','sound','cheat','save','title'];
+  const r=['resume','weapon','spell','charms','inventory','codex','map','opts','photo','sound','cheat','save','title'];
   if(TUT.on) r.splice(1,0,'skiptut');
   return r;
 }
@@ -7126,6 +7218,7 @@ function pauseLabel(k){
   if(k==='codex'){ const p=storyProgress(); return 'THE CODEX   ('+(loreOpen().length+beastOpen().length)+' entries, '+p.pct+'% told)'; }
   if(k==='map') return 'MAP';
   if(k==='opts') return 'HOW YOU PLAY   keys, assists, motion';
+  if(k==='photo') return 'LOOK AROUND';
   if(k==='sound'){ const st=audioState();
     return 'SOUND  '+(st==='on'?'on':st==='muted'?'muted':st==='blocked'?'blocked \u2014 press a key':'off'); }
   if(k==='cheat') return 'CHEATS  '+(G.cheat?'on \u2014 untouchable, one-hit':'off');
@@ -7154,6 +7247,7 @@ function pauseUpdate(){
     else if(k==='codex'){ openCodex('pause'); }
     else if(k==='map'){ G.mode='map'; }
     else if(k==='opts'){ openOpts('pause'); }
+    else if(k==='photo'){ openPhoto(); }
     else if(k==='sound'){ initAudio(); musicToggle(); }
     else if(k==='cheat'){
       if(G.cheat) relock();
@@ -7467,6 +7561,7 @@ function frameBody(now){
       case 'codex':  G.t++; codexUpdate();  break;
       case 'charm':  G.t++; charmUpdate();  break;
       case 'opts':   G.t++; optsUpdate();   break;
+      case 'photo':  G.t++; photoUpdate();  break;
       case 'ending': G.t++; endingUpdate(); break;
       default:
         // presses survive hitstop and slow-mo: a tap during a freeze frame still
@@ -7629,7 +7724,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   savePrefs, loadPrefs, PREFKEY,
   tellCol, txtScale, FIXED,
   GRAVES, GRAVE_LINES, gravesStood, graveTick,
-  nightPhase, deepNight, NIGHT_TURN, drawWet, drawShimmer,
+  nightPhase, deepNight, NIGHT_TURN, drawWet, drawShimmer, openPhoto, PHOTO, get cam(){return cam},
   bossHome, rushable, startRush, startNgPlus, ngPoise, BOSS_CHAR,
   MODES, MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
   CHM_SEL:()=>CHM.sel

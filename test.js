@@ -4024,6 +4024,48 @@ section('the rematch and the next time round');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('looking around');
+(() => {
+  // 3.9. The world stops, the HUD goes, the camera comes off its leash.
+  revive(); api.unlockAll(); G().cheat = false;
+  G().slain = { ogbunabali: 1, ekwensu: 1, uzu: 1, ikuku: 1 };
+  at(9, 20, 16);
+  const hp0 = P().hp, x0 = P().x;
+  api.openPhoto();
+  check('it is a mode of its own', G().mode === 'photo');
+  check('and a legal one', api.MODES.indexOf('photo') >= 0);
+  check('and in MENU_MODES, so a stick does not machine-gun it (§8.2b)',
+    api.MENU_MODES.indexOf('photo') >= 0);
+
+  const cx0 = api.cam.x;
+  hold('ArrowRight', 20); release('ArrowRight', 1);
+  check('the camera moves', api.cam.x !== cx0, 'cam.x ' + cx0 + ' -> ' + api.cam.x);
+  check('REGRESSION but the player does not — the world is stopped',
+    near(P().x, x0, 0.001) && near(P().hp, hp0, 0.001),
+    'x ' + x0 + '->' + P().x + '  hp ' + hp0 + '->' + P().hp);
+
+  (() => {
+    // REGRESSION polish item 64: the camera never shows outside the room. A free
+    // camera is the one thing that would break that, so it is clamped.
+    const r = ROOMS[G().room];
+    const maxx = Math.max(0, r.w * 16 - 480), maxy = Math.max(0, r.h * 16 - 270);
+    for (const [kx, ky] of [['ArrowLeft', 'ArrowUp'], ['ArrowRight', 'ArrowDown']]) {
+      api.down(kx); api.down(ky);
+      for (let i = 0; i < 400; i++) tick(1);
+      api.up(kx); api.up(ky);
+      check('REGRESSION panning ' + kx + ' cannot leave the room',
+        api.cam.x >= -0.001 && api.cam.x <= maxx + 0.001 &&
+        api.cam.y >= -0.001 && api.cam.y <= maxy + 0.001,
+        'cam ' + api.cam.x.toFixed(1) + ',' + api.cam.y.toFixed(1) +
+        ' bounds ' + maxx + ',' + maxy);
+    }
+  })();
+
+  press('KeyX', 1, 2);
+  check('and X puts you back', G().mode === 'play', G().mode);
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the codex');
 (() => {
   revive();
