@@ -4066,6 +4066,26 @@ section('looking around');
 })();
 
 // ═════════════════════════════════════════════════════════════════════════════
+section('losing focus lets go of everything');
+(() => {
+  // Polish item 18. Alt-tab while holding a direction and the keyup never
+  // arrives: the player runs into a wall until you come back and press the key
+  // again to release it. The checklist asked for this and nothing did it.
+  revive();
+  at(1, 6, 16); G().cheat = false; G().mode = 'play';
+  api.enemies.length = 0;                     // a knockback is not the input
+  api.down('ArrowRight');
+  for (let i = 0; i < 6; i++) { api.enemies.length = 0; P().inv = 9999; tick(1); }
+  check('holding a direction moves you', P().vx > 0, 'vx=' + P().vx);
+  dispatch('blur');
+  check('REGRESSION losing focus releases the key', !api.KEYS['ArrowRight'],
+    'ArrowRight still down');
+  for (let i = 0; i < 30; i++) { api.enemies.length = 0; P().inv = 9999; tick(1); }
+  check('and the player comes to a stop', Math.abs(P().vx) < 0.4, 'vx=' + P().vx);
+  api.up('ArrowRight');
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
 section('the codex');
 (() => {
   revive();

@@ -57,5 +57,6 @@ it is the wrong solution.
 | `odinala.html` | The entire game |
 | `test.js` | Headless harness, run with `node test.js` |
 | `tools/audit.py` | Static room and table audit |
+| `tools/checklist.py` | Decides what the polish checklist may tick |
 | `bible/` | Design authority — 11 chapters plus the operating manual |
 | `bible/archive/` | A superseded earlier bible. **Never cite it.** Kept only in case it holds a detail the current set dropped; if you find one, move it into the current file and note it there. |

@@ -202,7 +202,7 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **1,632 assertions, headless Node, no dependencies**, about 30 seconds.
+`test.js` — **1,635 assertions, headless Node, no dependencies**, about 30 seconds.
 
 `node test.js --quick` skips the two soaks and runs in about 7 seconds. That is the
 inner loop only — **it is not the gate**, it says so in its own output, and what you run

@@ -204,6 +204,12 @@ addEventListener('pointerdown', initAudio, {passive:true});
 addEventListener('touchstart', initAudio, {passive:true});
 addEventListener('mousedown', initAudio, {passive:true});
 addEventListener('keyup',  e=>{ const c=BINDS[e.code]; if(c){ e.preventDefault(); up(c);} });
+// Polish item 18. Alt-tab while holding a direction and the keyup never arrives,
+// so the player goes on running into a wall until you come back and press the
+// key again to release it. Losing focus releases everything.
+function releaseAll(){ for(const c of CODES){ keys[c]=false; pressed[c]=false; } }
+addEventListener('blur', releaseAll);
+addEventListener('visibilitychange', ()=>{ if(document.hidden) releaseAll(); });
 cvs.addEventListener('pointerdown',(e)=>{
   cvs.focus(); initAudio();
   if(G.mode!=='play') return;
@@ -7720,6 +7726,7 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   MAP_CACHED:()=>!!mapCache, MAP_KEY:()=>mapKey,
   MUS_NAME:()=>{ for(const k in TRACKS) if(TRACKS[k]===MUS.track) return k; return null; },
   ACTIONS, OPT, OPT_ROWS, OPTS_ROWS:optsRows, BINDS_OF:()=>BINDS, boundKey, rebind, resetBinds,
+  releaseAll, get KEYS(){return keys},
   keyName, openOpts, optsCapture, OPTS_SEL:()=>OPTS.sel, OPTS_WAIT:()=>OPTS.wait, parryWindow,
   savePrefs, loadPrefs, PREFKEY,
   tellCol, txtScale, FIXED,

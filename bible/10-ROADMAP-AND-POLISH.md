@@ -6,6 +6,9 @@ Shipping. Thirteen rooms, five bosses, fifteen enemy types, four NPCs, four weap
 tutorial, a codex, an ending, fast travel, two save slots, a speedrun mode, and a
 test suite. Roughly 90 minutes for a first completion.
 
+**Phase 3 is closed.** All ten items are built, and `tools/checklist.py` now decides
+what §10.3 is allowed to tick.
+
 **Phase 2 is closed.** All twelve items are built, and the audio and world chapters
 have no `[NOT BUILT]` gaps left in them.
 
@@ -65,35 +68,50 @@ non-lethal boss · more weapons · a second speedrun category.
 
 ## 10.3 The polish checklist
 
-Work it top to bottom. Tick nothing you haven't verified in a browser.
+Work it top to bottom. **Tick nothing you haven't verified.**
+
+`tools/checklist.py` is what makes that rule enforceable rather than aspirational. It
+checks every item that can be checked mechanically — against the source, against the room
+tables, and against the names of assertions in `test.js` — and prints one of three things
+per item: satisfied, **not** satisfied, or *needs eyes*. It never ticks anything itself.
+Run it whenever this list is touched.
+
+**The ticks below are exactly what it vouches for and nothing else.** Everything still
+unticked is either a judgement call that a person has to make with the game running, or
+work that has not been done. An unticked box is not an accusation; an *incorrectly
+ticked* one is a lie in the only document that says whether this game is finished.
+
+It found one real bug the first time it ran: **item 18 had never been done.** There was no
+`blur` listener, so alt-tabbing while holding a direction left the key down and the player
+ran into a wall until you came back and pressed it again to release it.
 
 ### Stability (1–20)
-1. [ ] `frame()` body is inside try/catch and keeps pumping rAF
+1. [x] `frame()` body is inside try/catch and keeps pumping rAF
 2. [ ] No table lookup can throw on a missing key
 3. [ ] `tools/audit.py` clean
-4. [ ] Every exit landing is standable in both directions
-5. [ ] Player can never end a frame embedded in solid tiles
-6. [ ] De-embed fallback returns to the last charm if it fails
+4. [x] Every exit landing is standable in both directions
+5. [x] Player can never end a frame embedded in solid tiles
+6. [x] De-embed fallback returns to the last charm if it fails
 7. [ ] No room is unreachable
 8. [ ] Every `M` tile has a `MIRRORS` entry and vice versa
-9. [ ] All five index-keyed tables are as long as `ROOMS`
+9. [x] All five index-keyed tables are as long as `ROOMS`
 10. [ ] Save never claims success when storage threw
-11. [ ] Speedrun save cannot overwrite a normal save
+11. [x] Speedrun save cannot overwrite a normal save
 12. [ ] Loading a save from a previous version fails soft, not hard
-13. [ ] No NaN reachable in position, velocity, HP, ọfọ, or cowries
-14. [ ] Both randomised soaks pass
+13. [x] No NaN reachable in position, velocity, HP, ọfọ, or cowries
+14. [x] Both randomised soaks pass
 15. [ ] No unbounded array
 16. [ ] No `setInterval` left running after a mode change
 17. [ ] Audio failure never blocks gameplay
-18. [ ] Blur/refocus doesn't leave keys stuck down
+18. [x] Blur/refocus doesn't leave keys stuck down
 19. [ ] Tab-out and back doesn't spiral the accumulator
 20. [ ] Resize doesn't break `toLogical()` hit testing
 
 ### Combat feel (21–50)
 21. [ ] Every attacking enemy telegraphs
-22. [ ] Every telegraph is white or gold, never both
-23. [ ] White is always parryable — no exceptions anywhere
-24. [ ] Gold is visually louder than white
+22. [x] Every telegraph is white or gold, never both
+23. [x] White is always parryable — no exceptions anywhere
+24. [x] Gold is visually louder than white
 25. [ ] Wind-up is always longer than the strike
 26. [ ] Every hit produces all seven impact-stack elements
 27. [ ] Hitstop scales with damage
@@ -101,7 +119,7 @@ Work it top to bottom. Tick nothing you haven't verified in a browser.
 29. [ ] `muffle` plays on any hit that didn't count
 30. [ ] Guard break freezes 11 frames and flashes gold
 31. [ ] Execution has slow-motion and two blood decals
-32. [ ] One swing lands once
+32. [x] One swing lands once
 33. [ ] Roll i-frames are 4–15 and feel like it
 34. [ ] Roll-cancel out of recovery works from every attack
 35. [ ] Charge ring is unmissable at full
@@ -109,12 +127,12 @@ Work it top to bottom. Tick nothing you haven't verified in a browser.
 37. [ ] Each weapon changes rhythm, not just numbers
 38. [ ] Burn ticks visibly on the body
 39. [ ] Every spell fills one of the four archetype roles
-40. [ ] Ọfọ never regenerates passively
+40. [x] Ọfọ never regenerates passively
 41. [ ] No enemy deals contact damage without a gold wind-up
 42. [ ] No attack in the game exceeds 22 damage
 43. [ ] Player can never be one-shot
 44. [ ] Enemy knockback never pushes them off-screen
-45. [ ] Bosses have both a white and a gold tell
+45. [x] Bosses have both a white and a gold tell
 46. [ ] Every boss has a 50% phase change that adds, not replaces
 47. [ ] Bosses are executable and it extends their window
 48. [ ] No more than four live enemies on one screen
@@ -122,20 +140,20 @@ Work it top to bottom. Tick nothing you haven't verified in a browser.
 50. [ ] Combat is readable with every VFX firing at once
 
 ### Movement (51–65)
-51. [ ] Coyote time 7 frames
-52. [ ] Jump buffer 8 frames
+51. [x] Coyote time 7 frames
+52. [x] Jump buffer 8 frames
 53. [ ] Variable jump height
 54. [ ] No gap over 3 tiles without a dash
 55. [ ] No ledge over 3 tiles without a route
 56. [ ] No pixel-perfect jump anywhere
 57. [ ] Landing produces dust
-58. [ ] Footsteps every 13 frames while moving
+58. [x] Footsteps every 13 frames while moving
 59. [ ] Pogo bounce is consistent
 60. [ ] Ala's Fall breaks every cracked tile it should
 61. [ ] Speedrun jump and air jump feel deliberate
-62. [ ] Hazards damage and eject, never kill outright
+62. [x] Hazards damage and eject, never kill outright
 63. [ ] No instant-death anything
-64. [ ] Camera never shows outside the room
+64. [x] Camera never shows outside the room
 65. [ ] Camera doesn't jitter at room bounds
 
 ### Art (66–100)
@@ -145,30 +163,30 @@ Work it top to bottom. Tick nothing you haven't verified in a browser.
 69. [ ] Structure on `px`, detail on `pxf`
 70. [ ] No colour outside `C` and the stone sets
 71. [ ] Gold means only its two sanctioned things
-72. [ ] Every room has its own stone set
-73. [ ] Every room has its own ambient particle
+72. [x] Every room has its own stone set
+73. [x] Every room has its own ambient particle
 74. [ ] Parallax haze increases with distance
-75. [ ] Baked layers rebuild on room change
+75. [x] Baked layers rebuild on room change
 76. [ ] Nothing animated is inside the bake
 77. [ ] Foreground scrolls faster than the player
 78. [ ] Leaves react to `windAt()`
 79. [ ] Raffia strands sway on independent phases
 80. [ ] Nine strokes on the player's mask
 81. [ ] Nine eyes on Ogbunabali
-82. [ ] Chalk scars appear only when a boss is bound
+82. [x] Chalk scars appear only when a boss is bound
 83. [ ] Blood decals persist per room
 84. [ ] Decals capped
 85. [ ] Every light flickers on two frequencies
 86. [ ] Off-screen lights culled
-87. [ ] Vignette and grain always on
-88. [ ] No flash above 0.5 alpha
+87. [x] Vignette and grain always on
+88. [x] No flash above 0.5 alpha
 89. [ ] Props never break a silhouette the player must read
 90. [ ] Every prop is a seeded function call
 91. [ ] Cutscene art is legible at a glance
-92. [ ] Room name appears on entry
-93. [ ] Boss name shows `???` until known
+92. [x] Room name appears on entry
+93. [x] Boss name shows `???` until known
 94. [ ] Weapon name is tinted to the weapon
-95. [ ] Mirror is cyan attuned, grey unattuned
+95. [x] Mirror is cyan attuned, grey unattuned
 96. [ ] Rest charm glows gold when it is the active checkpoint
 97. [ ] Trees have roots, bark, forked limbs and lit canopy
 98. [ ] Dead trees have no canopy
@@ -176,20 +194,20 @@ Work it top to bottom. Tick nothing you haven't verified in a browser.
 100. [ ] Fire room breathes
 
 ### Audio (101–125)
-101. [ ] Audio unlocks on key, pointer, touch and mouse
+101. [x] Audio unlocks on key, pointer, touch and mouse
 102. [ ] Silent-buffer handshake fires
 103. [ ] `resume()` awaited, `audioReady` only when running
 104. [ ] Watchdog re-checks every 45 frames
-105. [ ] HUD speaker icon reflects real state
+105. [x] HUD speaker icon reflects real state
 106. [ ] Title says so plainly when audio is blocked
-107. [ ] Every room has a track
+107. [x] Every room has a track
 108. [ ] Bell timeline is 12 pulses everywhere
 109. [ ] Boss track is the forest structure with a poisoned scale
-110. [ ] Drone retunes on room change
+110. [x] Drone retunes on room change
 111. [ ] Delay sends melody, not drums
 112. [ ] Call-and-response fires on step 6
-113. [ ] Music continues under cutscenes
-114. [ ] `P` mutes everything
+113. [x] Music continues under cutscenes
+114. [x] `P` mutes everything
 115. [ ] Nothing exceeds 0.08 gain
 116. [ ] Every speaker has a voice profile
 117. [ ] Voice blips fire every third character
@@ -197,10 +215,10 @@ Work it top to bottom. Tick nothing you haven't verified in a browser.
 119. [ ] No sound plays twice in one frame
 120. [ ] Parry is the brightest cue
 121. [ ] Every UI action has a sound
-122. [ ] Spell and weapon swap sound identical
+122. [x] Spell and weapon swap sound identical
 123. [ ] Purchases have a confirmation sound
-124. [ ] Ambient beds per room *(Phase 3)*
-125. [ ] Music ducks under cutscene voices *(Phase 3)*
+124. [x] Ambient beds per room *(Phase 3)*
+125. [x] Music ducks under cutscene voices *(Phase 3)*
 
 ### UI/UX (126–160)
 126. [ ] HUD answers the five-second rule
@@ -214,23 +232,23 @@ Work it top to bottom. Tick nothing you haven't verified in a browser.
 134. [ ] Boss bar shows `???` until named
 135. [ ] Poise bar only while bound
 136. [ ] Every menu is Z-confirm, X-back
-137. [ ] Every menu is in `MENU_MODES`
+137. [x] Every menu is in `MENU_MODES`
 138. [ ] Joystick snaps to one axis in menus
-139. [ ] Hold-to-scroll after 20 frames, every 6
+139. [x] Hold-to-scroll after 20 frames, every 6
 140. [ ] Selection resets when a menu opens
 141. [ ] No menu deeper than two levels
 142. [ ] No confirmation dialogs
 143. [ ] CONTINUE shows a real progress beat and percentage
-144. [ ] Codex reachable from title and pause
-145. [ ] Bestiary lists only what you've killed
-146. [ ] Map shows only visited rooms
+144. [x] Codex reachable from title and pause
+145. [x] Bestiary lists only what you've killed
+146. [x] Map shows only visited rooms
 147. [ ] Joystick can't reach HUD icons
 148. [ ] Every touch button shows its key letter
 149. [ ] No gestures anywhere
-150. [ ] Inputs survive hitstop
+150. [x] Inputs survive hitstop
 151. [ ] No key overloaded against a movement meaning
 152. [ ] Every label says what it does
-153. [ ] Tutorial waits on the action, never a timer
+153. [x] Tutorial waits on the action, never a timer
 154. [ ] Tutorial key badges match touch buttons
 155. [ ] Tutorial skippable from pause
 156. [ ] Cutscenes skippable
