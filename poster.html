@@ -1,0 +1,1187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ọdịnala — key art</title>
+<style>
+  html,body{margin:0;background:#0a0b0d;color:#cfc6ad;font:13px ui-sans-serif,system-ui,sans-serif}
+  #bar{position:fixed;top:0;left:0;right:0;padding:10px 14px;background:#0f1113ee;
+       border-bottom:1px solid #23262a;display:flex;gap:14px;align-items:center;z-index:9;
+       backdrop-filter:blur(6px)}
+  button,select{background:#1a1d20;color:#cfc6ad;border:1px solid #33383d;border-radius:3px;
+       padding:6px 12px;font:12px ui-sans-serif,system-ui;cursor:pointer}
+  button:hover,select:hover{background:#23272b;border-color:#c8952e}
+  #stat{color:#8a8577;margin-left:auto;font-variant-numeric:tabular-nums}
+  #wrap{padding:64px 20px 40px;display:flex;justify-content:center}
+  canvas{max-width:min(760px,92vw);height:auto;box-shadow:0 18px 60px #000a;
+         border:1px solid #1c1f22;display:block}
+</style>
+</head>
+<body>
+<div id="bar">
+  <label>size
+    <select id="size">
+      <option value="poster">Poster — 2400 × 3600</option>
+      <option value="banner">Banner — 2400 × 1350</option>
+      <option value="card">Card — 1200 × 630</option>
+    </select>
+  </label>
+  <button id="go">Render</button>
+  <button id="save">Save PNG</button>
+  <span id="stat">—</span>
+</div>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+(()=>{
+'use strict';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ọdịnala key art.
+//
+// Same rules as the game: one file, canvas 2D, no dependencies, everything
+// drawn in code. One rule inverted: this renders once, so there is no frame
+// budget. Where the game draws twenty bark striations this draws two thousand;
+// where it masses leaves into ellipses this draws them one at a time. The
+// painters are the game's, carried over and given the passes it cannot afford.
+//
+// The composition is authored in a 400-wide logical space and multiplied up by
+// SCALE, so the game's numbers port straight across.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const OUT = {
+  poster: { px:[2400,3600], logical:[400,600] },
+  banner: { px:[2400,1350], logical:[400,225] },
+  card:   { px:[1200, 630], logical:[400,210] }
+};
+
+const C = {
+  black:'#06080a', bone:'#cfc6ad', gold:'#c8952e', camwood:'#8a1c26', cyan:'#6fb7c8'
+};
+
+const cvs = document.getElementById('c');
+let ctx = cvs.getContext('2d');
+let W=400, H=600, SCALE=6, MODE='poster';
+
+// deterministic noise, so a re-render is the same poster
+let seed = 20260804;
+function rnd(){ seed = (seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; }
+function rr(a,b){ return a + rnd()*(b-a); }
+function pick(a){ return a[(rnd()*a.length)|0]; }
+
+// px/pxf carried from the game: structure snaps, detail does not
+function px(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(Math.round(x*2)/2,Math.round(y*2)/2,w,h); }
+function pxf(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
+
+function lerpHex(a,b,t){
+  const p=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+  const A=p(a),B=p(b);
+  return 'rgb('+Math.round(A[0]+(B[0]-A[0])*t)+','+Math.round(A[1]+(B[1]-A[1])*t)+','+
+         Math.round(A[2]+(B[2]-A[2])*t)+')';
+}
+function rgba(hex,a){
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return 'rgba('+r+','+g+','+b+','+a+')';
+}
+
+// ═══ upgraded painters ═══════════════════════════════════════════════════════
+// Each is the game's shape with the passes the game cannot afford.
+
+// The tree. The game draws 20 bark striations, 3 knots and 14 canopy ellipses.
+// This draws ~2600 bark strokes clipped to the trunk, real fissures with lit
+// and shadowed sides, hanging roots, moss, cowries tied to the low branches,
+// and every leaf as its own quad.
+function treeShape(x, baseY, h, o){
+  o=o||{};
+  const bark = o.bark || ['#1a1614','#0f0d0c','#060505'];
+  const rim  = o.rim  || '#3a3026';
+  const rw   = h*(o.girth||0.085);
+  const lean = o.lean==null ? 0 : o.lean;
+  const leafOn = o.leaves!==false;
+
+  ctx.save(); ctx.translate(x, baseY);
+
+  // ── buttress roots, cradling the ground ──
+  for(let i=-4;i<=4;i++){
+    if(!i) continue;
+    const sp = rw*(1.4+Math.abs(i)*0.86), dp = rw*(0.45+((i*i)%3)*0.30);
+    const g = ctx.createLinearGradient(i*sp, 0, 0, -dp);
+    g.addColorStop(0, bark[2]); g.addColorStop(1, bark[1]);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, -rw*1.0);
+    ctx.quadraticCurveTo(i*sp*0.45, -dp*1.15, i*sp, 2);
+    ctx.lineTo(i*sp*0.58, 2);
+    ctx.quadraticCurveTo(i*sp*0.24, -dp*0.72, 0, -rw*0.42);
+    ctx.closePath(); ctx.fill();
+    // lit top edge of each root
+    ctx.strokeStyle = rgba(rim, .30); ctx.lineWidth = h*0.0016;
+    ctx.beginPath();
+    ctx.moveTo(0,-rw*1.0); ctx.quadraticCurveTo(i*sp*0.45,-dp*1.15, i*sp, 2);
+    ctx.stroke();
+  }
+
+  // ── trunk silhouette ──
+  const trunk = new Path2D();
+  // strong taper: wide at the buttress, a third of that at the crown
+  trunk.moveTo(-rw*1.55, 0);
+  trunk.bezierCurveTo(-rw*1.14, -h*0.28, -rw*0.62+lean*h*0.5, -h*0.62, -rw*0.30+lean*h, -h*0.97);
+  trunk.lineTo(rw*0.30+lean*h, -h*0.97);
+  trunk.bezierCurveTo(rw*0.62+lean*h*0.5, -h*0.62, rw*1.14, -h*0.28, rw*1.55, 0);
+  trunk.closePath();
+  const tg = ctx.createLinearGradient(-rw*1.3, 0, rw*1.3, 0);
+  tg.addColorStop(0, bark[2]); tg.addColorStop(.30, bark[1]);
+  tg.addColorStop(.72, bark[0]); tg.addColorStop(.93, bark[1]); tg.addColorStop(1, bark[2]);
+  ctx.fillStyle = tg; ctx.fill(trunk);
+
+  // ── bark, clipped: this is the pass the game cannot afford ──
+  ctx.save(); ctx.clip(trunk);
+  // long vertical fissures, each with a dark core and a lit lip
+  for(let i=0;i<190;i++){
+    const fx = rr(-rw*1.3, rw*1.3);
+    const fy = -rr(0, h);
+    const fl = h*rr(0.02, 0.17);
+    const w  = h*rr(0.0006, 0.0032);
+    ctx.globalAlpha = rr(.18,.55);
+    ctx.fillStyle = bark[2];
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.quadraticCurveTo(fx+rr(-w*4,w*4), fy+fl*0.5, fx+rr(-w*3,w*3), fy+fl);
+    ctx.lineWidth = w; ctx.strokeStyle = bark[2]; ctx.stroke();
+    ctx.globalAlpha = rr(.06,.20);
+    ctx.strokeStyle = rim;
+    ctx.beginPath();
+    ctx.moveTo(fx+w*1.6, fy); ctx.quadraticCurveTo(fx+w*1.6, fy+fl*0.5, fx+w*1.6, fy+fl);
+    ctx.stroke();
+  }
+  // fine grain — thousands of short strokes following the taper
+  for(let i=0;i<2400;i++){
+    const fy = -rr(0,h);
+    const taper = 1 - 0.55*(-fy/h);
+    const fx = rr(-rw*1.3*taper, rw*1.3*taper) + lean*(-fy);
+    ctx.globalAlpha = rr(.03,.14);
+    ctx.fillStyle = rnd()<.5 ? bark[2] : rim;
+    ctx.fillRect(fx, fy, h*0.0005, h*rr(0.002,0.014));
+  }
+  // knots
+  for(let i=0;i<7;i++){
+    const ky=-rr(h*0.06, h*0.92), kx=rr(-rw*0.7, rw*0.7)+lean*(-ky), ks=rw*rr(0.18,0.44);
+    for(let k=6;k>0;k--){
+      ctx.globalAlpha=.10;
+      ctx.strokeStyle = k%2?bark[2]:rim; ctx.lineWidth=h*0.0011;
+      ctx.beginPath(); ctx.ellipse(kx,ky,ks*(k/6),ks*(k/6)*1.7,rr(-.4,.4),0,7); ctx.stroke();
+    }
+    ctx.globalAlpha=.5; ctx.fillStyle=bark[2];
+    ctx.beginPath(); ctx.ellipse(kx,ky,ks*0.20,ks*0.34,0,0,7); ctx.fill();
+  }
+  // moss catching the light on the lit flank
+  for(let i=0;i<420;i++){
+    const my=-rr(0,h*0.7), mx=rr(rw*0.2, rw*1.3)*(1-0.4*(-my/h))+lean*(-my);
+    ctx.globalAlpha=rr(.04,.13);
+    ctx.fillStyle = pick(['#2c3524','#39421d','#232a1c']);
+    ctx.beginPath(); ctx.ellipse(mx,my,h*rr(0.001,0.005),h*rr(0.001,0.004),0,0,7); ctx.fill();
+  }
+  // chalk marks on the bark — nzu, so they mean something
+  if(o.chalk){
+    for(let g=0; g<4; g++){
+      const gy = -h*(0.10+g*0.055), gx = rr(-rw*0.75, rw*0.55);
+      for(let s=0;s<9;s++){
+        ctx.globalAlpha=rr(.20,.46);
+        ctx.fillStyle = C.bone;
+        ctx.fillRect(gx+s*h*0.0055, gy, h*0.0011, h*0.011);
+      }
+    }
+  }
+  ctx.globalAlpha=1; ctx.restore();
+
+  // ── limbs ──
+  ctx.lineCap='round';
+  const tips=[];
+  (function limb(bx,by,ang,len,wid,d){
+    if(d<=0 || len<h*0.006){ tips.push([bx,by,wid]); return; }
+    const cxp = bx+Math.cos(ang-0.20)*len*0.55, cyp = by+Math.sin(ang-0.20)*len*0.55;
+    const ex  = bx+Math.cos(ang)*len,           ey  = by+Math.sin(ang)*len;
+    // the limb, then a lit edge along its upper side
+    ctx.strokeStyle = d>2 ? bark[1] : bark[2];
+    ctx.lineWidth = Math.max(h*0.0010, wid);
+    ctx.beginPath(); ctx.moveTo(bx,by); ctx.quadraticCurveTo(cxp,cyp,ex,ey); ctx.stroke();
+    // a brighter lit edge, or the branch structure disappears into the dark and
+    // the canopy reads as a cloud stuck to the top of a plank
+    ctx.globalAlpha=.34; ctx.strokeStyle=rim; ctx.lineWidth=Math.max(h*0.0005,wid*0.26);
+    ctx.beginPath(); ctx.moveTo(bx,by-wid*0.3); ctx.quadraticCurveTo(cxp,cyp-wid*0.3,ex,ey-wid*0.2); ctx.stroke();
+    ctx.globalAlpha=1;
+    const j = rr(0,0.16);
+    limb(ex,ey, ang-0.44-j, len*0.68, wid*0.60, d-1);
+    limb(ex,ey, ang+0.38+j, len*0.63, wid*0.57, d-1);
+    if(d>=4) limb(ex,ey, ang-0.04, len*0.52, wid*0.44, d-2);
+  })(lean*h, -h*0.70, -1.5708, h*0.20, rw*0.95, o.depth||6);
+
+  // ── hanging roots off the low limbs ──
+  ctx.globalAlpha=.5;
+  for(const t of tips){
+    if(t[1] > -h*0.45) continue;
+    if(rnd()<0.55) continue;
+    const L=h*rr(0.02,0.10);
+    ctx.strokeStyle=bark[2]; ctx.lineWidth=Math.max(h*0.0004,t[2]*0.4);
+    ctx.beginPath(); ctx.moveTo(t[0],t[1]);
+    ctx.quadraticCurveTo(t[0]+rr(-L*0.2,L*0.2), t[1]+L*0.6, t[0]+rr(-L*0.3,L*0.3), t[1]+L);
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  // ── cowries tied to the low branches ──
+  if(o.cowries){
+    let n=0;
+    for(const t of tips){
+      if(t[1] > -h*0.30 || t[1] < -h*0.62) continue;
+      if(n++ > 13) break;
+      if(rnd()<0.45) continue;
+      const cy2=t[1]+h*rr(0.008,0.026), s=h*0.0055;
+      ctx.strokeStyle=rgba(C.bone,.22); ctx.lineWidth=h*0.0005;
+      ctx.beginPath(); ctx.moveTo(t[0],t[1]); ctx.lineTo(t[0],cy2); ctx.stroke();
+      ctx.fillStyle=rgba(C.bone,.62);
+      ctx.beginPath(); ctx.ellipse(t[0],cy2,s,s*1.5,0,0,7); ctx.fill();
+      ctx.fillStyle=rgba('#7a6f58',.7);
+      ctx.beginPath(); ctx.ellipse(t[0],cy2,s*0.34,s*0.95,0,0,7); ctx.fill();
+    }
+  }
+
+  // ── canopy: every leaf drawn ──
+  if(leafOn){
+    const cy = -h*0.86, spread = h*0.40;
+    const leafCols = o.leafCols || ['#0e140d','#141b11','#080d07'];
+    for(let i=0;i<o.leafCount;i++){
+      // clustered around the limb tips so it grows out of the structure
+      // only the upper limbs carry leaves — a canopy, not a shrub
+      let t=[0,cy,1];
+      if(tips.length){
+        for(let g=0; g<12; g++){
+          const cand=tips[(rnd()*tips.length)|0];
+          if(cand[1] < -h*0.55){ t=cand; break; }
+          t=cand;
+        }
+      }
+      const near = rnd()<0.86;
+      const lx = near ? t[0]+rr(-spread*0.13, spread*0.13) : rr(-spread*0.9, spread*0.9)+lean*h;
+      const ly = near ? t[1]+rr(-spread*0.11, spread*0.11) : cy+rr(-spread*0.42, spread*0.34);
+      const s  = h*rr(0.0026, 0.0095);
+      const a  = rr(0,6.283);
+      const d  = Math.hypot(lx-lean*h, ly-cy)/spread;
+      ctx.globalAlpha = Math.max(.05, rr(.28,.85)*(1-d*0.30));
+      // spirit-light at the crown: leaves turn from green to bone as they rise
+      // Only the topmost leaves catch it, and only part way. Whitening the
+      // whole upper half turned the canopy into blossom.
+      const up = Math.max(0, Math.min(1, (cy-ly-spread*0.30)/(spread*0.55)));
+      if(up>0.02){
+        ctx.fillStyle = lerpHex(pick(leafCols), o.spirit||C.bone, Math.min(.34,up*0.40));
+        ctx.globalAlpha *= (0.30+up*0.30);
+      } else {
+        ctx.fillStyle = pick(leafCols);
+      }
+      ctx.save(); ctx.translate(lx,ly); ctx.rotate(a);
+      ctx.beginPath(); ctx.ellipse(0,0,s,s*0.42,0,0,7); ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+}
+
+// The mask. The game's carving plus real wood grain flowing around it.
+function maskFace(cx,cy,w,h,o){
+  o=o||{};
+  const wood = o.wood || ['#efe6cc','#cbbe9e','#8e8268','#4e4636'];
+  ctx.save(); ctx.translate(cx,cy); if(o.rot) ctx.rotate(o.rot);
+  const hw=w/2, hh=h/2;
+  const shape=new Path2D();
+  shape.moveTo(0,-hh);
+  shape.bezierCurveTo(hw*.92,-hh*.92, hw, -hh*.1, hw*.72, hh*.42);
+  shape.bezierCurveTo(hw*.46, hh*.94, -hw*.46, hh*.94, -hw*.72, hh*.42);
+  shape.bezierCurveTo(-hw, -hh*.1, -hw*.92, -hh*.92, 0,-hh);
+  shape.closePath();
+  const g=ctx.createLinearGradient(-hw,-hh,hw*0.6,hh);
+  g.addColorStop(0,wood[0]); g.addColorStop(.42,wood[1]);
+  g.addColorStop(.8,wood[2]); g.addColorStop(1,wood[3]);
+  ctx.fillStyle=g; ctx.fill(shape);
+
+  ctx.save(); ctx.clip(shape);
+  // wood grain: concentric arcs bending around where the carving will sit
+  for(let i=0;i<260;i++){
+    const yy=rr(-hh,hh);
+    ctx.globalAlpha=rr(.02,.10);
+    ctx.strokeStyle= rnd()<.5 ? wood[3] : wood[0];
+    ctx.lineWidth=w*rr(0.002,0.008);
+    ctx.beginPath();
+    ctx.moveTo(-hw, yy);
+    ctx.quadraticCurveTo(0, yy+Math.sin(yy/hh*2.2)*hh*0.14, hw, yy+rr(-hh*.03,hh*.03));
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  ctx.fillStyle='rgba(255,255,255,0.13)';
+  ctx.beginPath(); ctx.ellipse(-hw*.34,-hh*.24, hw*.42, hh*.5, -.3, 0, 7); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,0.34)';
+  ctx.beginPath(); ctx.moveTo(hw*.18,-hh); ctx.lineTo(hw,-hh); ctx.lineTo(hw,hh); ctx.lineTo(hw*.02,hh);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // brow
+  ctx.fillStyle='rgba(0,0,0,0.44)';
+  ctx.beginPath();
+  ctx.moveTo(-hw*.80,-hh*.20); ctx.quadraticCurveTo(0,-hh*.52, hw*.80,-hh*.20);
+  ctx.lineTo(hw*.80,-hh*.06); ctx.quadraticCurveTo(0,-hh*.36, -hw*.80,-hh*.06);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.17)';
+  ctx.beginPath();
+  ctx.moveTo(-hw*.78,-hh*.25); ctx.quadraticCurveTo(0,-hh*.57, hw*.78,-hh*.25);
+  ctx.lineTo(hw*.78,-hh*.20); ctx.quadraticCurveTo(0,-hh*.51, -hw*.78,-hh*.20);
+  ctx.closePath(); ctx.fill();
+
+  // sockets
+  const ex=hw*.40, ey=hh*.02, ew=hw*.30, eh=hh*.19;
+  for(const sgn of [-1,1]){
+    ctx.fillStyle='rgba(0,0,0,0.58)';
+    ctx.beginPath(); ctx.ellipse(sgn*ex, ey+hh*.03, ew*1.2, eh*1.5, 0,0,7); ctx.fill();
+    ctx.fillStyle=o.socket||'#0c0806';
+    ctx.beginPath(); ctx.ellipse(sgn*ex, ey, ew, eh, 0,0,7); ctx.fill();
+    if(o.eye){
+      ctx.save(); ctx.shadowColor=o.eye; ctx.shadowBlur=w*0.5;
+      ctx.fillStyle=o.eye;
+      ctx.beginPath(); ctx.ellipse(sgn*ex, ey, ew*.40, eh*.60, 0,0,7); ctx.fill();
+      ctx.restore();
+    }
+  }
+  // nose
+  ctx.fillStyle='rgba(255,255,255,0.18)';
+  ctx.beginPath();
+  ctx.moveTo(-hw*.07,-hh*.16); ctx.lineTo(hw*.07,-hh*.16);
+  ctx.lineTo(hw*.11, hh*.34); ctx.lineTo(-hw*.11, hh*.34); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,0.36)'; ctx.fillRect(hw*.05,-hh*.16, hw*.06, hh*.5);
+  // mouth
+  const my=hh*.60, mw=hw*.50;
+  ctx.fillStyle='rgba(0,0,0,0.62)';
+  ctx.beginPath(); ctx.moveTo(-mw,my); ctx.quadraticCurveTo(0,my+hh*.16, mw,my);
+  ctx.quadraticCurveTo(0,my+hh*.04,-mw,my); ctx.closePath(); ctx.fill();
+  // nine strokes of nzu across the brow. Count them.
+  if(o.chalk!==false){
+    for(let i=0;i<9;i++){
+      ctx.globalAlpha=.42+((i*3)%4)*0.10;
+      ctx.fillStyle=C.bone;
+      ctx.fillRect(-hw*.62+i*(hw*1.24/9), -hh*.78, w*0.012, h*0.10);
+    }
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+}
+
+function hornPair(cx,cy,s,o){
+  o=o||{}; const col=o.col||['#3a2c1e','#120c07'];
+  ctx.save(); ctx.translate(cx,cy);
+  for(const sgn of [-1,1]){
+    const g=ctx.createLinearGradient(0,0,sgn*s*2.2,-s*2.6);
+    g.addColorStop(0,col[1]); g.addColorStop(1,col[0]);
+    ctx.fillStyle=g;
+    ctx.beginPath();
+    ctx.moveTo(sgn*s*0.22, 0);
+    ctx.quadraticCurveTo(sgn*s*2.0, -s*0.9, sgn*s*1.65, -s*2.7);
+    ctx.quadraticCurveTo(sgn*s*1.15, -s*1.1, sgn*s*0.02, -s*0.15);
+    ctx.closePath(); ctx.fill();
+    for(let i=0;i<16;i++){
+      ctx.globalAlpha=rr(.05,.18); ctx.strokeStyle=col[0]; ctx.lineWidth=s*0.03;
+      const t=i/16;
+      ctx.beginPath();
+      ctx.moveTo(sgn*s*(0.22+1.5*t), -s*2.6*t*t);
+      ctx.lineTo(sgn*s*(0.05+1.5*t), -s*2.6*t*t-s*0.1);
+      ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+}
+
+function skullShape(cx,cy,s,o){
+  o=o||{}; const bone=o.bone||['#e2d9bf','#b4a98c','#6d6450'];
+  ctx.save(); ctx.translate(cx,cy); ctx.scale(s,s);
+  const g=ctx.createLinearGradient(-1,-1,1,1);
+  g.addColorStop(0,bone[0]); g.addColorStop(.6,bone[1]); g.addColorStop(1,bone[2]);
+  ctx.fillStyle=g;
+  ctx.beginPath(); ctx.ellipse(0,-0.15,1,0.95,0,0,7); ctx.fill();
+  ctx.fillRect(-0.55,0.55,1.1,0.7);
+  ctx.fillStyle='rgba(0,0,0,0.72)';
+  ctx.beginPath(); ctx.ellipse(-0.42,-0.2,0.3,0.34,0.2,0,7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( 0.42,-0.2,0.3,0.34,-0.2,0,7); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0,0.1); ctx.lineTo(-0.16,0.42); ctx.lineTo(0.16,0.42); ctx.closePath(); ctx.fill();
+  for(let i=0;i<5;i++) ctx.fillRect(-0.5+i*0.2,0.6,0.09,0.55);
+  ctx.restore();
+}
+
+function idolStatue(cx,cy,s,o){
+  o=o||{}; const wood=o.wood||['#3a2a1e','#241a12','#120c08'];
+  ctx.save(); ctx.translate(cx,cy);
+  const g=ctx.createLinearGradient(-s,0,s,0);
+  g.addColorStop(0,wood[2]); g.addColorStop(.55,wood[1]); g.addColorStop(1,wood[0]);
+  ctx.fillStyle=g;
+  ctx.fillRect(-s*0.8,-s*3.2,s*1.6,s*3.2);
+  ctx.beginPath(); ctx.ellipse(0,-s*3.5,s*0.72,s*0.9,0,0,7); ctx.fill();
+  for(let i=0;i<40;i++){
+    ctx.globalAlpha=rr(.04,.14); ctx.fillStyle=wood[2];
+    ctx.fillRect(rr(-s*0.8,s*0.8), rr(-s*3.2,0), s*0.03, s*rr(0.1,0.5));
+  }
+  ctx.globalAlpha=1;
+  if(o.eye){ ctx.fillStyle=o.eye;
+    ctx.beginPath(); ctx.ellipse(-s*0.26,-s*3.55,s*0.13,s*0.10,0,0,7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse( s*0.26,-s*3.55,s*0.13,s*0.10,0,0,7); ctx.fill(); }
+  ctx.restore();
+}
+
+function stoneColumn(x, baseY, h, w, o){
+  o=o||{}; const c=o.col||['#232b26','#161d19','#0c110e'];
+  ctx.save(); ctx.translate(x,baseY);
+  const g=ctx.createLinearGradient(-w/2,0,w/2,0);
+  g.addColorStop(0,c[2]); g.addColorStop(.42,c[1]); g.addColorStop(.85,c[0]); g.addColorStop(1,c[2]);
+  ctx.fillStyle=g; ctx.fillRect(-w/2,-h,w,h);
+  for(let i=0;i<90;i++){
+    ctx.globalAlpha=rr(.03,.12); ctx.fillStyle=c[2];
+    ctx.fillRect(rr(-w/2,w/2), rr(-h,0), w*0.02, h*rr(0.01,0.08));
+  }
+  ctx.globalAlpha=1; ctx.restore();
+}
+
+// ═══ figures ═════════════════════════════════════════════════════════════════
+
+// The player. Back to us, three-quarter mask, rim-lit against the light behind.
+// Small on purpose: a child at the bottom of a very tall picture.
+function drawChild(cx, footY, hgt, o){
+  o=o||{};
+  const u = hgt/48;                       // the figure is authored 48 tall
+  const dim = o.dim||1;
+  ctx.save(); ctx.translate(cx, footY);
+  const body='#0b0e11', lit=o.rimCol||C.gold;
+  ctx.globalAlpha = o.alpha==null?1:o.alpha;
+
+  // cloth caught mid-motion, trailing to the low side
+  ctx.fillStyle=rgba(body,.92);
+  for(let i=0;i<4;i++){
+    const sw=(i+1)*u*2.6*(o.flip?-1:1);
+    ctx.beginPath();
+    ctx.moveTo(-u*3,-u*20+i*u*3);
+    ctx.quadraticCurveTo(-u*8-sw, -u*17+i*u*3.4, -u*13-sw*1.5, -u*9+i*u*3.6);
+    ctx.quadraticCurveTo(-u*7-sw, -u*13+i*u*3.4, -u*3,-u*17+i*u*3);
+    ctx.closePath(); ctx.fill();
+  }
+  // legs
+  ctx.fillStyle=body;
+  ctx.fillRect(-u*4, -u*13, u*3.4, u*13);
+  ctx.fillRect( u*0.8,-u*13, u*3.4, u*13);
+  // robe
+  ctx.fillStyle=body;
+  ctx.beginPath();
+  ctx.moveTo(-u*7,-u*13); ctx.lineTo(-u*5.4,-u*30); ctx.lineTo(u*5.4,-u*30);
+  ctx.lineTo(u*7,-u*13); ctx.closePath(); ctx.fill();
+  // red sash
+  ctx.fillStyle=rgba(C.camwood,.92);
+  ctx.fillRect(-u*6.2,-u*22, u*12.4, u*3.1);
+  ctx.fillStyle=rgba(C.camwood,.55);
+  ctx.beginPath();
+  ctx.moveTo(u*5.6,-u*21.6); ctx.quadraticCurveTo(u*11,-u*19, u*9.6,-u*12);
+  ctx.lineTo(u*7.4,-u*12.6); ctx.quadraticCurveTo(u*8.6,-u*18, u*5.6,-u*19.4);
+  ctx.closePath(); ctx.fill();
+  // cowrie beads at the throat
+  for(let i=0;i<7;i++){
+    ctx.fillStyle=rgba(C.bone,.5);
+    ctx.beginPath(); ctx.ellipse(-u*4+i*u*1.35, -u*30.4, u*0.62, u*0.9, 0,0,7); ctx.fill();
+  }
+  // head, three-quarter away
+  const hx=(o.flip?-1:1)*u*1.2, hy=-u*36;
+  ctx.fillStyle='#0a0c0e';
+  ctx.beginPath(); ctx.ellipse(0,hy,u*5.4,u*6.2,0,0,7); ctx.fill();
+  maskFace(hx, hy, u*7.2, u*9.4, {
+    wood:['#cfc6ad','#a99f86','#6a6252','#312c25'],
+    rot:(o.flip?-1:1)*0.14, socket:'#08060a'
+  });
+  // rim light down the lit edge — the source is behind
+  ctx.globalCompositeOperation='lighter';
+  ctx.globalAlpha=(o.alpha==null?1:o.alpha)*0.85*dim;
+  ctx.strokeStyle=lit; ctx.lineWidth=u*1.05;
+  ctx.beginPath();
+  ctx.moveTo(u*5.4,-u*30); ctx.lineTo(u*7,-u*13);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(hx+u*3.0, hy-u*1.2, u*4.4, -1.5, 0.8); ctx.stroke();
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+// A masquerade: raffia mass with light passing through it. Used for the three
+// antagonists at three scales.
+function masquerade(cx, footY, hgt, o){
+  o=o||{};
+  const u=hgt/100;
+  ctx.save(); ctx.translate(cx,footY);
+  const dark=o.dark||'#07090b';
+  // the air behind them, so the silhouette has something to be a silhouette
+  // against — in the dark against the dark they were a floating head
+  if(o.halo!==false){
+    const hr=hgt*0.62;
+    const hg2=ctx.createRadialGradient(0,-hgt*0.52,hgt*0.04, 0,-hgt*0.52,hr);
+    hg2.addColorStop(0, rgba(o.warm||'#5a3a16', 0.20*(o.alpha==null?1:o.alpha)));
+    hg2.addColorStop(0.5, rgba(o.warm||'#5a3a16', 0.07*(o.alpha==null?1:o.alpha)));
+    hg2.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=hg2; ctx.fillRect(-hr,-hgt*1.2,hr*2,hgt*1.35);
+  }
+  ctx.globalAlpha=o.alpha==null?1:o.alpha;
+
+  // ── raffia hem: hundreds of strands, sub-surface warmth where light passes ──
+  const strands=o.strands||280;
+  const hemTop=-hgt*(o.hem||0.62), hemBot=0;
+  for(let i=0;i<strands;i++){
+    const t=i/strands;
+    const sx=(t-0.5)*hgt*(o.width||0.62)*1.34*(0.74+0.36*Math.sin(t*3.14159));
+    const sw=Math.sin(t*9+ (o.seedp||0))*hgt*0.02;
+    // the hem narrows toward the middle and the ends run long, so the bottom
+    // edge is ragged rather than a ruled line
+    const edge=Math.abs(t-0.5)*2;
+    const len=(hemBot-hemTop)*rr(0.50,1.02)*(0.66+edge*0.42);
+    // warmth: strands nearer the light behind glow through
+    const glow=Math.max(0, 1-Math.abs(t-(o.lightAt==null?0.5:o.lightAt))*4.2);
+    ctx.globalAlpha=(o.alpha==null?1:o.alpha)*rr(.18,.72);
+    ctx.strokeStyle= glow>0.34 ? lerpHex(dark, o.warm||'#5a3a16', glow*rr(0.10,0.50)) : dark;
+    ctx.lineWidth=hgt*rr(0.003,0.009);
+    ctx.beginPath();
+    ctx.moveTo(sx, hemTop+rr(-hgt*0.03,hgt*0.03));
+    ctx.quadraticCurveTo(sx+sw*0.6, hemTop+len*0.55, sx+sw, hemTop+len);
+    ctx.stroke();
+  }
+  ctx.globalAlpha=o.alpha==null?1:o.alpha;
+
+  // ── the body: a masquerade is a cone of raffia with a head on it, not a
+  // torso. Sloping shoulders, no waist, and the silhouette widens all the way
+  // down so the mass reads at thumbnail size.
+  const wd=hgt*(o.width||0.62);
+  const lsg0=(o.lightAt==null?0.5:o.lightAt)<0.5?-1:1;
+  const bg=ctx.createLinearGradient(-lsg0*wd*0.6,0, lsg0*wd*0.62,0);
+  bg.addColorStop(0, dark);
+  bg.addColorStop(0.72, dark);
+  bg.addColorStop(0.93, lerpHex(dark, o.warm||'#5a3a16', 0.42));
+  bg.addColorStop(1, lerpHex(dark, o.rim||'#c08a3a', 0.55));
+  ctx.fillStyle=bg;
+  ctx.beginPath();
+  // shoulders slope away from the neck instead of squaring off — a masquerade
+  // is a cone under a mask, and the yoke shape read as a jacket
+  ctx.moveTo(-wd*0.08, -hgt*0.86);
+  ctx.bezierCurveTo(-wd*0.30,-hgt*0.845, -wd*0.42,-hgt*0.78, -wd*0.46,-hgt*0.66);
+  ctx.quadraticCurveTo(-wd*0.50, -hgt*0.40, -wd*0.54, hemTop+hgt*0.12);
+  ctx.lineTo( wd*0.54, hemTop+hgt*0.12);
+  ctx.quadraticCurveTo( wd*0.50, -hgt*0.40,  wd*0.46, -hgt*0.66);
+  ctx.bezierCurveTo( wd*0.42,-hgt*0.78,  wd*0.30,-hgt*0.845,  wd*0.08, -hgt*0.86);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha=o.alpha==null?1:o.alpha;
+
+  // upper raffia collar
+  for(let i=0;i<Math.round(strands*0.5);i++){
+    const t=i/(strands*0.5);
+    const sx=(t-0.5)*hgt*(o.width||0.62)*0.92;
+    ctx.globalAlpha=(o.alpha==null?1:o.alpha)*rr(.3,.8);
+    ctx.strokeStyle=dark; ctx.lineWidth=hgt*rr(0.002,0.006);
+    ctx.beginPath(); ctx.moveTo(sx,-hgt*0.83);
+    ctx.lineTo(sx+rr(-hgt*0.02,hgt*0.02), -hgt*0.76+hgt*rr(0.06,0.20));
+    ctx.stroke();
+  }
+  ctx.globalAlpha=o.alpha==null?1:o.alpha;
+
+  // ── neck, so the head is attached rather than hovering ──
+  ctx.fillStyle=bg;
+  ctx.beginPath();
+  ctx.moveTo(-wd*0.11,-hgt*0.85); ctx.lineTo(-wd*0.085,-hgt*0.95);
+  ctx.lineTo(wd*0.085,-hgt*0.95); ctx.lineTo(wd*0.11,-hgt*0.85); ctx.closePath(); ctx.fill();
+
+  // ── head ──
+  if(o.horns) hornPair(0, -hgt*0.955, hgt*0.10, {col:['#2a1f12','#0a0705']});
+  if(o.nineEyes){
+    // Ogbunabali: nine eyes, each a gold point with a bloom
+    ctx.fillStyle=dark;
+    ctx.beginPath(); ctx.ellipse(0,-hgt*0.965, hgt*0.10, hgt*0.12,0,0,7); ctx.fill();
+    const pts=[[-.055,-.915],[0,-.925],[.055,-.915],
+               [-.07,-.885],[-.024,-.882],[.024,-.882],[.07,-.885],
+               [-.04,-.852],[.04,-.852]].map(q=>[q[0],q[1]-0.085]);
+    for(const p of pts){
+      ctx.save(); ctx.shadowColor=C.gold; ctx.shadowBlur=hgt*0.09;
+      ctx.fillStyle=C.gold;
+      ctx.beginPath(); ctx.ellipse(p[0]*hgt, p[1]*hgt, hgt*0.011, hgt*0.008,0,0,7); ctx.fill();
+      ctx.restore();
+    }
+  } else if(o.mask){
+    maskFace(0,-hgt*0.965, hgt*0.175, hgt*0.235, o.mask);
+  } else {
+    ctx.fillStyle=dark;
+    ctx.beginPath(); ctx.ellipse(0,-hgt*0.965, hgt*0.105, hgt*0.13,0,0,7); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+// ═══ layers ══════════════════════════════════════════════════════════════════
+
+const L = {};   // per-size layout, filled in by layout()
+
+function layout(){
+  const P = MODE==='poster', B = MODE==='banner', K = MODE==='card';
+  L.ground   = P ? 548 : B ? 205 : 172;
+  L.treeBase = L.ground + (P?4:2);
+  // The crown has to land inside the frame — at 560 the whole canopy was
+  // above the top edge and the poster was a bare trunk.
+  L.treeH    = P ? 452 : B ? 165 : 150;
+  L.treeX    = P ? 200 : B ? 104 : 378;
+  L.playerH  = P ? 48  : B ? 30  : 46;
+  L.playerX  = P ? 158 : B ? 178 : 118;
+  L.titleY   = P ? 452 : B ? 150 : 108;
+  L.titleX   = P ? 200 : B ? 218 : 214;
+  L.titleSz  = P ? 46  : B ? 27  : 30;
+  L.showAll  = P;
+  L.showBig  = P || B;
+  // Each crop is recomposed rather than cut down: the figures move, change
+  // scale, and in the card all but one of them leave.
+  L.ekS   = P ? 4.9 : 4.2;          // Ekwensu, in player-heights
+  L.ekX   = P ? 0.235 : 0.40;
+  L.ekY   = P ? 0.190 : 0.020;
+  L.ogS   = P ? 3.1 : 2.2;
+  L.ogX   = P ? -0.255 : -0.30;
+  L.grave = P ? 9 : B ? 9 : 6;      // the card shows fewer, larger
+  L.title = true;
+}
+
+// ── sky and the light behind everything ──
+function layerSky(){
+  ctx.fillStyle=C.black; ctx.fillRect(0,0,W,H);
+  // one warm source, low and behind the tree
+  const sx=L.treeX, sy=L.ground-H*0.16;
+  for(let i=20;i>0;i--){
+    const r=H*(0.02+i*0.030);              // tight behind the tree, not a wash
+    const g=ctx.createRadialGradient(sx,sy,0,sx,sy,r);
+    g.addColorStop(0, rgba(C.gold, 0.020));
+    g.addColorStop(0.40, rgba('#3a2410', 0.010));
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  }
+  // and a hard falloff so the corners stay black
+  const fall=ctx.createRadialGradient(sx,sy,H*0.10,sx,sy,H*0.62);
+  fall.addColorStop(0,'rgba(0,0,0,0)'); fall.addColorStop(1,rgba(C.black,.72));
+  ctx.fillStyle=fall; ctx.fillRect(0,0,W,H);
+  // cool wash toward the top — the land of spirits
+  const tg=ctx.createLinearGradient(0,0,0,H*0.55);
+  tg.addColorStop(0, rgba(C.cyan,0.032));
+  tg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=tg; ctx.fillRect(0,0,W,H*0.55);
+  // stars, thinning downward
+  for(let i=0;i<900;i++){
+    const y=rr(0,H*0.62);
+    ctx.globalAlpha=rr(.03,.34)*(1-y/(H*0.66));
+    ctx.fillStyle=rnd()<.12?C.cyan:C.bone;
+    const s=rr(0.18,0.7);
+    ctx.fillRect(rr(0,W), y, s, s);
+  }
+  ctx.globalAlpha=1;
+}
+
+// ── the descent, as strata: light and colour, not architecture ──
+const STRATA = [
+  {c:'#16210f', n:'forest'},
+  {c:'#0a1017', n:'shaft'},
+  {c:'#c8952e', n:'market'},     // the one bright, almost happy band
+  {c:'#6fb7c8', n:'water'},
+  {c:'#3a1a12', n:'bone'},
+  {c:'#8a2c08', n:'fire'},
+  {c:'#20303f', n:'sky'}
+];
+function layerStrata(){
+  const top = H*0.13, bot = L.ground - H*0.10;
+  const band = (bot-top)/STRATA.length;
+  for(let i=0;i<STRATA.length;i++){
+    // read bottom-to-top as the descent: forest nearest the surface
+    const s=STRATA[STRATA.length-1-i];
+    const y = top + i*band;
+    const bright = s.n==='market' ? 0.105 : s.n==='fire' ? 0.080 : 0.040;
+    // horizontal falloff too, so the centre column stays dark for the trunk
+    const g=ctx.createLinearGradient(0,y,0,y+band);
+    g.addColorStop(0,'rgba(0,0,0,0)');
+    g.addColorStop(0.5, rgba(s.c,bright));
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.save();
+    const hgrad=ctx.createLinearGradient(0,0,W,0);
+    hgrad.addColorStop(0,'rgba(0,0,0,1)'); hgrad.addColorStop(0.36,'rgba(0,0,0,0.15)');
+    hgrad.addColorStop(0.64,'rgba(0,0,0,0.15)'); hgrad.addColorStop(1,'rgba(0,0,0,1)');
+    ctx.fillStyle=g; ctx.fillRect(0,y,W,band);
+    ctx.restore();
+    // Struck left and right of the trunk rather than across the whole width:
+    // these are meant to be glimpsed between branches, and edge to edge they
+    // read as fog banks and grey out the middle of the poster.
+    for(let k=0;k<200;k++){
+      const yy=y+rr(0,band);
+      const side = rnd()<0.5 ? -1 : 1;
+      const len = rr(W*0.06,W*0.30);
+      const x0 = side<0 ? rr(-W*0.04, W*0.30) : rr(W*0.58, W*0.98-len*0.4);
+      ctx.globalAlpha=rr(.003,.020);
+      ctx.fillStyle=s.c;
+      ctx.fillRect(x0, yy, len, rr(H*0.0006,H*0.0034));
+    }
+    ctx.globalAlpha=1;
+    // a few motes carrying the band's colour
+    for(let k=0;k<60;k++){
+      ctx.globalAlpha=rr(.03,.22);
+      ctx.fillStyle=s.c;
+      const ss=rr(0.2,1.0);
+      ctx.fillRect(rr(0,W), y+rr(0,band), ss, ss);
+    }
+    ctx.globalAlpha=1;
+  }
+}
+
+// ── the nine graves ──
+function layerGraves(){
+  const gy=L.ground;
+  // ground mass
+  const gg=ctx.createLinearGradient(0,gy-H*0.02,0,H);
+  gg.addColorStop(0,'#221c12'); gg.addColorStop(0.22,'#100d09'); gg.addColorStop(1,'#040403');
+  ctx.fillStyle=gg; ctx.fillRect(0,gy-H*0.015,W,H-gy+H*0.02);
+  ctx.globalAlpha=.85; pxf(0,gy-H*0.016,W,H*0.0016, '#4a3a20'); ctx.globalAlpha=1;
+
+  const n=L.grave, span=W*0.86, x0=W*0.07, openIdx=n-1;
+  for(let i=0;i<n;i++){
+    const cx=x0+ (i+0.5)*(span/n);
+    if(i===openIdx){
+      // the ninth, dug open, with the iyi-uwa at the bottom catching light
+      const w=span/n*0.80, d=H*0.034;
+      const hg=ctx.createLinearGradient(0,gy,0,gy+d);
+      hg.addColorStop(0,'#100c07'); hg.addColorStop(.35,'#040302'); hg.addColorStop(1,'#000');
+      ctx.fillStyle=hg; ctx.fillRect(cx-w/2, gy-H*0.004, w, d);
+      ctx.globalAlpha=.85; pxf(cx-w/2, gy-H*0.004, w, H*0.0016, '#3a3020'); ctx.globalAlpha=1;
+      // spade marks down the walls
+      for(let k=0;k<26;k++){
+        ctx.globalAlpha=rr(.1,.4); ctx.fillStyle='#2a2318';
+        ctx.fillRect(cx-w/2+rr(0,w), gy+rr(0,d*0.9), W*0.0008, H*rr(0.002,0.006));
+      }
+      ctx.globalAlpha=1;
+      // the charm: a small pale thing, lit
+      ctx.save(); ctx.shadowColor=C.bone; ctx.shadowBlur=H*0.012;
+      ctx.fillStyle=rgba(C.bone,.92);
+      ctx.beginPath(); ctx.ellipse(cx+w*0.05, gy+d*0.80, W*0.0045, W*0.0032, .5,0,7); ctx.fill();
+      ctx.restore();
+      ctx.globalAlpha=.10; ctx.fillStyle=C.bone;
+      ctx.beginPath(); ctx.ellipse(cx+w*0.05, gy+d*0.80, W*0.03, H*0.012,0,0,7); ctx.fill();
+      ctx.globalAlpha=1;
+    } else {
+      // closed and grassed over
+      const w=span/n*0.94, hh=H*0.026;
+      ctx.fillStyle='#100f0b';
+      ctx.beginPath(); ctx.ellipse(cx,gy,w/2,hh,0,Math.PI,0); ctx.fill();
+      // rim light along the top of each mound — the source is behind them
+      ctx.globalAlpha=.72; ctx.strokeStyle=rgba(C.gold,.95); ctx.lineWidth=H*0.0016;
+      ctx.beginPath(); ctx.ellipse(cx,gy,w/2*0.95,hh*0.92,0,Math.PI*1.08,Math.PI*1.92); ctx.stroke();
+      ctx.globalAlpha=1;
+      ctx.globalAlpha=.55; ctx.fillStyle='#23241a';
+      ctx.beginPath(); ctx.ellipse(cx,gy-hh*0.14,w/2*0.82,hh*0.72,0,Math.PI,0); ctx.fill();
+      ctx.globalAlpha=1;
+      // grass over the mound
+      for(let k=0;k<70;k++){
+        const bx=cx+rr(-w/2,w/2);
+        const t=1-Math.abs(bx-cx)/(w/2);
+        ctx.globalAlpha=rr(.10,.42);
+        ctx.strokeStyle=pick(['#1c2216','#252c19','#141a10']);
+        ctx.lineWidth=W*0.0006;
+        const bl=H*rr(0.003,0.011);
+        ctx.beginPath(); ctx.moveTo(bx,gy-hh*t*0.9);
+        ctx.quadraticCurveTo(bx+rr(-W*0.004,W*0.004), gy-hh*t*0.9-bl*0.7, bx+rr(-W*0.008,W*0.008), gy-hh*t*0.9-bl);
+        ctx.stroke();
+      }
+      ctx.globalAlpha=1;
+      // a stake at the head of each
+      ctx.fillStyle='#080907';
+      ctx.fillRect(cx-W*0.0020, gy-hh-H*0.013, W*0.0040, H*0.013);
+    }
+  }
+  // foreground grass and roots in near-silhouette
+  for(let k=0;k<2600;k++){
+    const bx=rr(-W*0.02,W*1.02), by=rr(gy+H*0.004, H);
+    const dep=(by-gy)/(H-gy);
+    ctx.globalAlpha=rr(.25,.95)*(0.35+dep*0.65);
+    ctx.strokeStyle= rnd()<.82 ? '#040504' : '#101408';
+    ctx.lineWidth=W*rr(0.0005,0.0022)*(0.5+dep);
+    const bl=H*rr(0.006,0.045)*(0.4+dep*1.3);
+    ctx.beginPath(); ctx.moveTo(bx,by);
+    ctx.quadraticCurveTo(bx+rr(-W*0.012,W*0.012), by-bl*0.65, bx+rr(-W*0.03,W*0.03), by-bl);
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
+
+// ── the four alusi, as marks in the margin ──
+function alusiMarks(){
+  const m=W*0.045, s=W*0.030;
+  ctx.save();
+  ctx.strokeStyle=rgba(C.bone,.13); ctx.lineWidth=W*0.0016; ctx.lineCap='round';
+  // Ala — a horizontal band with roots below
+  (function(x,y){
+    ctx.beginPath(); ctx.moveTo(x-s,y); ctx.lineTo(x+s,y); ctx.stroke();
+    for(let i=-2;i<=2;i++){ ctx.beginPath(); ctx.moveTo(x+i*s*0.42,y);
+      ctx.quadraticCurveTo(x+i*s*0.6,y+s*0.5, x+i*s*0.78,y+s*0.9); ctx.stroke(); }
+  })(m+s, m+s);
+  // Amadioha — a lightning fork
+  (function(x,y){
+    ctx.beginPath(); ctx.moveTo(x-s*0.5,y-s); ctx.lineTo(x+s*0.15,y-s*0.15);
+    ctx.lineTo(x-s*0.25,y-s*0.05); ctx.lineTo(x+s*0.5,y+s); ctx.stroke();
+  })(W-m-s, m+s);
+  // Idemili — a coiled line
+  (function(x,y){
+    ctx.beginPath();
+    for(let i=0;i<=120;i++){
+      const t=i/120, a=t*7.6, r=s*(0.14+t*0.86);
+      const px2=x+Math.cos(a)*r, py2=y+Math.sin(a)*r*0.82;
+      i?ctx.lineTo(px2,py2):ctx.moveTo(px2,py2);
+    }
+    ctx.stroke();
+  })(m+s, H-m-s);
+  // Ikenga — a horn pair
+  (function(x,y){
+    for(const sg of [-1,1]){
+      ctx.beginPath(); ctx.moveTo(x+sg*s*0.16,y+s*0.7);
+      ctx.quadraticCurveTo(x+sg*s*1.0,y-s*0.1, x+sg*s*0.62,y-s*0.9); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.moveTo(x-s*0.5,y+s*0.75); ctx.lineTo(x+s*0.5,y+s*0.75); ctx.stroke();
+  })(W-m-s, H-m-s);
+  ctx.restore();
+}
+
+// a small nsibidi glyph, as on the title screen
+function glyph(x,y,r,col,rot){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rot||0);
+  ctx.strokeStyle=col; ctx.lineWidth=r*0.16; ctx.lineCap='round';
+  for(let i=0;i<3;i++){
+    const a=i*2.094;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a)*r*0.28,Math.sin(a)*r*0.28);
+    ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(0,0,r*0.30,0,7); ctx.stroke();
+  ctx.restore();
+}
+
+// ═══ type ════════════════════════════════════════════════════════════════════
+const SERIF='ui-serif, Georgia, "Times New Roman", serif';
+const SANS ='ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif';
+
+function tracked(text, cx, y, size, spacing, col, font){
+  ctx.font=size+'px '+(font||SERIF);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  const chars=[...text];
+  let total=0;
+  for(const ch of chars) total += ctx.measureText(ch).width + spacing;
+  total -= spacing;
+  let x=cx-total/2;
+  ctx.fillStyle=col;
+  for(const ch of chars){
+    ctx.fillText(ch, x, y);
+    x += ctx.measureText(ch).width + spacing;
+  }
+  return total;
+}
+
+function layerType(){
+  // ỌDỊNALA across the composition, not above it
+  const sz=L.titleSz;
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,0.85)'; ctx.shadowBlur=W*0.03;
+  const wid=tracked('ỌDỊNALA', L.titleX, L.titleY, sz, sz*0.20, C.bone);
+  ctx.restore();
+  // thin gold underline
+  ctx.globalAlpha=.75;
+  pxf(L.titleX-wid/2, L.titleY+sz*0.28, wid, Math.max(0.6,H*0.0009), C.gold);
+  ctx.globalAlpha=1;
+  // the line under it
+  ctx.textAlign='center';
+  ctx.font=(sz*0.185)+'px '+SERIF;
+  ctx.fillStyle=rgba(C.gold,.82);
+  ctx.fillText('the ọgbanje who would not go back', L.titleX, L.titleY+sz*0.60);
+  ctx.textAlign='left';
+  // glyph pair flanking the title, as on the game's title screen
+  glyph(L.titleX-wid/2-sz*0.46, L.titleY-sz*0.30, sz*0.20, rgba(C.gold,.62), 0.4);
+  glyph(L.titleX+wid/2+sz*0.46, L.titleY-sz*0.30, sz*0.20, rgba(C.gold,.62), -0.4);
+}
+
+// The billing block. Composed from the game's actual material.
+const BILLING = [
+ ['ỌDỊNALA','title'],
+ ['MIDAS INNOVATIONS PRESENTS  A SINGLE HTML FILE  “ỌDỊNALA”','line'],
+ ['ALA · AMADIOHA · IDEMILI · IKENGA','line'],
+ ['OGBUNABALI  “HE WHO KILLS AT NIGHT”   EKWENSU  “THE ONE WHO WAS PAID”   ỤZỤ ỌKỤ   IKUKU   ONWE','line'],
+ ['ALA IYI-UWA · ỌHỊA · ỤZỌ ALA · EBE ỌCHỊCHỊRỊ · AHỊA MMỤỌ · IYI IDEMILI · OKỌCHỊ ỌKPỤKPỤ','line'],
+ ['ỌKỤ MMỤỌ · IGWE · ALA MMỤỌ · OGILISI · AHỊA ELU · ỤLỌ DIBIA','line'],
+ ['OGENE  UDU  EKWE  ICHAKA  OPI  PALM-WINE GUITAR   SCORE PERFORMED BY THE BROWSER','line'],
+ ['MMA · NKWỤ · ỌGŨ · ỌKỤ   FOUR WORDS: ASSENT OF AMADIOHA · GRASP OF ALA · VEIL OF IDEMILI · RIGHT HAND OF IKENGA','line'],
+ ['NZU · ỌKPỤKPỤ · OGENE · EJỤLÀ · ỤDỤ   THIRTEEN ROOMS  FIVE MASQUERADES  THREE ENDINGS  NINE GRAVES','line'],
+ ['NO ASSETS · NO BUILD STEP · NO DEPENDENCIES · CANVAS 2D · 480×270','line'],
+ ['GWAM GWAM GWAM','line']
+];
+function layerBilling(){
+  if(!L.showAll) return;
+  const y0=H*0.955, lh=H*0.0088;
+  ctx.textAlign='center';
+  for(let i=1;i<BILLING.length;i++){
+    const t=BILLING[i][0];
+    const sz=H*0.0062;
+    // squashed condensed caps, the way a real credit slab reads
+    ctx.save();
+    ctx.translate(L.titleX, y0+(i-1)*lh);
+    ctx.scale(1, 1.72);
+    ctx.font=sz+'px '+SANS;
+    ctx.fillStyle=rgba(C.bone, i===BILLING.length-1?.30:.46);
+    // fit to width
+    const wq=ctx.measureText(t).width, max=W*0.80;
+    if(wq>max) ctx.scale(max/wq,1);
+    ctx.fillText(t,0,0);
+    ctx.restore();
+  }
+  ctx.textAlign='left';
+}
+
+// ═══ finish passes ═══════════════════════════════════════════════════════════
+
+function passHaze(){
+  // depth-keyed veil: the far strata nearly dissolve
+  const g=ctx.createLinearGradient(0,H*0.10,0,L.ground);
+  g.addColorStop(0, rgba('#3a3830',.11));
+  g.addColorStop(0.55, rgba('#241f19',.05));
+  g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,L.ground);
+}
+
+function passEmbers(){
+  // 2400 motes at varying depths, sized and alpha'd by depth
+  for(let i=0;i<2400;i++){
+    const depth=rnd();                 // 0 far, 1 near
+    const y=rr(H*0.05, H*1.0);
+    const x=rr(-W*0.02, W*1.02);
+    const near=depth>0.72;
+    const s=(0.15+depth*1.5)*(W/400);
+    // hot near the fire band and the source, cool high up
+    const heat=Math.max(0,1-Math.abs(y-(L.ground-H*0.30))/(H*0.30));
+    const col= y<H*0.30 ? C.cyan : heat>0.45 ? '#e08a2a' : C.gold;
+    ctx.globalAlpha=(0.05+depth*0.42)*(near?0.9:0.5)*rr(.4,1);
+    if(near){ ctx.save(); ctx.shadowColor=col; ctx.shadowBlur=s*4; }
+    ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(x,y,s*0.5,0,7); ctx.fill();
+    if(near) ctx.restore();
+  }
+  ctx.globalAlpha=1;
+}
+
+function passBloom(src){
+  // draw the bright elements again, blurred, composited lighter
+  const b=document.createElement('canvas');
+  b.width=cvs.width; b.height=cvs.height;
+  const bx=b.getContext('2d');
+  bx.filter='blur('+(cvs.width*0.010)+'px) brightness(1.5) saturate(1.1)';
+  bx.drawImage(src,0,0);
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalCompositeOperation='lighter';
+  ctx.globalAlpha=0.20;
+  ctx.drawImage(b,0,0);
+  ctx.restore();
+}
+
+function passVignette(){
+  const g=ctx.createRadialGradient(W*0.5,H*0.46,H*0.16, W*0.5,H*0.5,H*0.80);
+  g.addColorStop(0,'rgba(0,0,0,0)');
+  g.addColorStop(0.55,'rgba(4,3,2,0.30)');
+  g.addColorStop(1,'rgba(3,2,1,0.90)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // corners a touch heavier still
+  const c2=ctx.createLinearGradient(0,0,0,H);
+  c2.addColorStop(0,'rgba(2,2,3,0.42)'); c2.addColorStop(0.3,'rgba(0,0,0,0)');
+  c2.addColorStop(0.8,'rgba(0,0,0,0)'); c2.addColorStop(1,'rgba(2,2,3,0.50)');
+  ctx.fillStyle=c2; ctx.fillRect(0,0,W,H);
+}
+
+function passPaper(){
+  // fibre tooth, so it does not read as vector-clean
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+  const n=Math.round(cvs.width*0.9);
+  for(let i=0;i<n;i++){
+    ctx.globalAlpha=rr(.006,.030);
+    ctx.strokeStyle= rnd()<.5 ? '#ffffff' : '#000000';
+    ctx.lineWidth=rr(0.4,1.5);
+    const x=rr(0,cvs.width), y=rr(0,cvs.height), a=rr(0,3.14159), l=rr(4,44);
+    ctx.beginPath(); ctx.moveTo(x,y);
+    ctx.lineTo(x+Math.cos(a)*l, y+Math.sin(a)*l); ctx.stroke();
+  }
+  ctx.globalAlpha=1; ctx.restore();
+}
+
+function passGrain(){
+  // per-pixel noise at ~3%
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+  const w=cvs.width, h=cvs.height;
+  const img=ctx.getImageData(0,0,w,h), d=img.data;
+  for(let i=0;i<d.length;i+=4){
+    const v=(rnd()-0.5)*20;
+    d[i]  =Math.max(0,Math.min(255,d[i]  +v));
+    d[i+1]=Math.max(0,Math.min(255,d[i+1]+v));
+    d[i+2]=Math.max(0,Math.min(255,d[i+2]+v*0.9));
+  }
+  ctx.putImageData(img,0,0);
+  ctx.restore();
+}
+
+function passChromatic(){
+  // a 1–2px red/cyan split at the frame edges only
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+  const w=cvs.width,h=cvs.height, off=Math.max(1,Math.round(w*0.0009));
+  const snap=document.createElement('canvas');
+  snap.width=w; snap.height=h;
+  snap.getContext('2d').drawImage(cvs,0,0);
+  // mask to the edges: draw the shifted copies only through an edge gradient
+  const m=document.createElement('canvas'); m.width=w; m.height=h;
+  const mx=m.getContext('2d');
+  mx.drawImage(snap,off,0);
+  mx.globalCompositeOperation='destination-in';
+  const eg=mx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.30, w/2,h/2,Math.max(w,h)*0.62);
+  eg.addColorStop(0,'rgba(0,0,0,0)'); eg.addColorStop(1,'rgba(0,0,0,1)');
+  mx.fillStyle=eg; mx.fillRect(0,0,w,h);
+  ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.16;
+  ctx.drawImage(m,0,0);
+  // and the opposite shift in cyan
+  const m2=document.createElement('canvas'); m2.width=w; m2.height=h;
+  const m2x=m2.getContext('2d');
+  m2x.drawImage(snap,-off,0);
+  m2x.globalCompositeOperation='destination-in';
+  m2x.fillStyle=eg; m2x.fillRect(0,0,w,h);
+  ctx.globalAlpha=0.11; ctx.drawImage(m2,0,0);
+  ctx.restore();
+}
+
+// ═══ the composition ═════════════════════════════════════════════════════════
+
+function compose(){
+  layout();
+  layerSky();
+  layerStrata();
+  passHaze();
+
+  // the spine
+  treeShape(L.treeX, L.treeBase, L.treeH, {
+    bark:['#161211','#0c0a09','#050404'],
+    rim:'#4a3a24',
+    leafCols:['#0d130c','#131a10','#080d08'],
+    spirit:C.bone,
+    leafCount: MODE==='poster'?9000: MODE==='banner'?4200:2600,
+    depth: MODE==='poster'?6:5,
+    chalk:true, cowries:true, lean:0.012, girth:0.135
+  });
+
+  layerGraves();
+
+  if(MODE==='card'){
+    // one figure only, at the open grave, and nothing competing with it
+  }
+  if(L.showAll || MODE==='banner'){
+    // Ogbunabali — lower left, half out of the dark side of the trunk
+    masquerade(L.treeX+W*L.ogX, L.ground-H*0.020, L.playerH*L.ogS, {
+      strands:460, width:0.46, nineEyes:true, lightAt:0.74,
+      warm:'#7a4c1a', alpha:0.95, seedp:1.1, rim:'#c8952e', hem:0.70
+    });
+    // Ekwensu — right and higher, the biggest thing on the poster, facing out
+    masquerade(L.treeX+W*L.ekX, L.ground-H*L.ekY, L.playerH*L.ekS, {
+      strands:1400, width:0.60, lightAt:0.30, warm:'#6a3f14',
+      alpha:0.97, seedp:2.7, rim:'#d09a44',
+      // a carved face looking straight out — he is the one who tells the truth,
+      // so he is the one who faces you. No horns and no lamps for eyes.
+      mask:{ wood:['#8a7355','#4e4030','#241c14','#080605'], eye:null, chalk:false }
+    });
+  }
+
+  if(L.showAll){
+    // Onwe — top centre, directly above the player, same size, facing down
+    drawChild(L.playerX, H*0.215, L.playerH, {
+      flip:true, alpha:0.72, rimCol:C.cyan, dim:1.3
+    });
+    // the mother, barely there, in the highest branches
+    ctx.save();
+    ctx.globalAlpha=0.12;
+    ctx.fillStyle=C.bone;
+    (function(x,y,s){
+      ctx.beginPath();
+      ctx.moveTo(x, y-s*1.5);
+      ctx.quadraticCurveTo(x+s*0.5, y-s*1.2, x+s*0.42, y-s*0.2);
+      ctx.quadraticCurveTo(x+s*0.6, y+s*1.4, x, y+s*1.8);
+      ctx.quadraticCurveTo(x-s*0.6, y+s*1.4, x-s*0.42, y-s*0.2);
+      ctx.quadraticCurveTo(x-s*0.5, y-s*1.2, x, y-s*1.5);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x,y-s*1.85,s*0.30,s*0.38,0,0,7); ctx.fill();
+    })(L.treeX+W*0.10, H*0.070, H*0.020);
+    ctx.restore();
+  }
+
+  // the chalk masquerade — the teacher, half-dissolving
+  if(L.showAll){
+    ctx.save(); ctx.globalAlpha=0.10;
+    masquerade(L.playerX-W*0.085, L.ground-H*0.002, L.playerH*1.22, {
+      strands:300, width:0.40, lightAt:0.5, dark:'#2e2c25', warm:'#8a8674',
+      alpha:1, halo:false, rim:'#9a9684', hem:0.74
+    });
+    ctx.restore();
+  }
+
+  // the player, last and smallest
+  drawChild(L.playerX, L.ground-H*0.001, L.playerH, {});
+
+  layerType();
+  layerBilling();
+  if(L.showAll) alusiMarks();
+}
+
+// ═══ render ══════════════════════════════════════════════════════════════════
+
+function render(){
+  const t0=performance.now();
+  MODE=document.getElementById('size').value;
+  const o=OUT[MODE];
+  cvs.width=o.px[0]; cvs.height=o.px[1];
+  W=o.logical[0]; H=o.logical[1];
+  SCALE=o.px[0]/W;
+  seed=20260804;
+  ctx=cvs.getContext('2d');
+  ctx.setTransform(SCALE,0,0,SCALE,0,0);
+  ctx.lineJoin='round';
+
+  compose();
+
+  // finish passes, in order
+  const snap=document.createElement('canvas');
+  snap.width=cvs.width; snap.height=cvs.height;
+  snap.getContext('2d').drawImage(cvs,0,0);
+  passBloom(snap);
+  ctx.setTransform(SCALE,0,0,SCALE,0,0);
+  passEmbers();
+  passVignette();
+  passPaper();
+  passChromatic();
+  passGrain();
+
+  const ms=Math.round(performance.now()-t0);
+  document.getElementById('stat').textContent =
+    o.px[0]+' × '+o.px[1]+'  ·  rendered in '+ms+' ms';
+  window.__RENDER_MS = ms;
+  window.__DONE = true;
+}
+
+document.getElementById('go').onclick=render;
+document.getElementById('size').onchange=render;
+document.getElementById('save').onclick=()=>{
+  const a=document.createElement('a');
+  a.download='odinala-'+MODE+'-'+cvs.width+'x'+cvs.height+'.png';
+  a.href=cvs.toDataURL('image/png');
+  a.click();
+};
+window.__render = render;
+render();
+})();
+</script>
+</body>
+</html>
