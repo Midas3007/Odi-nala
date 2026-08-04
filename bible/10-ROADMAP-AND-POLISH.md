@@ -88,24 +88,24 @@ ran into a wall until you came back and pressed it again to release it.
 ### Stability (1–20)
 1. [x] `frame()` body is inside try/catch and keeps pumping rAF
 2. [ ] No table lookup can throw on a missing key
-3. [ ] `tools/audit.py` clean
+3. [x] `tools/audit.py` clean
 4. [x] Every exit landing is standable in both directions
 5. [x] Player can never end a frame embedded in solid tiles
 6. [x] De-embed fallback returns to the last charm if it fails
-7. [ ] No room is unreachable
-8. [ ] Every `M` tile has a `MIRRORS` entry and vice versa
+7. [x] No room is unreachable
+8. [x] Every `M` tile has a `MIRRORS` entry and vice versa
 9. [x] All five index-keyed tables are as long as `ROOMS`
-10. [ ] Save never claims success when storage threw
+10. [x] Save never claims success when storage threw
 11. [x] Speedrun save cannot overwrite a normal save
-12. [ ] Loading a save from a previous version fails soft, not hard
+12. [x] Loading a save from a previous version fails soft, not hard
 13. [x] No NaN reachable in position, velocity, HP, ọfọ, or cowries
 14. [x] Both randomised soaks pass
-15. [ ] No unbounded array
-16. [ ] No `setInterval` left running after a mode change
-17. [ ] Audio failure never blocks gameplay
+15. [x] No unbounded array
+16. [x] No `setInterval` left running after a mode change
+17. [x] Audio failure never blocks gameplay
 18. [x] Blur/refocus doesn't leave keys stuck down
-19. [ ] Tab-out and back doesn't spiral the accumulator
-20. [ ] Resize doesn't break `toLogical()` hit testing
+19. [x] Tab-out and back doesn't spiral the accumulator
+20. [x] Resize doesn't break `toLogical()` hit testing
 
 ### Combat feel (21–50)
 21. [ ] Every attacking enemy telegraphs
@@ -317,6 +317,24 @@ both checks green, the *class* of bug considered — not just the instance.
 **A release:** every Phase 1 item closed, checklist items 1–20 ticked without exception,
 both soaks passing, a full playthrough completed start to ending by a human, and the
 speedrun completed too.
+
+### Where that stands
+
+| Release criterion | |
+|---|---|
+| Every Phase 1 item closed | **yes** |
+| Items 1–20 ticked without exception | **19 of 20.** Item 2 — "no table lookup can throw on a missing key" — cannot be proved by pattern-matching and has not been proved by hand. |
+| Both soaks passing | **yes** |
+| **A full playthrough, start to ending, by a human** | **no. Nobody has ever played this game end to end.** |
+| **The speedrun completed** | **no.** |
+
+The last two are not paperwork. Everything green above proves the game does not *crash*,
+that its tables agree, that no doorway traps you, and that the ending is *reachable* —
+`tools/checklist.py` and the audit between them walk the exit graph honouring the story
+gates and confirm all thirteen rooms, all five bosses and Onwe can be reached in a legal
+order. **None of it proves the game is any good**, or that ninety minutes of it holds, or
+that the combat reads at speed with everything firing at once. That is what a
+playthrough is for, and it is the one thing an automated suite structurally cannot do.
 
 ## 10.5 The one thing to remember
 

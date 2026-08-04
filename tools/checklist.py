@@ -12,7 +12,7 @@ tick, a cross, or a dash for "a human has to look at this one".
 It does not tick anything by itself. It tells you what you are entitled to tick,
 and it is meant to be re-run whenever the checklist is touched.
 """
-import io, re, sys, os
+import io, re, sys, os, subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC  = io.open(os.path.join(ROOT, 'odinala.html'), encoding='utf-8').read()
@@ -26,25 +26,49 @@ def tested(*frags):
     """every fragment appears in an assertion name in the suite"""
     return all(f in TST for f in frags)
 
+def audit_clean():
+    """items 3, 7 and 8 are release blockers and the audit already proves them"""
+    r = subprocess.run([sys.executable, os.path.join(ROOT,'tools','audit.py'),
+                        os.path.join(ROOT,'odinala.html')], capture_output=True, text=True)
+    return r.returncode == 0
+AUDIT = audit_clean()
+
 # (number, what it says, verdict) — verdict True/False/None where None means
 # "this needs eyes, and the script will not pretend otherwise"
 CHECKS = [
  (1,  'frame() body is inside try/catch and keeps pumping rAF',
       code(r'function frame\(now\)\{\s*try\{ frameBody', r'requestAnimationFrame\(frame\);')),
- (3,  'tools/audit.py clean', None),
+ (2,  'No table lookup can throw on a missing key', None),
+ (3,  'tools/audit.py clean', AUDIT),
  (4,  'Every exit landing is standable in both directions',
       tested('the player can walk away')),
  (5,  'Player can never end a frame embedded in solid tiles', code(r'function unstickPlayer')),
  (6,  'De-embed fallback returns to the last charm if it fails',
       code(r'function unstickPlayer[\s\S]{0,900}checkpoint')),
- (7,  'No room is unreachable', None),
- (8,  'Every M tile has a MIRRORS entry and vice versa', None),
+ (7,  'No room is unreachable', AUDIT),
+ (8,  'Every M tile has a MIRRORS entry and vice versa', AUDIT),
  (9,  'All five index-keyed tables are as long as ROOMS',
       tested('has one entry per room')),
+ (10, 'Save never claims success when storage threw',
+      code(r"const where=store\(slot\(\)", r"where==='disk'")),
  (11, 'Speedrun save cannot overwrite a normal save', tested('speedrun')),
+ (12, 'Loading a save from a previous version fails soft, not hard',
+      code(r'let d; try\{ d=JSON\.parse\(raw\); \}catch\(e\)\{ return false; \}')),
  (13, 'No NaN reachable in position, velocity, HP, ọfọ, or cowries', tested('soak')),
  (14, 'Both randomised soaks pass', tested('soak A') or 'soak(' in TST),
+ # decals and flames have hard caps; parts and shots are pruned by lifetime,
+ # which bounds them at spawn-rate x life rather than leaving them to grow
+ (15, 'No unbounded array',
+      code(r'decals\.length>110', r'FLAME_CAP', r'if\(p\.life<=0\) parts\.splice')),
+ (16, 'No setInterval left running after a mode change', code(r'MUS\.timer=setInterval')),
+ (17, 'Audio failure never blocks gameplay', code(r'function initAudio[\s\S]{0,600}catch')),
  (18, 'Blur/refocus does not leave keys stuck down', code(r"addEventListener\('blur'")),
+ # the cap is on dt as it goes in, not on acc afterwards, which is the right
+ # place for it: a ten-second tab-out contributes one frame, not six hundred
+ (19, 'Tab-out and back does not spiral the accumulator',
+      code(r'acc \+= Math\.min\(60,dt\)')),
+ (20, 'Resize does not break toLogical() hit testing',
+      code(r'function toLogical', r"addEventListener\('resize'")),
 
  (22, 'Every telegraph is white or gold, never both',
       code(r"tell==='gold'") and not code(r"tell==='both'")),
