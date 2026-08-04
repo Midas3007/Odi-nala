@@ -73,6 +73,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const cvs = document.getElementById('g');
 let ctx = cvs.getContext('2d');
+// buildBackLayers() swaps ctx for an offscreen context and swaps it back. If it
+// throws in between, the swap-back never happens and every later frame paints
+// into a discarded canvas — a black screen that looks exactly like a freeze.
+// The crash guard in frame() restores from here.
+const baseCtx = ctx;
 ctx.imageSmoothingEnabled = false;
 const W = 480, H = 270, T = 16, SC = 3;   // logical space stays 480x270; we paint it at 3x
 ctx.setTransform(SC,0,0,SC,0,0);
@@ -86,26 +91,125 @@ const C = {
 
 // ── input ────────────────────────────────────────────────────────────────────
 const keys = {}, pressed = {};
-const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut'];
+// Every mode the player navigates with a direction belongs here. Miss one and the
+// touch stick falls through to its *play* branch, which re-presses the direction
+// on every pointermove — the codex was doing exactly that, and holding the stick
+// machine-gunned the list past everything you were trying to read.
+// Every mode the game can legally be in. The soak asserts G.mode is always one
+// of these, and it used to keep its own copy of the list — which had silently
+// missed 'charm' since 2f, so the charm screen was never soak-tested at all.
+// One list, exported, and it cannot drift again.
+const MODES=['title','play','cut','map','riddle','travel','shop','pause','inv','codex','charm','opts','photo','ending'];
+// 'photo' is in here even though it is a camera pan and not a menu: 08-UI-UX
+// §8.2b states the rule absolutely, and a mode missing from this list gets
+// clearDirs()+down() on every pointermove. photoUpdate reads keys[] rather
+// than tap() so the repeat rate never touches it; the cost is that a stick
+// pan snaps to one axis, which on a phone is no loss.
+const MENU_MODES=['title','map','pause','inv','shop','travel','riddle','cut','codex','charm','opts','photo'];
+// hold-to-scroll, per mode: [frames before it starts repeating, frames between].
+// The codex is slower on purpose. Its rows are things you read, not things you
+// count past, and its entries are long enough that overshooting costs a re-read.
+const MENU_REPEAT={ codex:[30,13], _:[20,6] };
 const heldFor={};
 // in a menu, holding a direction should keep stepping instead of stopping dead
 function menuRepeat(){
   if(MENU_MODES.indexOf(G.mode)<0){ for(const k in heldFor) heldFor[k]=0; return; }
   for(const c of ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyS','KeyA','KeyD']){
     if(keys[c]){
+      const rp = MENU_REPEAT[G.mode] || MENU_REPEAT._;
       heldFor[c]=(heldFor[c]||0)+1;
-      if(heldFor[c]>20 && (heldFor[c]-20)%6===0) pressed[c]=true;
+      if(heldFor[c]>rp[0] && (heldFor[c]-rp[0])%rp[1]===0) pressed[c]=true;
     } else heldFor[c]=0;
   }
 }
 const CODES = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyZ','KeyX','KeyC','KeyV','KeyF','KeyN','KeyG','KeyM','KeyP','KeyE','KeyK','KeyB','Tab','Escape','Space','Enter','KeyA','KeyD','KeyW','KeyS','KeyR'];
+// Rebinding happens at the event boundary and nowhere else. The game keeps
+// reading canonical codes — 'KeyZ' means cut for ever, in all several hundred
+// tap() call sites — and BINDS maps the key that was physically pressed onto one
+// of those. That is why this cost no changes to any game logic, and why the
+// touch buttons, which call down() with canonical codes directly, needed none
+// either. 08-UI-UX §8.5 ranks this the single biggest accessibility gap.
+const ACTIONS=[
+  {id:'left',  code:'ArrowLeft',  n:'move left'},
+  {id:'right', code:'ArrowRight', n:'move right'},
+  {id:'up',    code:'ArrowUp',    n:'up'},
+  {id:'down',  code:'ArrowDown',  n:'crouch / read'},
+  {id:'jump',  code:'Space',      n:'jump'},
+  {id:'cut',   code:'KeyZ',       n:'cut'},
+  {id:'roll',  code:'KeyX',       n:'roll'},
+  {id:'ward',  code:'KeyC',       n:'ward'},
+  {id:'heal',  code:'KeyV',       n:'drink nzu'},
+  {id:'cast',  code:'KeyF',       n:'cast \u1ecdf\u1ecd'},
+  {id:'spell', code:'KeyG',       n:'cycle \u1ecdf\u1ecd'},
+  {id:'blade', code:'KeyB',       n:'cycle weapon'},
+  {id:'name',  code:'KeyN',       n:'call the name'},
+  {id:'use',   code:'KeyE',       n:'use / ledger'},
+  {id:'map',   code:'KeyM',       n:'map'},
+  {id:'mute',  code:'KeyP',       n:'mute'}
+];
+// Escape, Tab, Enter, K and R are deliberately not rebindable. A player who
+// binds cut to Escape and then cannot open the pause menu to undo it has been
+// locked out of the game by an accessibility feature, which is the opposite of
+// the point. The WASD movement aliases stay fixed for the same reason.
+const FIXED=['Escape','Tab','Enter','KeyK','KeyR','KeyA','KeyD','KeyW','KeyS'];
+let BINDS={};
+function resetBinds(){ BINDS={}; for(const c of CODES) BINDS[c]=c; }
+resetBinds();
+function boundKey(code){ for(const k in BINDS) if(BINDS[k]===code) return k; return null; }
+// One physical key drives one action and one action has one key, so binding is a
+// swap rather than an assignment — otherwise the displaced action silently ends
+// up with no key at all and the player cannot get it back without a reset.
+function rebind(code, physical){
+  if(FIXED.indexOf(physical)>=0 || FIXED.indexOf(code)>=0) return false;
+  if(!CODES.includes(physical)) return false;
+  const was = boundKey(code);
+  const displaced = BINDS[physical];
+  if(was!==null) delete BINDS[was];
+  BINDS[physical]=code;
+  if(displaced && displaced!==code && was!==null && was!==physical) BINDS[was]=displaced;
+  return true;
+}
+function keyName(c){
+  if(!c) return '\u2014';
+  if(c==='ArrowLeft') return '\u2190'; if(c==='ArrowRight') return '\u2192';
+  if(c==='ArrowUp') return '\u2191';   if(c==='ArrowDown') return '\u2193';
+  if(c==='Space') return 'SPACE';
+  return c.replace(/^Key/,'').replace(/^Digit/,'');
+}
+
+// 08-UI-UX §8.5, items 2-6. Every one of these is off by default and none of
+// them is behind a difficulty setting — see the accessibility principle.
+const OPT={ assist:0, bigText:0, calm:0, noFlash:0, tells:0 };
+const OPT_ROWS=[
+  {id:'assist',  n:'PARRY ASSIST',    d:['the ward window is 9 frames','the ward window is 14 frames']},
+  {id:'bigText', n:'LARGER TEXT',     d:['the fiction at its usual size','the fiction a third larger']},
+  {id:'calm',    n:'REDUCED MOTION',  d:['screen shake and slow-motion on','no shake, no slow-motion']},
+  {id:'noFlash', n:'REDUCED FLASHING',d:['full white flash on impact','the flash capped low']},
+  {id:'tells',   n:'TELL COLOURS',    d:['white can be turned, gold cannot','white can be turned, violet cannot']}
+];
+// The gold tell already differs from the white one by outline count as well as
+// hue (§8.5), so this is a second axis rather than the only one. Violet is used
+// nowhere else in the game — gold means rest charms and broken guards, cyan
+// means mirrors, red means fire — so it cannot collide with an existing read.
+function tellCol(gold){ return gold ? (OPT.tells?'#b98ae0':C.gold) : C.chalk; }
+function txtScale(){ return OPT.bigText?1.35:1; }
+function narrFont(px,fam){ ctx.font=Math.round(px*txtScale())+'px '+(fam||'ui-serif,Georgia,serif'); }
+
 function down(c){ if(!keys[c]) pressed[c]=true; keys[c]=true; }
 function up(c){ keys[c]=false; }
-addEventListener('keydown',e=>{ initAudio(); if(CODES.includes(e.code)){ e.preventDefault(); down(e.code);} });
+addEventListener('keydown',e=>{ initAudio();
+  if(G.mode==='opts' && OPTS.wait){ e.preventDefault(); optsCapture(e.code); return; }
+  const c=BINDS[e.code]; if(c){ e.preventDefault(); down(c);} });
 addEventListener('pointerdown', initAudio, {passive:true});
 addEventListener('touchstart', initAudio, {passive:true});
 addEventListener('mousedown', initAudio, {passive:true});
-addEventListener('keyup',  e=>{ if(CODES.includes(e.code)){ e.preventDefault(); up(e.code);} });
+addEventListener('keyup',  e=>{ const c=BINDS[e.code]; if(c){ e.preventDefault(); up(c);} });
+// Polish item 18. Alt-tab while holding a direction and the keyup never arrives,
+// so the player goes on running into a wall until you come back and press the
+// key again to release it. Losing focus releases everything.
+function releaseAll(){ for(const c of CODES){ keys[c]=false; pressed[c]=false; } }
+addEventListener('blur', releaseAll);
+addEventListener('visibilitychange', ()=>{ if(document.hidden) releaseAll(); });
 cvs.addEventListener('pointerdown',(e)=>{
   cvs.focus(); initAudio();
   if(G.mode!=='play') return;
@@ -221,13 +325,14 @@ const ROOMS = [
   "#......................................#",
   "#......................................#",
   "#......................................#",
-  "#........S.............M..............E",
-  "#.............................K........E",
+  "E........S.............M...............E",
+  "E.............................K........E",
   "########################################",
   "########################################",
   "########################################",
   "########################################"],
-  exits:[{tx:39,ty:14,tw:1,th:2,to:1,sx:2,sy:16}] },
+  exits:[{tx:39,ty:14,tw:1,th:2,to:1,sx:2,sy:16},
+         {tx:0,ty:14,tw:1,th:2,to:10,sx:25,sy:16}] },
 
 { name:"Ọhịa — the path that watches", tint:'#0c130e',
   map:[
@@ -267,7 +372,7 @@ const ROOMS = [
   "#..............................#",
   "#.............l....#############",
   "#.............##############...#",
-  "#..............................#",
+  "#..................b...........#",
   "#..............................#",
   "#....l.........................#",
   "#..#########...................#",
@@ -290,15 +395,16 @@ const ROOMS = [
   "#..............................#",
   "#..............................#",
   "#..............................E",
-  "#..............................E",
-  "#....M.........................#",
+  "E..............................E",
+  "E....M.........................#",
   "##############cccc##############",
   "#########..........#############",
   "#########....h.....#############",
   "#########..........#############",
   "################################"],
   exits:[{tx:0,ty:2,tw:1,th:2,to:1,sx:45,sy:16},
-         {tx:31,ty:32,tw:1,th:2,to:3,sx:3,sy:14}] },
+         {tx:31,ty:32,tw:1,th:2,to:3,sx:3,sy:14},
+         {tx:0,ty:33,tw:1,th:2,to:12,sx:37,sy:16}] },
 
 { name:"Ebe Ọchịchịrị — where he keeps the dark", tint:'#0d0a0e',
   map:[
@@ -314,13 +420,13 @@ const ROOMS = [
   "#..........................................#",
   "#..........................................#",
   "#..........................................#",
-  "E..........W.....................W.........#",
-  "E.......................B..................#",
+  "E..........W.....................W........E#",
+  "E.......................B.................E#",
   "############################################",
   "############################################",
   "############################################",
   "############################################"],
-  exits:[{tx:0,ty:12,tw:1,th:2,to:2,sx:28,sy:34},
+  exits:[{tx:0,ty:12,tw:1,th:2,to:2,sx:28,sy:35},
          {tx:42,ty:12,tw:1,th:2,to:6,sx:2,sy:16, needs:'ogbunabali'}] },
 
 { name:"Ahịa Mmụọ — the market that opens at night", tint:'#150e14',
@@ -328,25 +434,26 @@ const ROOMS = [
   "################################################",
   "#..............................................#",
   "#..............................................#",
-  "#..............................................#",
-  "#..............................................#",
+  "#..............................................E",
+  "#.........................................-----E",
   "#...................------.....................#",
   "#..............................................#",
-  "#..............................................#",
+  "#.........................................-----#",
   "#.................t...............------.......#",
   "#...............-----..........................#",
-  "#..............................................#",
+  "#.........................................-----#",
   "#..............................................#",
   "#.......-----.............-----................#",
-  "#...........###................................#",
-  "E....M......###...............####.............E",
+  "#...........###...........................-----#",
+  "E....M......###..d......m.....####.............E",
   "E.........w.###......t......W.####....w.....l..E",
   "################################################",
   "################################################",
   "################################################",
   "################################################"],
   exits:[{tx:0,ty:14,tw:1,th:2,to:1,sx:44,sy:4},
-         {tx:47,ty:14,tw:1,th:2,to:5,sx:2,sy:16}] },
+         {tx:47,ty:14,tw:1,th:2,to:5,sx:2,sy:16},
+         {tx:47,ty:3,tw:1,th:2,to:11,sx:3,sy:5}] },
 
 { name:"Iyi Idemili — the water that remembers", tint:'#08131a',
   map:[
@@ -361,10 +468,10 @@ const ROOMS = [
   "#..................t......h............#",
   "#..............-----...................#",
   "#......................................#",
-  "#...........................l..........#",
+  "#...............s...........l..........#",
   "#......-----............-----..........#",
   "#......................................#",
-  "E.....M................................#",
+  "E.....M....................o...........#",
   "E..........t..........W..........w.....#",
   "##############cccc######################",
   "##############....######################",
@@ -389,8 +496,8 @@ const ROOMS = [
   "#..........................v...........................#",
   "#.......-----.............-----.............-----......#",
   "#......................................................#",
-  "E......M....##................##......................E#",
-  "E...S.......r#........W.......#v........r........X....E",
+  "E......M....##................##.......................E",
+  "E...S.....r..#........W..n....#.v...p...r........X.....E",
   "########################################################",
   "########################################################",
   "########################################################",
@@ -415,7 +522,7 @@ const ROOMS = [
   "#.........------......................------.......#",
   "#..................................................#",
   "#..................................................#",
-  "E.......M..........................................#",
+  "E.......M.....q.........y...............q..........#",
   "E...S.............................O................#",
   "####################################################",
   "####################################################",
@@ -439,14 +546,15 @@ const ROOMS = [
   "#...................--a--..............................#",
   "#.........-i---...............................----.....#",
   "#............................-----.....................#",
-  "E......................................................E",
-  "E...S......k...............i..v................k..F....E",
+  "E......M...............................................E",
+  "E...S......k...j...........i..v....U...........k..F....E",
   "##################.......###########.......#############",
   "##################.......###########.......#############",
   "##################.......###########.......#############",
   "##################^^^^^^^###########^^^^^^^#############"],
   exits:[{tx:0,ty:14,tw:1,th:2,to:6,sx:52,sy:16},
-         {tx:55,ty:14,tw:1,th:2,to:9,sx:2,sy:16}] },
+         {tx:55,ty:14,tw:1,th:2,to:9,sx:2,sy:16,needs:'uzu',
+          locked:"The forge is still working. Nothing leaves this room unfinished."}] },
 
 { name:"Igwe \u2014 the open sky", tint:'#16202e',
   map:[
@@ -456,7 +564,7 @@ const ROOMS = [
   "#..............................................#",
   "#..............................................#",
   "#..............................................#",
-  "#..............................................#",
+  "#....................I.........................#",
   "#...........a..................................#",
   "#...................a....-----.................#",
   "#...............-----..........................#",
@@ -471,7 +579,79 @@ const ROOMS = [
   "####################........####################",
   "####################^^^^^^^^####################"],
   exits:[{tx:0,ty:14,tw:1,th:2,to:8,sx:53,sy:16},
-         {tx:47,ty:14,tw:1,th:2,to:7,sx:2,sy:16}] }
+         {tx:47,ty:14,tw:1,th:2,to:7,sx:2,sy:16}] },
+
+{ name:"Ogilisi \u2014 the tree at the boundary", tint:'#101710',
+  map:[
+  "############################",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................#",
+  "#..........................E",
+  "#..........................E",
+  "##......####################",
+  "##......####################",
+  "############################",
+  "############################"],
+  exits:[{tx:27,ty:14,tw:1,th:2,to:0,sx:2,sy:16}] },
+
+{ name:"Ah\u1ecba Elu \u2014 the roofs above the market", tint:'#181016',
+  map:[
+  "############################################",
+  "#..........................................#",
+  "#..........................................#",
+  "#..........................................#",
+  "E..........................................#",
+  "E------....................................#",
+  "#..........................................#",
+  "#..........................................#",
+  "#...................------.................#",
+  "#..........................................#",
+  "#..........................................#",
+  "#.......------...................------....#",
+  "#..........................................#",
+  "#............####..............####........#",
+  "#..S.........####....w.........####...t....#",
+  "#............####..k...........####........#",
+  "############################################",
+  "############################################",
+  "############################################",
+  "############################################"],
+  exits:[{tx:0,ty:4,tw:1,th:2,to:4,sx:44,sy:4}] },
+
+{ name:"\u1ee4l\u1ecd Dibia \u2014 the compound that fell in", tint:'#14120d',
+  map:[
+  "########################################",
+  "#......................................#",
+  "#......................................#",
+  "#......................................#",
+  "#......................................#",
+  "#......................................#",
+  "#......................................#",
+  "#.........------.......................#",
+  "#......................................#",
+  "#......................................#",
+  "#........................------........#",
+  "#......................................#",
+  "#......................................#",
+  "#.....####.............................#",
+  "#.....####...i..............i..........E",
+  "#..x..####..........k..................E",
+  "########################################",
+  "########################################",
+  "########################################",
+  "########################################"],
+  exits:[{tx:39,ty:14,tw:1,th:2,to:2,sx:2,sy:35}] }
 ];
 
 // normalise + index
@@ -484,6 +664,12 @@ for (const r of ROOMS){
 }
 
 const SOLID = ch => ch==='#' || ch==='c';
+// A boss is unavoidable exactly when some exit is gated behind it. Derived rather
+// than listed, so ungating a boss automatically makes killing it a choice.
+function bossIsGated(who){
+  for(const r of ROOMS) for(const ex of r.exits) if(ex.needs===who) return true;
+  return false;
+}
 function tileAt(r,tx,ty){
   if (tx<0||ty<0||tx>=r.w||ty>=r.h) return '#';
   if (r.broken[tx+','+ty]) return '.';
@@ -497,10 +683,11 @@ const G = {
   knowsName:false, hasSlam:false, bossDead:false, maxHP:100, taught:{},
   slain:{}, seen:{}, deaths:0, ending:0, playT:0,
   checkpoint:{room:0, tx:9, ty:16},
-  visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0,
+  visited:{}, mirrors:{}, mirrorLock:{}, riddleIdx:0, met:{}, spared:1, cardT:0, cardWho:'',
+  graves:{}, ng:0, rush:null,
   spells:{amadioha:1, ala:0, idemili:0, ikenga:0},
   skills:{riposte:0, swift:0, charm:0, flasks:3, heartUps:0},
-  equipped:'amadioha', weapons:{mma:1}, weapon:'mma', storyDone:false, tutDone:false, cheat:false, sel:0, sub:0, note:'', noteT:0
+  equipped:'amadioha', weapons:{mma:1}, weapon:'mma', charms:{}, worn:[], boneUsed:0, storyDone:false, tutDone:false, cheat:false, sel:0, sub:0, note:'', noteT:0
 };
 
 // -- persistence -------------------------------------------------------------
@@ -516,17 +703,45 @@ function load(k){
   try{ if(typeof localStorage!=='undefined'){ const v=localStorage.getItem(k); if(v!=null) return v; } }catch(e){}
   return (k in memSave) ? memSave[k] : null;
 }
-function saveGame(){
+// `quiet` exists for the graves. 05-PROGRESSION §5.6 is explicit that the thread
+// has no marker and no completion sound, and a 'Saved.' note flashing nine times
+// as you walk the row is a marker whichever way you look at it.
+function saveGame(quiet){
   const d={ v:1, knowsName:G.knowsName, hasSlam:G.hasSlam, bossDead:G.bossDead,
     slain:G.slain, seen:G.seen, deaths:G.deaths, ending:G.ending, playT:G.playT,
     maxHP:G.maxHP, cowries:P.cowries, checkpoint:G.checkpoint, visited:G.visited,
-    mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped,
-    storyDone:G.storyDone, tutDone:G.tutDone, cheat:G.cheat, taken:ROOMS.map(r=>!!r.taken), taught:G.taught };
+    mirrors:G.mirrors, spells:G.spells, skills:G.skills, equipped:G.equipped, met:G.met, spared:G.spared,
+    charms:G.charms, worn:G.worn,
+    storyDone:G.storyDone, tutDone:G.tutDone, cheat:G.cheat, taken:ROOMS.map(r=>!!r.taken), taught:G.taught,
+    chalk:G.chalk, gaveChalk:G.gaveChalk, graves:G.graves, ng:G.ng, rush:G.rush };
   const where=store(slot(), JSON.stringify(d));
-  G.note = where==='disk' ? 'Saved.' : 'Saved for this session only.';
-  G.noteT=110;
+  if(!quiet){
+    G.note = where==='disk' ? 'Saved.' : 'Saved for this session only.';
+    G.noteT=110;
+  }
   return where;
 }
+const PREFKEY='odinala.prefs';
+function savePrefs(){
+  const b={}; for(const k in BINDS) if(BINDS[k]!==k) b[k]=BINDS[k];
+  const o={}; for(const r of OPT_ROWS) o[r.id]=OPT[r.id]?1:0;
+  store(PREFKEY, JSON.stringify({v:1, binds:b, opts:o}));
+}
+function loadPrefs(){
+  // Always start from the defaults and apply only what is valid. A junk or
+  // half-written table must never be able to leave the player unable to move.
+  resetBinds();
+  for(const r of OPT_ROWS) OPT[r.id]=0;
+  const raw=load(PREFKEY); if(!raw) return false;
+  let d; try{ d=JSON.parse(raw); }catch(e){ return false; }
+  if(d.binds) for(const k in d.binds){
+    const v=d.binds[k];
+    if(CODES.includes(k) && CODES.includes(v) && FIXED.indexOf(k)<0 && FIXED.indexOf(v)<0) BINDS[k]=v;
+  }
+  if(d.opts) for(const r of OPT_ROWS) OPT[r.id]=d.opts[r.id]?1:0;
+  return true;
+}
+loadPrefs();
 function hasSave(){ return !!load(SAVEKEY); }
 function hasRunSave(){ return !!load(SAVEKEY_RUN); }
 function loadGame(){
@@ -536,7 +751,11 @@ function loadGame(){
   G.slain=d.slain||{}; G.seen=d.seen||{}; G.deaths=d.deaths||0; G.ending=d.ending||0; G.playT=d.playT||0;
   if(G.bossDead) G.slain.ogbunabali=1;
   G.maxHP=d.maxHP||100; G.checkpoint=d.checkpoint||{room:0,tx:9,ty:16};
-  G.visited=d.visited||{}; G.mirrors=d.mirrors||{}; G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
+  G.visited=d.visited||{}; G.mirrors=d.mirrors||{}; G.met=d.met||{};
+  G.spared=(d.spared==null?1:d.spared);
+  G.charms=d.charms||{}; G.worn=(d.worn||[]).filter(k=>CHARMS[k]).slice(0,CHARM_SLOTS); G.storyDone=!!d.storyDone; G.tutDone=!!d.tutDone;
+  G.chalk=!!d.chalk; G.gaveChalk=!!d.gaveChalk; G.graves=d.graves||{};
+  G.ng=d.ng||0; G.rush=d.rush||null;
   G.spells=Object.assign(G.spells,d.spells||{}); G.skills=Object.assign(G.skills,d.skills||{});
   G.equipped=d.equipped||'amadioha'; G.taught=d.taught||{};
   if(d.taken) d.taken.forEach((t,i)=>{ if(ROOMS[i]) ROOMS[i].taken=t; });
@@ -561,6 +780,31 @@ const SPELLS = {
     lv:[{mult:1.6,dur:330},{mult:1.9,dur:420},{mult:2.4,dur:540}] }
 };
 const SPELL_ORDER=['amadioha','ala','idemili','ikenga'];
+
+// ── charms ───────────────────────────────────────────────────────────────────
+// Three slots and five charms, so wearing one is always a decision. Explicitly
+// **not** Hollow Knight's notch economy — 01-VISION lists that on the do-not-take
+// side. A slot is a slot; nothing costs a different number of them.
+//
+// Every charm changes how you fight, not how much damage you do. A charm that is
+// only a bigger number is a stat increase wearing a necklace.
+const CHARM_SLOTS = 3;
+const CHARMS = {
+  nzu:     { key:'nzu',     name:'NZU',      cost:150, sub:'chalk in water',
+             blurb:'A turned blade gives a little back. Four life on every parry.' },
+  okpukpu: { key:'okpukpu', name:'\u1eccKP\u1ee4KP\u1ee4', cost:220,
+             sub:'a bone that has already been buried once',
+             blurb:'The blow that would finish you leaves you at one instead. Once between charms.' },
+  ogene:   { key:'ogene',   name:'OGENE',    cost:120, sub:'the iron bell',
+             blurb:'Gold rings before it lands, and the edge of the world lights with it.' },
+  ejula:   { key:'ejula',   name:'EJ\u1ee4L\u00c0', cost:180, sub:'a snail, which is in no hurry',
+             blurb:'A late ward costs you half as much. You walk slower for it, always.' },
+  udu:     { key:'udu',     name:'\u1ee4D\u1ee4', cost:200, sub:'a clay pot holds what it is given',
+             blurb:'Half of what you were carrying stays with you when you fall.' }
+};
+const CHARM_ORDER=['nzu','okpukpu','ogene','ejula','udu'];
+function wearing(k){ return G.worn.indexOf(k)>=0; }
+function ownedCharms(){ return CHARM_ORDER.filter(k=>G.charms[k]); }
 function spellLv(k){ return G.spells[k]||0; }
 function spellStat(k){ const l=spellLv(k); return l>0 ? SPELLS[k].lv[l-1] : null; }
 function ownedSpells(){ return SPELL_ORDER.filter(k=>spellLv(k)>0); }
@@ -573,6 +817,10 @@ function cycleSpell(d){
 let R = ROOMS[G.room];
 const cam = {x:0,y:0};
 const parts = [], hits = [], shots = [];
+// burning ground the firebrand's heavy leaves behind. Capped, like every other
+// unbounded array in here (09-TECHNICAL §9.5 rule 3).
+const flames = [];
+const FLAME_CAP = 6;
 let enemies = [], shrines = [], pickups = [], boss = null, shade = null;
 
 function say(text, dur=200){ G.msg = text; G.msgT = dur; }
@@ -586,7 +834,7 @@ const P = {
   inv:0, hurtT:0, dead:false, callT:0, anim:0, slamming:false, hitOnce:false,
   charge:0, rollCd:0, execTarget:null, swingId:0, airJumps:0,
   tut:{moved:0,jumps:0,hits:0,chain:0,heavy:0,rolls:0,parries:0,execs:0,heals:0,casts:0},
-  veil:0, veilT:0, ikenga:0, castT:0, castKey:''
+  veil:0, veilT:0, ikenga:0, castT:0, castKey:'', heldBy:null, grabT:0
 };
 
 function resetPlayerAt(room,tx,ty){
@@ -596,16 +844,23 @@ function resetPlayerAt(room,tx,ty){
   spawnRoom();
   cam.x = clamp(P.x-W/2, 0, R.w*T-W);
   cam.y = clamp(P.y-H/2, 0, R.h*T-H);
+  if(G.room===3 && boss && !boss.dead){ showBossCard(boss.who); }
   if(G.room===3 && boss && !boss.dead && !G.taught.bossIn){ G.taught.bossIn=1; playCut(BOSS_IN); }
+  if(G.room===6 && boss && !boss.dead){ showBossCard(boss.who); }
   if(G.room===6 && boss && !boss.dead && !G.taught.ekIn){ G.taught.ekIn=1; playCut(EK_IN); }
+  if(G.room===7 && boss && !boss.dead){ showBossCard(boss.who); }
   if(G.room===7 && boss && !boss.dead && !G.taught.onIn){ G.taught.onIn=1; playCut(ON_IN); }
+  if(G.room===8 && boss && !boss.dead){ showBossCard(boss.who); }
+  if(G.room===8 && boss && !boss.dead && !G.taught.uzIn){ G.taught.uzIn=1; playCut(UZ_IN); }
+  if(G.room===9 && boss && !boss.dead){ showBossCard(boss.who); }
+  if(G.room===9 && boss && !boss.dead && !G.taught.ikIn){ G.taught.ikIn=1; playCut(IK_IN); }
 }
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const rects=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
 
 // ── room population ──────────────────────────────────────────────────────────
 function spawnRoom(){
-  enemies=[]; shrines=[]; pickups=[]; boss=null; shots.length=0; parts.length=0;
+  enemies=[]; shrines=[]; pickups=[]; boss=null; shots.length=0; parts.length=0; flames.length=0;
   for(let y=0;y<R.h;y++) for(let x=0;x<R.w;x++){
     const ch = R.map[y][x];
     if(ch==='w') enemies.push(mkWalker(x,y));
@@ -617,15 +872,30 @@ function spawnRoom(){
     if(ch==='a') enemies.push(mkEmber(x,y));
     if(ch==='k') enemies.push(mkCrawler(x,y));
     if(ch==='i') enemies.push(mkEffigy(x,y));
+    if(ch==='n') enemies.push(mkHealer(x,y));
+    if(ch==='q') enemies.push(mkMimic(x,y));
+    if(ch==='j') enemies.push(mkGrappler(x,y));
+    if(ch==='s') enemies.push(mkSwimmer(x,y));
+    if(ch==='b') enemies.push(mkCrawler2(x,y));
+    if(ch==='p') for(const u of mkPair(x,y)) enemies.push(u);
     if(ch==='F' && !G.weapons.oku) pickups.push({kind:'weapon', w:'oku', x:x*T+2, y:y*T+4, t:0});
     if(ch==='S') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'rest'});
     if(ch==='N') shrines.push({x:x*T,y:y*T+10,w:16,h:22,kind:'name'});
     if(ch==='h' && !R.taken) pickups.push({x:x*T+4,y:y*T+4,w:8,h:8,kind:'heart',t:0});
+    if(ch==='x' && !G.chalk) pickups.push({x:x*T+4,y:y*T+4,w:8,h:8,kind:'chalk',t:0});
     if(ch==='M') shrines.push({x:x*T,y:y*T+8,w:16,h:24,kind:'mirror',id:G.room});
+    if(NPC_BY_CH[ch]) shrines.push({x:x*T,y:y*T+8,w:16,h:24,kind:'npc',id:NPC_BY_CH[ch]});
     if(ch==='K' && !G.tutDone) enemies.push(mkChalk(x,y));
     if(ch==='B' && !G.slain.ogbunabali) boss = mkBoss(x,y,'ogbunabali');
     if(ch==='X' && !G.slain.ekwensu)     boss = mkBoss(x,y,'ekwensu');
-    if(ch==='O' && !G.slain.onwe)        boss = mkBoss(x,y,'onwe');
+    if(ch==='O' && !G.slain.onwe){
+      boss = mkBoss(x,y,'onwe');
+      // Ending C. It fights with your moveset, and you have not used one. There
+      // is nothing in you for it to copy, so it never puts its hands up.
+      if(G.spared){ boss.lowered=999999; boss.standdown=1; }
+    }
+    if(ch==='U' && !G.slain.uzu)         boss = mkBoss(x,y,'uzu');
+    if(ch==='I' && !G.slain.ikuku)       boss = mkBoss(x,y,'ikuku');
   }
   seedAmbient();
   G.visited[G.room]=1;
@@ -635,6 +905,7 @@ function spawnRoom(){
 
 // ── enemies ──────────────────────────────────────────────────────────────────
 function base(x,y,w,h,hp,poise){
+  poise=Math.round(poise*ngPoise());
   return {x:x*T+(T-w)/2, y:(y+1)*T-h, w,w2:w, h, vx:0, vy:0, hp, maxhp:hp,
           poise:poise||30, poiseMax:poise||30, broken:0, lastHit:-999, tell:'', hitId:-1,
           face:-1, st:'idle', t:0, flash:0, stagger:0, dead:false, onGround:false, hitOnce:false};
@@ -655,13 +926,56 @@ function mkEmber  (x,y){ const e=base(x,y,12,12,30,20); e.kind='ember';  e.cd=40
 function mkCrawler(x,y){ const e=base(x,y,16,11,34,26); e.kind='crawler'; e.cd=20; e.home=e.x; return e; }
 function mkEffigy (x,y){ const e=base(x,y,16,24,66,96); e.kind='effigy';  e.cd=70; return e; }
 function mkHorned(x,y){ const e=base(x,y,22,26,110,86); e.kind='horned'; e.cd=50; e.home=e.x; return e; }
+// Mends what you have spent your poise damage opening. Weak, and it will not come
+// to you — the whole idea is that you have to decide to go to it first.
+function mkHealer(x,y){ const e=base(x,y,12,20,30,24); e.kind='healer'; e.cd=40; e.home=e.x; e.mend=null; return e; }
+// An idol that is not an idol. It sits still, drawn exactly as the props around
+// it are drawn, until you are close enough — then it stands up, gold, and you
+// have a fight you did not know was there. The surprise is that it was scenery,
+// never that the attack is unreadable: Pillar 2 still holds.
+function mkMimic(x,y){ const e=base(x,y,16,24,44,34); e.kind='mimic'; e.cd=0; e.woke=0; e.st='sleep'; return e; }
+// It does not swing at you, it takes hold of you. The grab is gold — there is no
+// turning a pair of hands aside — and once it has you the fight stops being about
+// reading and starts being about getting out.
+function mkGrappler(x,y){ const e=base(x,y,18,24,64,48); e.kind='grappler'; e.cd=40; e.home=e.x; e.hold=null; return e; }
+// Iyi Idemili had no enemy of its own. This one ignores the floor entirely: it
+// swims a slow figure of eight and darts along its own line, so the water room
+// finally fights differently from the corridors.
+function mkSwimmer(x,y){ const e=base(x,y,20,12,38,28); e.kind='swimmer'; e.cd=50; e.home={x:e.x,y:e.y}; e.ph=(x*7)%628/100; return e; }
+// Changes the vertical read: it lives on the ceiling and drops when you are under
+// it. Everything else in the game fights you at floor level.
+function mkCrawler2(x,y){ const e=base(x,y,14,10,32,22); e.kind='ceiling'; e.cd=0; e.anchorY=e.y; e.home=e.x; return e; }
+// A pair that is one enemy wearing two bodies. One spawn char makes both: the
+// shield stands in front and eats anything light, the spear stabs past it from
+// behind and is the only one of the two that reaches you at the wall. Kill either
+// and the survivor changes — the shield without its spear starts swinging, the
+// spear without its shield backs off. Neither half is a fight on its own.
+function mkPair(x,y){
+  const sh=base(x,y,16,22,58,72); sh.kind='pairshield'; sh.cd=30; sh.home=sh.x;
+  const sp=base(x,y,12,20,34,26); sp.kind='pairspear';  sp.cd=50; sp.home=sp.x;
+  sh.mate=sp; sp.mate=sh; sp.x = sh.x - 14;
+  return [sh,sp];
+}
 
+// w, h, hp, poise. One table, so the roster has a single definition that the
+// gate check, the bestiary and the test suite can all read.
+const BOSS_STATS = {
+  ogbunabali:[26,40,520,190],
+  ekwensu:   [34,44,880,240],
+  onwe:      [20,34,760,210],
+  uzu:       [30,42,700,150],
+  ikuku:     [34,26,640,200]
+};
 function mkBoss(x,y,who){
   who=who||'ogbunabali';
-  const stat={ ogbunabali:[26,40,520,190], ekwensu:[34,44,880,240], onwe:[20,34,760,210] }[who];
+  const stat=BOSS_STATS[who];
   const b=base(x,y,stat[0],stat[1],stat[2],stat[3]);
   b.kind='boss'; b.who=who; b.bound=(who==='ogbunabali')?0:9999;
   b.cd=90; b.phase=1; b.lineT=0; b.line=''; b.said=0; b.mirrorT=0;
+  // Onwe's two refusal endings live on these. Undefined would make every
+  // `lowered<=0` test quietly false, so they are declared here rather than
+  // sprung into existence by the first branch that happens to write one.
+  b.lowered=0; b.standdown=0;
   return b;
 }
 
@@ -695,12 +1009,57 @@ function moveEnt(e){
   e.x = clamp(e.x, 0, R.w*T-e.w);
 }
 
+// -- the last line against a soft-lock ---------------------------------------
+// Overlapping rock is asked about, not passed through: one-way platforms are
+// deliberately excluded, because resting on one is normal and is not stuck.
+function insideSolid(x,y){
+  const pts=[[x+1,y+1],[x+P.w-1,y+1],[x+1,y+P.h-1],[x+P.w-1,y+P.h-1],
+             [x+P.w/2,y+P.h/2]];
+  for(const p of pts) if(SOLID(tileAt(R,Math.floor(p[0]/T),Math.floor(p[1]/T)))) return true;
+  return false;
+}
+// Nothing should ever put the player inside geometry. A bad exit landing did
+// once, and a player who cannot move in any direction has lost their run — it
+// reads as a freeze, not a bug, so they do not even know to reload. Push out
+// along the shortest axis, preferring up; if three tiles of searching finds
+// nothing, put them back at the last charm. Silent either way: this is a net,
+// not a feature, and the player should never learn it exists.
+function unstickPlayer(){
+  if(!insideSolid(P.x,P.y)) return false;
+  for(let d=2; d<=T*3; d+=2){
+    const tries=[[0,-d],[0,d],[-d,0],[d,0]];
+    for(const t of tries){
+      const nx=clamp(P.x+t[0],0,R.w*T-P.w), ny=P.y+t[1];
+      if(!insideSolid(nx,ny)){ P.x=nx; P.y=ny; P.vx=0; P.vy=0; return true; }
+    }
+  }
+  const c=G.checkpoint||{room:0,tx:9,ty:16};
+  resetPlayerAt(c.room,c.tx,c.ty);
+  return true;
+}
+
 // ── fx ───────────────────────────────────────────────────────────────────────
 function burst(x,y,n,col,spd=2.4,life=26){
   for(let i=0;i<n;i++) parts.push({x,y,vx:(rnd()-.5)*spd*2,vy:(rnd()-.7)*spd,
     life:life+rnd()*10,max:life+10,col,g:0.12,sz:1+ (rnd()<.3?1:0)});
 }
-function shake(a){ G.shake = Math.max(G.shake, a); }
+// 3.4. It never becomes day, and that is deliberate. 01-VISION files a full
+// day/night cycle under "fits in a bigger version" and it is right to: this game
+// is one night long, room 0 holds the last moon the player sees until room 9,
+// and room 9's horror is that there is a sky down there at all. A sunrise would
+// take both of those away and close the market that is defined by opening at
+// night. What turns instead is the night itself — the dead of it round to the
+// thin end and back — which is enough for "he who kills at night" to mean
+// something without contradicting a word of the fiction.
+const NIGHT_TURN = 60*60*40;                       // one turn ~ forty minutes played
+function nightPhase(){ return (G.playT % NIGHT_TURN) / NIGHT_TURN; }
+// 1 at the dead of night, 0 at its thinnest.
+function deepNight(){ return 0.5 + 0.5*Math.cos(nightPhase()*Math.PI*2); }
+
+function shake(a){ if(OPT.calm) return; G.shake = Math.max(G.shake, a); }
+// Slow-motion goes through here for the same reason shake does: reduced
+// motion has to catch every site, and there were four of them.
+function slowmo(f){ if(OPT.calm) return; G.slow = Math.max(G.slow, f); }
 function stop(f){ G.hitstop = Math.max(G.hitstop, f); }
 function dropCowries(e){
   const base = e.kind==='boss' ? 260 : e.kind==='warden' ? 26 : e.kind==='thrower' ? 12 : 15;
@@ -714,7 +1073,7 @@ function dropCowries(e){
 const HUDBTN=[];
 const decals=[];
 let amb=[];
-const AMBIENT=['dust','leaf','grit','ash','spark','bubble','ash','dust','spark','leaf'];
+const AMBIENT=['dust','leaf','grit','ash','spark','bubble','ash','dust','spark','leaf','dust','spark','grit'];
 function seedAmbient(){
   amb=[];
   const kind=AMBIENT[G.room]||'dust';
@@ -759,13 +1118,24 @@ function drawAmbient(front){
 // warm points of light: charms, glass, market lamps
 function roomLights(){
   const L=[];
+  for(const fl of flames) L.push({x:fl.x, y:fl.y-4, r:30, c:'232,134,42', i:.30*Math.min(1,fl.t/60)});
   for(const sh of shrines){
     if(sh.kind==='rest') L.push({x:sh.x+8,y:sh.y+11,r:34,c:'216,164,66',i:.30});
     else if(sh.kind==='mirror') L.push({x:sh.x+8,y:sh.y+11,r:G.mirrors[sh.id]?40:22,
       c:G.mirrors[sh.id]?'111,183,200':'120,120,140',i:G.mirrors[sh.id]?.34:.16});
+    else if(sh.kind==='npc') L.push({x:sh.x+8,y:sh.y+12,r:30,c:'232,226,208',i:.19});
     else L.push({x:sh.x+8,y:sh.y+9,r:26,c:'232,226,208',i:.22});
   }
-  if(G.room===4) for(let i=0;i<6;i++) L.push({x:80+i*120, y:96+((i*37)%40), r:44, c:'214,120,52', i:.26});
+  if(G.room===4) for(let i=0;i<6;i++){
+    // two of the six gutter at the thin end of the night and come back. The
+    // market never closes — both NPCs live here and nothing is missable.
+    const lit = (i>=4) ? .10+.16*deepNight() : .26;
+    L.push({x:80+i*120, y:96+((i*37)%40), r:44, c:'214,120,52', i:lit});
+  }
+  // The street is still burning away below the roof you are standing on, so
+  // its lamps sit at the floor line and throw upward. Every other warm light
+  // in the game hangs above the player; this is the one room lit from under.
+  if(G.room===11) for(let i=0;i<7;i++) L.push({x:40+i*112, y:16*T+7, r:52, c:'214,120,52', i:.30});
   if(G.room===3) L.push({x:cam.x+W/2, y:cam.y+H/2, r:120, c:'140,30,40', i:.10});
   if(G.room===5) for(let i=0;i<4;i++) L.push({x:110+i*150, y:70+((i*53)%60), r:52, c:'90,190,205', i:.16});
   return L;
@@ -874,7 +1244,30 @@ const S={
 // changes, udu and ekwe arguing underneath it, ichaka keeping the air moving, and
 // an opi flute calling over the top with something else answering.
 const MUS = { bus:null, delay:null, on:true, next:0, step:0, timer:null, track:null,
-              drone:null, droneG:null, vol:0.55, bar:0 };
+              drone:null, droneG:null, vol:0.55, bar:0,
+              bed:null, bedF:null, bedG:null };
+// A continuous filtered-noise bed under each arrangement — wind, water, crowd,
+// fire. Keyed by track rather than by room on purpose: it is not a sixth
+// room-indexed table to keep in sync, and rooms that share an arrangement should
+// share the air in them.
+const BEDS = {
+  night:  {f:420,  q:0.5, g:0.008},   // almost nothing. Night air.
+  forest: {f:760,  q:0.7, g:0.016},   // wind through leaves
+  shaft:  {f:240,  q:0.9, g:0.012},   // a hollow underground room
+  bone:   {f:1150, q:0.6, g:0.014},   // dry wind over open ground
+  market: {f:640,  q:1.6, g:0.013},   // a crowd heard through a wall
+  water:  {f:1500, q:1.1, g:0.015},   // moving water
+  fire:   {f:300,  q:0.5, g:0.020},   // the roar, felt more than heard
+  sky:    {f:1900, q:0.5, g:0.011},   // thin high air
+  boss:   {f:180,  q:0.8, g:0.010},
+  ekwensu:{f:150,  q:0.9, g:0.012},   // lower than anything else: it is enormous
+  uzu:    {f:260,  q:0.6, g:0.018},   // the forge, still going
+  ikuku:  {f:2100, q:0.4, g:0.013},   // thinner and higher than the sky's own
+  elu:    {f:900,  q:1.2, g:0.009},   // the same crowd, one floor further away
+  ulo:    {f:300,  q:0.8, g:0.010},   // a closed room with fallen earth in it
+  ogilisi:{f:560,  q:0.6, g:0.006},   // thinner and further off than room 0's
+  onwe:   {f:420,  q:0.5, g:0.008}    // your own room's air, because that is the joke
+};
 
 const SCALES = {
   night:  [110.00,130.81,146.83,164.81,196.00],       // A minor pentatonic
@@ -884,6 +1277,7 @@ const SCALES = {
   water:  [220.00,261.63,293.66,329.63,392.00],       // A minor, up an octave
   fire:   [116.54,138.59,155.56,185.00,207.65],       // C# minor, hot and close
   sky:    [196.00,220.00,246.94,293.66,329.63],       // G, open and high
+  bone:   [130.81,146.83,174.61,196.00,233.08],       // C minor pentatonic: dry, walking
   boss:   [130.81,138.59,174.61,196.00,207.65]        // C with a flat second: wrong on purpose
 };
 
@@ -926,6 +1320,42 @@ const TRACKS = {
            [0,0,0,0,0,0,0,0,1,0,0,0],
            [0,0,0,0,0,0,0,0,0,0,0,0] ] },
 
+  // Okọchị Ọkpụkpụ. Endurance, not menace: a tread that does not stop, a bare
+  // fifth of an answer every other bar, and no pad, because nothing out here is
+  // holding you up.
+  bone:   { spb:.180, sc:'bone',   mix:.78, pad:0,
+    bell:BELL7,
+    udu: [1,0,0,0,2,0,1,0,0,0,2,0],
+    ekwe:[0,0,1,0,0,0,0,0,1,0,0,0],
+    shk: [0,0,0,0,0,0,0,0,0,0,0,0],
+    gtr: null,
+    opi: [ [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,2,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0],
+           [3,0,0,0,0,0,0,1,0,0,0,0] ] },
+
+  ulo:    { spb:.225, sc:'shaft',  mix:.68, pad:1,
+    bell:BELL_S,
+    udu: [1,0,0,0,0,0,1,0,0,0,0,0],
+    ekwe:[0,0,0,0,2,0,0,0,0,0,0,0],
+    shk: [0,0,0,0,0,0,0,0,0,0,0,0],
+    gtr: [2,0,1,0,0,0,0,0,0,0,0,0],
+    opi: [ [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,1,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0] ] },
+
+  ogilisi:{ spb:.215, sc:'night',  mix:.62, pad:1,
+    bell:BELL_S,
+    udu: [1,0,0,0,0,0,0,0,0,0,0,0],
+    ekwe:[0,0,0,0,0,0,0,0,0,0,0,0],
+    shk: [0,0,0,0,0,0,0,0,0,0,0,0],
+    gtr: null,
+    opi: [ [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,1,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0] ] },
+
   market: { spb:.152, sc:'market', mix:1, pad:0,
     bell:BELL7,
     udu: [1,0,2,0,0,1,0,2,1,0,0,1],
@@ -936,6 +1366,17 @@ const TRACKS = {
            [3,0,4,0,0,0,5,0,4,0,3,0],
            [0,0,2,0,3,0,0,4,0,0,0,0],
            [5,0,4,0,3,0,2,0,1,0,0,0] ] },
+
+  elu:    { spb:.172, sc:'market', mix:.72, pad:1,
+    bell:BELL_S,
+    udu: [1,0,0,0,0,1,0,0,1,0,0,0],
+    ekwe:[0,0,0,2,0,0,0,0,0,2,0,0],
+    shk: [0,0,0,0,0,0,0,0,0,0,0,0],
+    gtr: [1,0,3,0,0,0,3,0,1,0,0,0],
+    opi: [ [0,0,0,0,4,0,0,0,0,2,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0],
+           [0,0,2,0,0,0,3,0,0,0,0,0],
+           [0,0,0,0,0,0,0,0,0,0,0,0] ] },
 
   water:  { spb:.205, sc:'water',  mix:.8, pad:1,
     bell:BELL_S,
@@ -979,7 +1420,93 @@ const TRACKS = {
            [1,0,1,0,1,0,1,0,1,0,1,0],
            [0,0,0,0,0,0,5,0,4,0,2,0] ] }
 };
-const ROOM_TRACK = ['night','forest','shaft','boss','market','water','shaft','night','fire','sky'];
+const ROOM_TRACK = ['night','forest','shaft','boss','market','water','bone','night','fire','sky','ogilisi','elu','ulo'];
+// A boss with a theme of its own gets one; the rest take the house boss track.
+// Ekwensu is the largest thing in the game and has no trick: the arrangement is
+// the same honesty — everything on the beat, nothing hidden, the densest bell in
+// the set and a drum that does not let up.
+TRACKS.ekwensu = { spb:.138, sc:'shaft', mix:1, pad:1,
+  bell:BELL_B,
+  udu: [1,0,2,1,0,2,1,0,2,1,0,2],
+  ekwe:[2,1,0,2,1,0,2,1,0,2,1,0],
+  shk: [0,0,1,0,0,1,0,0,1,0,0,1],
+  gtr: null,
+  opi: [ [4,0,0,0,3,0,0,0,2,0,0,0],
+         [0,0,3,0,0,0,4,0,0,0,3,0],
+         [2,0,0,1,0,0,2,0,0,1,0,0],
+         [0,0,0,0,0,4,0,0,0,0,3,0] ] };
+// ...and Onwe is you, backwards.
+TRACKS.onwe = retrograde(TRACKS.night, { spb:.186, mix:.92 });
+// Ụzụ Ọkụ keeps working while you fight him, and a smith's hammer is a
+// timeline in its own right. This is the only track in the game with two fixed
+// lines running at once — the bell that never changes (§7.2) and an anvil
+// stroke that never changes either — and the melody has to argue with both.
+TRACKS.uzu = { spb:.140, sc:'fire', mix:1, pad:2,
+  bell:BELL_B,
+  udu: [3,0,0,3,0,0,3,0,0,3,0,0],
+  ekwe:[0,1,0,0,1,0,0,1,0,0,1,0],
+  shk: [0,0,1,0,0,1,0,0,1,0,0,1],
+  gtr: null,
+  opi: [ [0,0,0,4,0,0,0,3,0,0,0,0],
+         [2,0,0,0,0,3,0,0,0,4,0,0],
+         [0,0,3,0,0,0,0,0,2,0,0,0],
+         [0,0,0,0,4,0,3,0,0,0,2,0] ] };
+
+// Ikuku never lands, so nothing in its theme marks the floor. No udu and no
+// ekwe — the two drums that tell you where the ground is — leaving bell, rattle
+// and breath. The spine holds; the ground is what is missing.
+TRACKS.ikuku = { spb:.158, sc:'sky', mix:.9, pad:1,
+  bell:BELL7,
+  udu: [0,0,0,0,0,0,0,0,0,0,0,0],
+  ekwe:[0,0,0,0,0,0,0,0,0,0,0,0],
+  shk: [2,1,1,2,1,1,2,1,1,2,1,1],
+  gtr: null,
+  opi: [ [0,0,4,0,0,0,3,0,0,0,0,0],
+         [0,0,0,0,0,2,0,0,4,0,0,0],
+         [3,0,0,0,4,0,0,0,0,0,2,0],
+         [0,0,0,0,0,0,0,3,0,0,0,0] ] };
+
+const BOSS_TRACK = { ekwensu:'ekwensu', onwe:'onwe', uzu:'uzu', ikuku:'ikuku' };
+// The card on encounter. Names are read out of BEASTS so a boss cannot have a
+// title card and no bestiary entry, or the two drift apart.
+const GRAVES=[10,12,14,16,18,20,22,24];
+// 05-PROGRESSION §5.6, thread three. Standing at a mound adds a line to a codex
+// entry and does nothing else — no marker, no log, no sound. The player finds
+// out there is more by opening the codex and seeing where it stops.
+function graveTick(){
+  if(G.room!==10 || !P.onGround) return;
+  const cx=P.x+P.w/2;
+  for(const c of GRAVES){
+    if(Math.abs(cx-(c*T+8))<9 && !G.graves[c]){ G.graves[c]=1; saveGame(true); return; }
+  }
+  // The ninth is the hole, and the hole is yours. Keyed 'own' rather than by
+  // column so that moving the pit again cannot silently unvisit it in old saves.
+  if(cx>2*T && cx<8*T && P.y+P.h > 17*T && !G.graves.own){ G.graves.own=1; saveGame(true); }
+}
+function gravesStood(){ let n=0; for(const c of GRAVES) if(G.graves[c]) n++; return n; }
+
+function bossCard(who){
+  const e = BEASTS.filter(b=>b.k==='boss_'+who)[0];
+  return e ? {t:e.t, sub:e.sub} : {t:String(who).toUpperCase(), sub:''};
+}
+function showBossCard(who){
+  G.cardWho = who; G.cardT = 190;
+  // the stinger 07-AUDIO §7.6 asks for: one struck bell, low, once
+  tone(88,.9,'sine',.055,44); tone(262,.5,'triangle',.03,131); nz(.22,.05,180);
+}
+
+// Onwe fights with your moveset, so its theme is your own opening room's
+// arrangement played backwards. Everything reverses except the bell: 07-AUDIO
+// §7.2 is explicit that the timeline never changes while everything else argues
+// around it, and reversing the spine as well would just sound like a different
+// track rather than like your room running the wrong way.
+function retrograde(tr, over){
+  const rev = a => a ? a.slice().reverse() : a;
+  return Object.assign({}, tr, {
+    udu: rev(tr.udu), ekwe: rev(tr.ekwe), shk: rev(tr.shk), gtr: rev(tr.gtr),
+    opi: tr.opi.map(rev).reverse()
+  }, over || {});
+}
 
 function musBus(){
   if(!AC || MUS.bus) return;
@@ -1100,6 +1627,27 @@ function mPad(t,f,dur,kind){
     lp.connect(g); g.connect(MUS.bus);
   }catch(e){}
 }
+// One looping noise source for the whole game; only the filter and the gain ever
+// move, so changing rooms costs two setTargetAtTime calls rather than a new node
+// graph. It hangs off MUS.bus, so muting the music mutes the bed with it.
+function musicSetBed(spec){
+  if(!AC) return; musBus();
+  try{
+    if(!MUS.bed){
+      const n=Math.floor(AC.sampleRate*2), b=AC.createBuffer(1,n,AC.sampleRate), d=b.getChannelData(0);
+      for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*0.5;
+      MUS.bed=AC.createBufferSource(); MUS.bed.buffer=b; MUS.bed.loop=true;
+      MUS.bedF=AC.createBiquadFilter(); MUS.bedF.type='bandpass';
+      MUS.bedG=AC.createGain(); MUS.bedG.gain.value=0;
+      MUS.bed.connect(MUS.bedF); MUS.bedF.connect(MUS.bedG); MUS.bedG.connect(MUS.bus);
+      MUS.bed.start();
+    }
+    const t=AC.currentTime;
+    MUS.bedF.frequency.setTargetAtTime(spec?spec.f:600, t, .9);
+    MUS.bedF.Q.setTargetAtTime(spec?(spec.q||0.7):0.7, t, .9);
+    MUS.bedG.gain.setTargetAtTime(spec?spec.g:0, t, 1.4);
+  }catch(e){}
+}
 function musicSetDrone(f){
   if(!AC) return; musBus();
   try{
@@ -1133,6 +1681,7 @@ function musicStep(t,i){
     mOpi(t, sc[1]*2, tr.spb*3, .03*m);
 }
 function musicSched(){
+  musicDuck();   // before the guard: a muted bus still has to settle to zero
   if(!AC || AC.state!=='running' || !MUS.track || !MUS.on) return;
   const now=AC.currentTime;
   if(MUS.next < now) MUS.next = now + .06;
@@ -1144,14 +1693,25 @@ function musicPlay(name){
   const tr=TRACKS[name]; if(!tr || MUS.track===tr) return;
   MUS.track=tr; MUS.step=0; MUS.next=AC.currentTime+.08;
   musicSetDrone(SCALES[tr.sc][0]/2);
+  musicSetBed(BEDS[name]);
   if(!MUS.timer && typeof setInterval!=='undefined') MUS.timer=setInterval(musicSched,60);
 }
 function musicForRoom(){
-  if(boss && !boss.dead) musicPlay('boss');
+  if(boss && !boss.dead) musicPlay(BOSS_TRACK[boss.who] || 'boss');
   else musicPlay(ROOM_TRACK[G.room]||'night');
+}
+const DUCK = 0.42;                 // how far down, not how far out
+let duckedTo = -1;
+function musicDuck(){
+  if(!AC || !MUS.bus) return;
+  const want = MUS.on ? MUS.vol * (G.mode==='cut' ? DUCK : 1) : 0;
+  if(Math.abs(want-duckedTo) < 0.0005) return;   // one write per change, not per frame
+  duckedTo = want;
+  try{ MUS.bus.gain.setTargetAtTime(want, AC.currentTime, .18); }catch(e){}
 }
 function musicToggle(){
   MUS.on=!MUS.on;
+  duckedTo=-1;   // let musicDuck() re-decide rather than fighting it
   if(AC && MUS.bus) try{ MUS.bus.gain.setTargetAtTime(MUS.on?MUS.vol:0, AC.currentTime, .2); }catch(e){}
   if(AC && MUS.droneG) try{ MUS.droneG.gain.setTargetAtTime(MUS.on?.042:0, AC.currentTime, .2); }catch(e){}
   say(MUS.on?'Sound on.':'Sound off.',70);
@@ -1164,7 +1724,13 @@ const VOICE = {
   boss:  {f:74,  type:'sawtooth', vol:.075, jit:9,  dur:.105, growl:1},
   you:   {f:186, type:'sine',     vol:.042, jit:22, dur:.055, growl:0},
   mirror:{f:520, type:'sine',     vol:.038, jit:60, dur:.09,  growl:0},
-  ala:   {f:96,  type:'square',   vol:.05,  jit:10, dur:.09,  growl:0}
+  ala:   {f:96,  type:'square',   vol:.05,  jit:10, dur:.09,  growl:0},
+  // one profile per NPC (07-AUDIO §7.3) — the people are told apart by pitch and
+  // pace before a word of the text has been read
+  dibia: {f:104, type:'triangle', vol:.052, jit:11, dur:.085, growl:0},
+  woman: {f:168, type:'sine',     vol:.045, jit:18, dur:.07,  growl:0},
+  child: {f:236, type:'sine',     vol:.040, jit:26, dur:.05,  growl:0},
+  mother:{f:150, type:'triangle', vol:.038, jit:8,  dur:.10,  growl:0}
 };
 function voiceBlip(kind,seedv){
   if(!AC) return;
@@ -1198,7 +1764,7 @@ const WEAPONS = {
     chain:[ {wind:5, act:5, rec:12, dmg:9,  poise:10, reach:22, kb:1.6},
             {wind:5, act:5, rec:13, dmg:10, poise:12, reach:22, kb:1.8},
             {wind:9, act:7, rec:20, dmg:18, poise:24, reach:28, kb:3.4} ],
-    heavy:{wind:14, act:8, rec:26, dmg:34, poise:56, reach:34, kb:5.2},
+    heavy:{wind:14, act:8, rec:26, dmg:34, poise:56, reach:34, kb:5.2, kind:'lunge'},
     air:  {wind:4,  act:6, rec:10, dmg:9,  poise:10, reach:24, kb:1.4},
     ofo:1, tint:'#cfc6ad' },
 
@@ -1208,7 +1774,7 @@ const WEAPONS = {
             {wind:3, act:4, rec:8,  dmg:6,  poise:7,  reach:17, kb:1.0},
             {wind:3, act:4, rec:9,  dmg:7,  poise:8,  reach:18, kb:1.2},
             {wind:6, act:6, rec:16, dmg:13, poise:18, reach:22, kb:2.6} ],
-    heavy:{wind:10, act:7, rec:20, dmg:22, poise:34, reach:26, kb:3.4},
+    heavy:{wind:10, act:7, rec:20, dmg:22, poise:34, reach:26, kb:3.4, kind:'flurry', hits:4, gap:5},
     air:  {wind:3,  act:5, rec:8,  dmg:6,  poise:7,  reach:19, kb:1.0},
     ofo:2.1, tint:'#bfe2e8' },
 
@@ -1217,7 +1783,7 @@ const WEAPONS = {
     chain:[ {wind:8,  act:6, rec:16, dmg:13, poise:18, reach:34, kb:2.6},
             {wind:8,  act:6, rec:18, dmg:15, poise:22, reach:34, kb:2.8},
             {wind:13, act:8, rec:26, dmg:26, poise:40, reach:42, kb:5.0} ],
-    heavy:{wind:18, act:9, rec:30, dmg:44, poise:78, reach:48, kb:6.4},
+    heavy:{wind:18, act:9, rec:30, dmg:44, poise:78, reach:48, kb:6.4, kind:'sweep'},
     air:  {wind:6,  act:7, rec:13, dmg:13, poise:16, reach:36, kb:2.0},
     ofo:0.8, tint:'#c9a86a' },
 
@@ -1226,7 +1792,7 @@ const WEAPONS = {
     chain:[ {wind:7,  act:6, rec:16, dmg:11, poise:20, reach:26, kb:2.4},
             {wind:7,  act:6, rec:18, dmg:13, poise:24, reach:26, kb:2.6},
             {wind:12, act:8, rec:24, dmg:24, poise:44, reach:32, kb:4.6} ],
-    heavy:{wind:17, act:9, rec:28, dmg:40, poise:72, reach:38, kb:6.0},
+    heavy:{wind:17, act:9, rec:28, dmg:40, poise:72, reach:38, kb:6.0, kind:'slam'},
     air:  {wind:5,  act:7, rec:12, dmg:11, poise:18, reach:28, kb:1.8},
     ofo:1.1, burn:110, tint:'#e8862a' }
 };
@@ -1273,6 +1839,7 @@ function startExec(e){
 }
 
 function playerUpdate(){
+  unstickPlayer();          // before anything reads P.x/P.y this frame
   P.anim++;
   if(P.inv>0) P.inv--;
   if(P.hurtT>0) P.hurtT--;
@@ -1282,7 +1849,7 @@ function playerUpdate(){
   if(P.veilT>0){ P.veilT--; if(P.veilT===0) P.veil=0; }
   if(P.comboWin>0) P.comboWin--; else P.combo=0;
 
-  const busy = ['atk','heavy','aircut','thrust','roll','ward','heal','call','hurt','pray','exec'].indexOf(P.st)>=0;
+  const busy = ['atk','heavy','aircut','thrust','roll','ward','heal','call','hurt','pray','exec','held'].indexOf(P.st)>=0;
   const a0 = CHAIN()[Math.min(P.combo,CHAIN().length-1)];
   const inRec = (P.st==='atk') && (P.t > a0.wind + a0.act);
 
@@ -1297,7 +1864,8 @@ function playerUpdate(){
   }
 
   // ---- run ----
-  const acc = P.onGround?0.55:0.34, max = P.charge>0 ? 1.05 : 1.75;
+  const acc = P.onGround?0.55:0.34;
+  const max = (P.charge>0 ? 1.05 : 1.75) * (wearing('ejula') ? 0.8 : 1);
   if(!busy){
     if(LEFT()){ P.vx-=acc; P.face=-1; }
     if(RIGHT()){ P.vx+=acc; P.face=1; }
@@ -1370,11 +1938,52 @@ function playerUpdate(){
       break; }
 
     case 'heavy': {
+      // Four weapons, four shapes. The numbers were always per-weapon; this is the
+      // half that was missing, and it is what makes the choice a choice rather
+      // than a stat line (04-COMBAT §4.4).
       P.t++;
-      if(P.t<WA().heavy.wind){ P.vx = P.face*0.35; }
-      if(P.t===WA().heavy.wind){ P.vx = P.face*2.7; S.swing(); shake(2); }
-      if(P.t>WA().heavy.wind && P.t<=WA().heavy.wind+WA().heavy.act) swing(WA().heavy,'heavy');
-      if(P.t>=WA().heavy.wind+WA().heavy.act+WA().heavy.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      const H = WA().heavy, kindH = H.kind || 'lunge';
+      if(P.t < H.wind){ P.vx = P.face*(kindH==='sweep' ? 0.2 : 0.35); }
+      if(P.t === H.wind){
+        S.swing(); shake(kindH==='slam' ? 3 : 2);
+        P.vx = P.face * (kindH==='flurry' ? 1.6 : kindH==='sweep' ? 1.1 : 2.7);
+        if(kindH==='slam') P.vy = 2.4;                  // it comes down
+      }
+      const act0 = H.wind, act1 = H.wind + H.act;
+
+      if(kindH==='flurry'){
+        // nkwụ: several quick cuts inside one commitment. Each one is its own
+        // swing, so each lands once — bumping swingId is what makes that true.
+        const n = H.hits||4, gap = H.gap||5;
+        for(let k=0;k<n;k++){
+          const at = act0 + k*gap;
+          if(P.t === at){ P.swingId++; P.hitOnce=false; if(k) S.swing(); }
+          if(P.t >= at && P.t < at+2) swing({...H, dmg:H.dmg/n*1.35, poise:H.poise/n*1.35}, 'heavy');
+        }
+        if(P.t >= act0 + n*gap + H.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      }
+      else if(kindH==='sweep'){
+        // ogu: it comes all the way round. Long, slow, and it does not care which
+        // side you are being surrounded from.
+        if(P.t>act0 && P.t<=act1) swing(H,'heavy',{both:true});
+        if(P.t===act1){ shake(4); }
+        if(P.t >= act1 + H.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      }
+      else if(kindH==='slam'){
+        // firebrand: down, not across, and it leaves the floor burning.
+        if(P.t>act0 && P.t<=act1) swing(H,'heavy');
+        if(P.t===act1){
+          shake(7); stop(8); nz(.26,.07,220);
+          burst(P.x+5,P.y+P.h,22,'#ffcf7a',3.0,32);
+          if(flames.length < FLAME_CAP)
+            flames.push({x:P.x+P.w/2 + P.face*14, y:P.y+P.h-2, w:34, h:6, t:260, tick:0});
+        }
+        if(P.t >= act1 + H.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      }
+      else {
+        if(P.t>act0 && P.t<=act1) swing(H,'heavy');
+        if(P.t >= act1 + H.rec){ P.st='idle'; P.t=0; P.combo=0; }
+      }
       break; }
 
     case 'aircut': {
@@ -1414,6 +2023,28 @@ function playerUpdate(){
 
     case 'roll': P.t++; P.vx = P.face*3.1*(1-P.t/26); if(P.t>=22){P.st='idle';P.t=0;} break;
 
+    case 'held': {
+      P.t++;
+      const g = P.heldBy;
+      // Mashing shortens it, but it runs out on its own as well. A grab you
+      // cannot escape is a soft-lock wearing a monster costume, and priority 2
+      // outranks any amount of tension.
+      if(tap('KeyZ')||tap('KeyX')||tap('KeyC')||tap('Space')) P.grabT-=11;
+      P.grabT--;
+      P.vx=0; P.vy=0;
+      if(g && !g.dead){ P.x = g.x + (g.face>0 ? g.w-2 : -P.w+2); P.y = g.y+4; P.face = -g.face; }
+      if(P.t%24===0){
+        P.hp-=5; G.flash=3; shake(2); S.hurt();
+        burst(P.x+5,P.y+8,6,C.blood,1.8,20);
+      }
+      if(!g || g.dead || g.stagger>0 || g.broken>0 || P.grabT<=0 || P.hp<=0){
+        if(g){ g.hold=null; g.st='rec'; g.t=0; g.cd=110; }
+        P.heldBy=null; P.st='idle'; P.t=0; P.inv=46;
+        P.vx=P.face*2.4; P.vy=-2.6;
+        S.roll&&S.roll(); burst(P.x+5,P.y+8,12,C.chalk,2.4,24);
+      }
+      break; }
+
     case 'ward': P.t++;
       if(P.t>=14 && !keys.KeyC){ P.st='idle'; P.t=0; }
       if(P.t>=110){ P.st='idle'; P.t=0; }
@@ -1431,7 +2062,7 @@ function playerUpdate(){
       if(P.t<16 && P.t%3===0) burst(P.x+5,P.y+16,3,C.gold,1.4,22);
 
       if(k==='amadioha' && P.t===18){
-        G.flash=16; shake(9); stop(12); G.slow=10;
+        G.flash=16; shake(9); stop(12); slowmo(10);
         for(const e of enemies) if(!e.dead && Math.abs(e.y-P.y)<130) damage(e,st.dmg,(e.x>P.x?1:-1),2.2,false,st.poise);
         if(boss && !boss.dead){ const bd=boss.bound>0; damage(boss, bd?st.dmg*1.4:6, 1, 1, !bd, bd?st.poise*1.2:0); }
         for(let i=0;i<9;i++) burst(P.x+5+(i-4)*32, P.y-10, 10, C.gold, 3.2, 42);
@@ -1475,7 +2106,7 @@ function playerUpdate(){
     case 'exec': {
       P.t++;
       const e = P.execTarget;
-      if(P.t===1){ stop(16); G.slow=26; shake(5); S.exec(); }
+      if(P.t===1){ stop(16); slowmo(26); shake(5); S.exec(); }
       if(P.t===15 && e && !e.dead){
         if(e.kind==='boss'){
           damage(e, 130, P.face, 1, false, 0); e.broken=0; e.poise=e.poiseMax; e.stagger=46;
@@ -1487,7 +2118,7 @@ function playerUpdate(){
         P.hp  = Math.min(G.maxHP, P.hp+8);
         P.tut.execs++;
         if(e.trainer && !e.live){ e.hp=e.maxhp; e.poise=e.poiseMax; e.broken=0; e.stagger=40; }
-        G.flash=9; shake(8); stop(14); G.slow=14;
+        G.flash=9; shake(8); stop(14); slowmo(14);
         burst(e.x+e.w/2, e.y+e.h/2, 36, C.uhie, 3.6, 46);
         decal(e.x+e.w/2, e.y+e.h); decal(e.x+e.w/2, e.y+e.h-6);
       }
@@ -1547,12 +2178,30 @@ function playerUpdate(){
     if(rects(P,pk)){
       if(pk.kind==='heart'){ G.maxHP+=30; P.hp=G.maxHP; R.taken=true; S.heal();
         say("A shard of your own heart, returned.",180); burst(pk.x,pk.y,26,C.blood,2.4,40); shake(4); saveGame(); }
+      // 05-PROGRESSION §5.6: a standing request, not a quest. No log, no
+      // marker, no completion sound beyond the one every found thing gets.
+      // The player either takes it to him or never does.
+      if(pk.kind==='chalk'){ G.chalk=1; S.name();
+        say("A stick of nzu in a cloth that used to be white. Somebody came back for this and did not find it.",240);
+        burst(pk.x,pk.y,22,C.chalk,2,44); saveGame(); }
       pickups.splice(i,1);
     }
   }
   // not on the frame you fell: die() drops the shade on your own hitbox from
   // inside this same function, a few lines up, and without this guard you take
   // it straight back and death costs nothing
+  // The two endings you reach by not fighting. Both are the same gesture: it has
+  // its hands down and you walk into it rather than swinging.
+  if(boss && !boss.dead && boss.who==='onwe' && boss.lowered>0 && !G.outroT && rects(P,boss)){
+    G.ending = boss.standdown ? 3 : 2;
+    G.outroT = 120; G.outroWho='onwe';
+    boss.dead = true; G.slain.onwe = (G.slain.onwe||0)+1;
+    P.st='idle'; P.t=0; P.inv=200; P.vx=0;
+    G.flash=14; shake(4); S.name&&S.name();
+    burst(boss.x+boss.w/2, boss.y+boss.h/2, 46, C.chalk, 2.6, 60);
+    saveGame();
+    return;
+  }
   if(shade && !P.dead && shade.room===G.room && rects(P,shade)){
     P.cowries += shade.amt; say("You take back what you dropped. +"+shade.amt,110);
     burst(shade.x,shade.y,20,C.gold,2,34); shade=null;
@@ -1562,6 +2211,7 @@ function playerUpdate(){
       if(sh.kind==='rest'){
         if(tap('ArrowDown')||tap('KeyS')){
           P.hp=G.maxHP; P.flasks=G.skills.flasks; P.ofo=0;
+          G.boneUsed=0;
           G.checkpoint={room:G.room, tx:Math.floor(sh.x/T), ty:Math.floor((sh.y+sh.h)/T)};
           spawnRoom(); say("You press your palm to the charm. It remembers you.",150);
           S.heal(); burst(sh.x+8,sh.y+8,22,C.gold,1.8,40); saveGame();
@@ -1574,6 +2224,22 @@ function playerUpdate(){
           else openRiddle(sh);
           return;
         } else if(!G.msg) say(G.mirrors[sh.id]?"\u2193 step through":"\u2193 the glass wants a riddle",40);
+      } else if(sh.kind==='npc'){
+        const n=NPCS[sh.id];
+        const pr=n ? (typeof n.prompt==='function' ? n.prompt() : n.prompt) : 'E  speak';
+        if(n && pr && tap('KeyE')){
+          // beats() is read before the counter moves, so the first conversation
+          // is the first one, and an NPC who has said everything can return
+          // nothing and simply not respond
+          const b=n.beats();
+          // after() runs between reading the conversation and saving, so an
+          // NPC can consume what you brought without beats() having to mutate
+          // state as a side effect of being asked what it would say.
+          if(n.after) n.after();
+          G.met[sh.id]=(G.met[sh.id]||0)+1;
+          saveGame();
+          if(b && b.length){ playCut(b); return; }
+        } else if(pr && !G.msg) say(pr,40);
       } else if(sh.kind==='name' && !G.knowsName){
         if(tap('ArrowDown')||tap('KeyS')){
           G.knowsName=true; G.flash=10; shake(3); S.name();
@@ -1588,8 +2254,13 @@ function playerUpdate(){
 }
 
 // -- resolving a swing -------------------------------------------------------
-function swing(a,kind){
-  const box={x: P.face>0 ? P.x+P.w-2 : P.x-a.reach+2, y:P.y-4, w:a.reach, h:P.h+6};
+function swing(a,kind,opts){
+  // `both` builds the box symmetrically around the player instead of in front of
+  // them — the staff's heavy comes round in a circle and catches what is behind.
+  const both = !!(opts && opts.both);
+  const box = both
+    ? {x: P.x+P.w/2-a.reach, y:P.y-6, w:a.reach*2, h:P.h+10}
+    : {x: P.face>0 ? P.x+P.w-2 : P.x-a.reach+2, y:P.y-4, w:a.reach, h:P.h+6};
   const boon = P.ikenga>0 ? (spellStat('ikenga')||{mult:1}).mult : 1;
   let connected=false, anyClean=false, anyMuff=false;
 
@@ -1599,7 +2270,7 @@ function swing(a,kind){
     e.hitId = P.swingId;
     let mult=1, blocked=false;
     const infront = ((P.x+P.w/2) > (e.x+e.w/2)) === (e.face>0);
-    if(e.kind==='warden' && e.broken<=0 && e.stagger<=0 && infront && kind!=='heavy'){
+    if((e.kind==='warden'||e.kind==='pairshield') && e.broken<=0 && e.stagger<=0 && infront && kind!=='heavy'){
       blocked=true; mult=0.15;
     }
     damage(e, a.dmg*mult*boon, P.face, blocked?0.5:a.kb, blocked, blocked?3:a.poise*boon);
@@ -1651,7 +2322,8 @@ function damage(e,amt,dir,kb,muffled,poiseDmg){
     if(e.poise<=0){
       e.poise = e.poiseMax;
       e.broken = (e.kind==='boss') ? 170 : 220;
-      e.stagger = Math.max(e.stagger, e.kind==='boss'?60:52);
+      const nightHold = (e.kind==='boss' && e.who==='ogbunabali') ? (1.25-0.5*deepNight()) : 1;
+      e.stagger = Math.max(e.stagger, Math.round((e.kind==='boss'?60:52)*nightHold));
       S.brk(); stop(11); shake(5.5); G.flash=7;
       burst(e.x+e.w/2, e.y+e.h/2, 28, C.gold, 3, 42);
       teach('exec', "Guard broken. Stand close and press Z while he is gold.", 200);
@@ -1670,6 +2342,13 @@ function damage(e,amt,dir,kb,muffled,poiseDmg){
     shake(e.kind==='boss'?10:3); stop(e.kind==='boss'?26:6);
     if(e.kind!=='boss') S.hit(); else S.die();
     G.slain[e.kind==='boss'?e.who:e.kind] = (G.slain[e.kind==='boss'?e.who:e.kind]||0)+1;
+    // Ending C asks that you put down nothing you did not have to. What counts as
+    // "had to" is read off the world rather than hardcoded: a boss that some exit
+    // is gated behind is unavoidable, and one that nothing is gated behind is a
+    // choice. Ikuku is optional, so killing it costs you Onye Ọma. The chalk
+    // teacher comes apart whether you fight it or skip it, so it never counts.
+    const forced = (e.kind==='boss') ? bossIsGated(e.who) : !!e.trainer;
+    if(!forced) G.spared = 0;
     if(e.kind==='boss'){
       if(e.who==='ogbunabali'){
         G.bossDead=true; G.hasSlam=true; G.outroT=110; G.outroWho='ogbunabali';
@@ -1679,6 +2358,12 @@ function damage(e,amt,dir,kb,muffled,poiseDmg){
         say("The horns come apart in the air like smoke off a doused fire.",300);
       } else if(e.who==='onwe'){
         G.outroT=130; G.outroWho='onwe'; G.ending=1;
+      } else if(e.who==='uzu'){
+        G.outroT=110; G.outroWho='uzu';
+        say("The fire goes out of it and it is only a shape of iron, cooling.",300);
+      } else if(e.who==='ikuku'){
+        G.outroT=110; G.outroWho='ikuku';
+        say("The wind goes out of the room. The sky above you does not change, which is worse.",320);
       }
       saveGame();
     }
@@ -1698,24 +2383,46 @@ function hurtPlayer(dmg,dir,unblockable){
 
   // late ward = a block: cheaper than a hit, but you eat chip and keep the stun
   if(P.st==='ward' && P.t>9 && !unblockable){
-    P.hp -= Math.max(1, Math.round(dmg*0.3));
+    P.hp -= Math.max(1, Math.round(dmg*(wearing('ejula')?0.15:0.3)));
     P.vx = dir*1.7; P.inv=22; shake(2.6); stop(5); S.block();
     burst(P.x+5+P.face*8, P.y+9, 9, C.gold, 2.2, 20);
-    if(P.hp<=0 && !P.dead) die();
+    playerDown();
     return;
   }
 
-  P.hp-=dmg; P.inv=64; P.st='hurt'; P.t=0; P.vx=dir*2.4; P.vy=-2.2; P.charge=0;
+  // Being hit while something already has hold of you does not knock you loose:
+  // the grab is the dominant state, and popping out of it for free would make the
+  // grappler weaker the more crowded the room is, which is backwards. A shorter
+  // i-frame so a pack cannot shred you while you are pinned.
+  const pinned = P.st==='held';
+  P.hp-=dmg; P.charge=0;
+  if(pinned){ P.inv=Math.max(P.inv,24); }
+  else { P.inv=64; P.st='hurt'; P.t=0; P.vx=dir*2.4; P.vy=-2.2; }
   shake(5); stop(8); G.flash=6; S.hurt();
   burst(P.x+5,P.y+8,14,C.blood,2.6,28);
   decal(P.x+5, P.y+P.h);
-  if(P.hp<=0 && !P.dead) die();
+  playerDown();
+}
+
+// hurtPlayer has two exits and the bone has to cover both, so the killing blow
+// resolves in exactly one place.
+function playerDown(){
+  if(P.dead || P.hp>0) return;
+  if(wearing('okpukpu') && !G.boneUsed){
+    G.boneUsed=1; P.hp=1; P.inv=Math.max(P.inv,70);
+    G.flash=12; shake(6); stop(10); S.brk&&S.brk();
+    say("The bone holds. It will not hold twice before you rest.",180);
+    burst(P.x+5,P.y+8,24,C.bone,2.6,40);
+    return;
+  }
+  die();
 }
 
 function die(){
   P.dead=true; P.st='dead'; S.die(); G.deaths++;
-  shade = {room:G.room, x:P.x, y:P.y+6, w:10, h:12, amt:P.cowries, t:0};
-  P.cowries=0;
+  const kept = wearing('udu') ? Math.floor(P.cowries/2) : 0;
+  shade = {room:G.room, x:P.x, y:P.y+6, w:10, h:12, amt:P.cowries-kept, t:0};
+  P.cowries=kept;
   say("You die again. You have always died again.",180);
   setTimeout(()=>{
     const c=G.checkpoint;
@@ -1725,7 +2432,9 @@ function die(){
 }
 
 // -- parry -------------------------------------------------------------------
-function parryWindow(){ return P.st==='ward' && P.t<=9; }
+// 9 frames, or 14 with the assist on. This is the only number the assist
+// changes: the tell still has to be white and you still have to be facing it.
+function parryWindow(){ return P.st==='ward' && P.t<=(OPT.assist?14:9); }
 function tryParry(e,fromX,unblockable){
   if(unblockable) return false;
   if(!parryWindow()) return false;
@@ -1743,7 +2452,8 @@ function tryParry(e,fromX,unblockable){
     }
   }
   if(e.kind==='boss' && e.bound>0){ e.bound = Math.min(900, e.bound+140); }
-  stop(13); shake(6); G.slow=14; G.flash=9; S.parry();
+  if(wearing('nzu') && P.hp<G.maxHP){ P.hp=Math.min(G.maxHP,P.hp+4); burst(P.x+5,P.y+8,6,C.chalk,1.4,22); }
+  stop(13); shake(6); slowmo(14); G.flash=9; S.parry();
   burst(P.x+P.face*10+5,P.y+8,22,C.chalk,3.4,30);
   burst(P.x+P.face*10+5,P.y+8,10,C.gold,2.6,26);
   P.ofo = Math.min(100, P.ofo+18);
@@ -1769,6 +2479,13 @@ function enemyUpdate(e){
       if(e.hp<=0){ damage(e, 0.01, 1, 0, false, 0); } }
   }
 
+  // ogene rings once as a gold tell begins — once, on the frame it starts, never
+  // every frame it is held, which would be unbearable
+  if(wearing('ogene')){
+    if(e.tell==='gold' && !e.rang){ e.rang=1; tone(880,.09,'square',.03,1320); tone(1320,.06,'triangle',.02,1760); }
+    if(e.tell!=='gold') e.rang=0;
+  }
+
   if(e.broken>0){
     e.broken--;
     if(e.broken===0){ e.poise=e.poiseMax; e.stagger=Math.max(e.stagger,12); e.st='idle'; e.t=0; }
@@ -1786,6 +2503,225 @@ function enemyUpdate(e){
   }
 
   e.t++;
+
+  if(e.kind==='pairshield'){
+    const mate = (e.mate && !e.mate.dead) ? e.mate : null;
+    if(e.cd>0) e.cd--;
+    if(e.st==='idle'){
+      e.tell=''; e.face = dx>0?1:-1;
+      const want = mate ? mate.x + e.face*16 : e.x;
+      e.vx = Math.abs(want-e.x)>3 ? Math.sign(want-e.x)*0.5 : (adx>40 ? e.face*0.42 : 0);
+      if(!solidAt(e.x+(e.vx>0?e.w+2:-2), e.y+e.h+2, null)) e.vx=0;
+      // alone it stops being a wall and starts being a threat
+      if(!mate && adx<36 && ady<26 && e.cd<=0){ e.st='wind'; e.t=0; e.tell='white'; e.vx=0; }
+    }
+    else if(e.st==='wind'){ e.vx=0; e.tell='white'; if(e.t>=30){ e.st='bash'; e.t=0; e.tell=''; } }
+    else if(e.st==='bash'){
+      if(e.t<=10){
+        const box={x:e.face>0?e.x+e.w-4:e.x-22, y:e.y+2, w:26, h:e.h-4};
+        if(rects(box,P)){ if(!tryParry(e,e.x)) hurtPlayer(14,e.face); }
+      }
+      if(e.t>=13){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.8; if(e.t>=38){ e.st='idle'; e.t=0; e.cd=60; } }
+  }
+
+  if(e.kind==='pairspear'){
+    const mate = (e.mate && !e.mate.dead) ? e.mate : null;
+    if(e.cd>0) e.cd--;
+    if(e.st==='idle'){
+      e.tell=''; e.face = dx>0?1:-1;
+      e.vx = mate ? (adx>52 ? e.face*0.44 : 0) : -Math.sign(dx||1)*0.5;
+      if(!solidAt(e.x+(e.vx>0?e.w+2:-2), e.y+e.h+2, null)) e.vx=0;
+      if(mate && adx<62 && ady<26 && e.cd<=0){ e.st='level'; e.t=0; e.tell='white'; e.vx=0; }
+    }
+    else if(e.st==='level'){ e.vx=0; e.tell='white'; if(e.t>=32){ e.st='thrust'; e.t=0; e.tell=''; } }
+    else if(e.st==='thrust'){
+      if(e.t<=12){
+        // it reaches past its own shield, which is why standing at the wall is not safe
+        const box={x:e.face>0?e.x+e.w-2:e.x-38, y:e.y+5, w:40, h:8};
+        if(rects(box,P)){ if(!tryParry(e,e.x)) hurtPlayer(15,e.face); }
+      }
+      if(e.t>=16){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.82; if(e.t>=42){ e.st='idle'; e.t=0; e.cd = mate?70:150; } }
+  }
+
+  if(e.kind==='swimmer'){
+    // no gravity, no ground: it holds a lane and lunges along it
+    if(e.cd>0) e.cd--;
+    e.ph+=0.021;
+    if(e.st==='idle'){
+      e.tell='';
+      const ty=e.home.y+Math.sin(e.ph)*20;
+      e.vy=(ty-e.y)*0.06;
+      e.vx=(e.home.x+Math.cos(e.ph*0.7)*34-e.x)*0.035;
+      e.face = dx>0?1:-1;
+      if(adx<108 && ady<30 && e.cd<=0){ e.st='coil'; e.t=0; e.tell='white'; }
+    }
+    else if(e.st==='coil'){
+      e.vx*=0.86; e.vy*=0.86; e.tell='white';
+      if(e.t>=26){ e.st='dart'; e.t=0; e.tell=''; e.vx=e.face*4.2; e.vy=(P.y-e.y)*0.05; }
+    }
+    else if(e.st==='dart'){
+      if(rects(e,P)){ if(!tryParry(e,e.x)) hurtPlayer(12,e.face); e.st='drift'; e.t=0; }
+      if(e.t>=24){ e.st='drift'; e.t=0; }
+    }
+    else if(e.st==='drift'){ e.vx*=0.9; e.vy*=0.9; if(e.t>=30){ e.st='idle'; e.t=0; e.cd=80; } }
+    moveEnt(e);                       // deliberately no gravity above this
+    return;
+  }
+
+  if(e.kind==='ceiling'){
+    // hangs, tracks you along the ceiling, drops gold when you walk underneath
+    if(e.cd>0) e.cd--;
+    if(e.st==='idle'){
+      e.tell=''; e.vy=0;
+      e.y += (e.anchorY-e.y)*0.25;
+      e.vx = adx>10 ? Math.sign(dx)*0.55 : 0;
+      e.face = dx>0?1:-1;
+      if(adx<16 && P.y>e.y && e.cd<=0){ e.st='tense'; e.t=0; e.tell='gold'; e.vx=0; }
+      moveEnt(e); return;
+    }
+    else if(e.st==='tense'){
+      e.vx=0; e.vy=0; e.tell='gold';
+      if(e.t>=22){ e.st='drop'; e.t=0; e.tell=''; e.vy=1.5; }
+    }
+    else if(e.st==='drop'){
+      if(rects(e,P)) { hurtPlayer(15,e.face,true); e.st='land'; e.t=0; }
+      if(e.onGround){ e.st='land'; e.t=0; shake(2); }
+    }
+    else if(e.st==='land'){
+      e.vx*=0.8;
+      if(e.t>=46){ e.st='climb'; e.t=0; }
+    }
+    else if(e.st==='climb'){
+      e.vx=0; e.vy=-1.1;
+      if(e.y<=e.anchorY){ e.y=e.anchorY; e.st='idle'; e.t=0; e.cd=70; }
+      moveEnt(e); return;
+    }
+  }
+
+  if(e.kind==='grappler'){
+    if(e.cd>0) e.cd--;
+    if(e.st==='hold'){
+      // it stands still and squeezes; everything about breaking out lives in the
+      // player's 'held' state, and it lets go the moment it is staggered or dead
+      e.vx=0; e.tell='';
+      if(!e.hold || P.st!=='held'){ e.hold=null; e.st='rec'; e.t=0; }
+      return;
+    }
+    if(e.st==='idle'){
+      e.vx = e.face*0.5;
+      if(Math.abs(e.x-e.home)>60) e.face*=-1;
+      if(!solidAt(e.x+(e.face>0?e.w+2:-2), e.y+e.h+2, null)) e.face*=-1;
+      if(adx<58 && ady<26 && e.cd<=0){ e.st='reach'; e.t=0; e.tell='gold'; e.face=dx>0?1:-1; e.vx=0; }
+    }
+    else if(e.st==='reach'){
+      // a long, obvious gold wind-up: this is a roll, and it is meant to be one
+      e.vx=0; e.tell='gold';
+      if(e.t>=34){ e.st='seize'; e.t=0; e.tell=''; e.vx=e.face*2.6; }
+    }
+    else if(e.st==='seize'){
+      const box={x:e.face>0?e.x+e.w-6:e.x-22, y:e.y, w:28, h:e.h};
+      if(!e.hold && rects(box,P) && P.st!=='roll' && P.inv<=0 && !P.dead && !G.cheat){
+        e.hold=P; e.st='hold'; e.t=0; e.vx=0;
+        P.st='held'; P.t=0; P.heldBy=e; P.grabT=96; P.charge=0; P.vx=0; P.vy=0;
+        S.brk&&S.brk(); shake(5); stop(8);
+        burst(P.x+5,P.y+9,16,C.uhie,2.4,26);
+      }
+      if(e.t>=18){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.82; if(e.t>=44){ e.st='idle'; e.t=0; e.cd=90; } }
+  }
+
+  if(e.kind==='mimic'){
+    if(e.st==='sleep'){
+      // a prop in every respect until you are inside its reach
+      e.vx=0; e.tell=''; e.woke=0;
+      if(adx<40 && ady<28){ e.st='wake'; e.t=0; e.woke=1; S.brk&&S.brk(); shake(3);
+        burst(e.x+e.w/2,e.y+e.h/2,20,C.gold,2.4,34); }
+      e.vy=Math.min(e.vy+0.46,9); moveEnt(e);
+      return;
+    }
+    e.woke=1;
+    if(e.st==='wake'){
+      // standing up is the wind-up, and it is gold: this one cannot be turned
+      e.vx=0; e.tell='gold';
+      if(e.t>=30){ e.st='pounce'; e.t=0; e.tell=''; e.face=dx>0?1:-1; e.vx=e.face*3.4; e.vy=-3.2; }
+    }
+    else if(e.st==='pounce'){
+      if(rects(e,P)){ hurtPlayer(17,e.face,true); e.st='rec'; e.t=0; }
+      if(e.t>=26 || (e.onGround && e.t>6)){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.82; if(e.t>=40){ e.st='idle'; e.t=0; e.cd=50; } }
+    else if(e.st==='idle'){
+      e.face = dx>0?1:-1;
+      e.vx = adx>26 ? e.face*0.5 : 0;
+      if(e.cd>0) e.cd--;
+      if(adx<34 && ady<26 && e.cd<=0){ e.st='wind'; e.t=0; e.tell='white'; e.vx=0; }
+    }
+    else if(e.st==='wind'){ e.vx=0; e.tell='white'; if(e.t>=26){ e.st='swipe'; e.t=0; e.tell=''; } }
+    else if(e.st==='swipe'){
+      if(e.t<=10){
+        const box={x:e.face>0?e.x+e.w-4:e.x-20, y:e.y+2, w:24, h:e.h-4};
+        if(rects(box,P)){ if(!tryParry(e,e.x)) hurtPlayer(13,e.face); }
+      }
+      if(e.t>=13){ e.st='rec'; e.t=0; }
+    }
+  }
+
+  if(e.kind==='healer'){
+    // It keeps its distance and mends whatever you have opened. Break its channel
+    // by hurting it — stagger cancels the mend — or kill it first and fight the
+    // room the way it was before it got here. That choice is the entire enemy.
+    if(e.cd>0) e.cd--;
+    if(e.st==='idle'){
+      // back away from the player, but do not abandon the room
+      const flee = adx<70 ? -Math.sign(dx||1) : (Math.abs(e.x-e.home)>64 ? Math.sign(e.home-e.x) : 0);
+      e.vx = flee*0.42;
+      if(e.vx) e.face = dx>0?1:-1;
+      if(!solidAt(e.x+(e.vx>0?e.w+2:-2), e.y+e.h+2, null)) e.vx=0;
+      if(adx<32 && ady<24 && e.cd<=0){ e.st='wind'; e.t=0; e.tell='white'; e.face=dx>0?1:-1; e.vx=0; }
+      else if(e.cd<=0){
+        // nearest ally that is missing poise, or is already broken open
+        let best=null, bd=1e9;
+        for(const o of enemies){
+          if(o===e || o.dead || o.kind==='healer') continue;
+          if(o.poise>=o.poiseMax && o.broken<=0) continue;
+          const d=Math.abs((o.x+o.w/2)-(e.x+e.w/2));
+          if(d<150 && d<bd){ bd=d; best=o; }
+        }
+        if(best){ e.st='mend'; e.t=0; e.mend=best; e.vx=0; S.charge&&S.charge(); }
+      }
+    }
+    else if(e.st==='mend'){
+      const o=e.mend;
+      e.vx=0; e.tell='';
+      if(!o || o.dead){ e.st='idle'; e.t=0; e.mend=null; e.cd=60; }
+      else {
+        if(e.t%7===0) burst(e.x+e.w/2, e.y+6, 1, C.gold, 0.7, 22);
+        if(e.t>=72){
+          // poise back, and a broken guard closes early — this is what makes you
+          // choose between the thing you opened and the thing that is closing it
+          o.poise = Math.min(o.poiseMax, o.poise + o.poiseMax*0.55);
+          if(o.broken>0){ o.broken=0; o.stagger=Math.max(o.stagger,10); }
+          o.flash=6; S.name&&S.name();
+          burst(o.x+o.w/2, o.y+o.h/2, 14, C.gold, 2.0, 30);
+          e.st='idle'; e.t=0; e.mend=null; e.cd=210;
+        }
+      }
+    }
+    else if(e.st==='wind'){ e.vx=0; e.tell='white'; if(e.t>=24){ e.st='swing'; e.t=0; e.tell=''; } }
+    else if(e.st==='swing'){
+      if(e.t<=9){
+        const box={x:e.face>0?e.x+e.w:e.x-16, y:e.y+2, w:16, h:e.h-4};
+        if(rects(box,P)){ if(!tryParry(e,e.x)) hurtPlayer(9,e.face); }
+      }
+      if(e.t>=11){ e.st='rec'; e.t=0; }
+    }
+    else if(e.st==='rec'){ e.vx*=0.8; if(e.t>=30){ e.st='idle'; e.t=0; e.cd=70; } }
+  }
 
   if(e.kind==='walker'){
     if(e.st==='idle'){
@@ -2045,6 +2981,8 @@ function bossUpdate(b){
   if(b.flash>0) b.flash--;
   if(b.lineT>0) b.lineT--;
   if(b.who==='ekwensu'){ ekwensuUpdate(b); return; }
+  if(b.who==='uzu'){ uzuUpdate(b); return; }
+  if(b.who==='ikuku'){ ikukuUpdate(b); return; }
   if(b.who==='onwe'){ onweUpdate(b); return; }
 
   if(b.bound>0){
@@ -2147,6 +3085,163 @@ const EK_LINES=[
   "\"Nine of you have stood there. I kept all nine.\"",
   "\"You are not angry. You are only early.\""
 ];
+const IK_LINES=[
+  "\"You have been walking under a sky I am carrying.\"",
+  "\"Put your feet on something. I will take the rest.\"",
+  "\"Nothing down there is holding you up. It never was.\"",
+  "\"I have no mouth and I am still talking. Think about that.\""
+];
+// The only fight in the game that happens in the vertical. It never lands: it
+// sweeps the floor white so you have to get onto something, then stoops gold at
+// wherever you are standing so you have to leave it again. The room's platforms
+// are the fight; the floor is a place you visit.
+function ikukuUpdate(b){
+  if(b.hp < b.maxhp*0.5 && b.phase===1){
+    b.phase=2; b.stagger=28; shake(9); G.flash=12; S.brk();
+    say("\"Then I will take the air as well.\"",150);
+    burst(b.x+b.w/2,b.y+b.h/2,50,C.glass,3.4,54);
+  }
+  if(b.broken>0){ b.broken--; if(b.broken===0){ b.poise=b.poiseMax; b.stagger=Math.max(b.stagger,16); b.st='idle'; b.t=0; } }
+  if(b.stagger>0 || b.broken>0){
+    b.stagger=Math.max(0,b.stagger-1);
+    b.vx*=0.9; b.vy*=0.9; b.tell=''; moveEnt(b); return;     // it does not fall, even staggered
+  }
+  const dx=(P.x+P.w/2)-(b.x+b.w/2), adx=Math.abs(dx);
+  b.t++;
+  const F=n=>Math.round(n*(b.phase===2?0.76:1));
+  if(b.ceil==null) b.ceil=b.y;                                // the height it lives at
+  if(b.st==='idle'){
+    b.face = dx>0?1:-1;
+    // it drifts back up to its own line and follows you along it
+    b.vy += ((b.ceil-b.y)*0.03 - b.vy)*0.25;
+    b.vx += ((dx>0?1:-1)*0.9 - b.vx)*0.08;
+    if(b.cd>0) b.cd--;
+    else {
+      const r=rnd();
+      b.st = r<0.42 ? 'sweepWind' : (r<0.80 ? 'stoopWind' : 'liftWind');
+      if(b.st==='liftWind' && b.phase===1) b.st='sweepWind';   // phase two only
+      b.t=0;
+      if(b.lineT<=0 && rnd()<0.42){ b.line=IK_LINES[(b.said++)%IK_LINES.length]; b.lineT=170; }
+    }
+  }
+  // white — it drops to the floor line and sweeps it. Get off the ground.
+  else if(b.st==='sweepWind'){
+    b.tell='white'; b.vx*=0.8;
+    // just above the floor surface, not into it — the sweep is meant to skim the
+    // ground, and a boss that lands has stopped being the fight it was built to be
+    const floorY = R.h*T - 4*T - b.h - 2;
+    b.vy += ((floorY-b.y)*0.05 - b.vy)*0.2;
+    if(b.t>=F(34)){ b.st='sweep'; b.t=0; b.tell=''; b.vx=b.face*3.6; }
+  }
+  else if(b.st==='sweep'){
+    b.vy*=0.9;
+    const box={x:b.x-6,y:b.y,w:b.w+12,h:b.h+10};
+    if(rects(box,P)){ if(!tryParry(b,b.x)) hurtPlayer(19,b.face); }
+    if(b.t%3===0) parts.push({x:b.x+b.w/2,y:b.y+b.h,vx:-b.face*2,vy:(rnd()-.5),life:16,max:20,col:C.chalkDim,g:0,sz:1});
+    if(b.t>=F(30)){ b.st='rec'; b.t=0; }
+  }
+  // gold — it stoops at wherever you are standing. Leave.
+  else if(b.st==='stoopWind'){
+    b.tell='gold'; b.vx*=0.7; b.vy*=0.7;
+    if(b.t===1){ b.markX=P.x; b.markY=P.y; }
+    if(b.t>=F(32)){ b.st='stoop'; b.t=0; b.tell='';
+      const ddx=(b.markX-b.x), ddy=(b.markY-b.y), m=Math.max(1,Math.hypot(ddx,ddy));
+      b.vx=ddx/m*5.4; b.vy=ddy/m*5.4; }
+  }
+  else if(b.st==='stoop'){
+    if(rects(b,P)) hurtPlayer(24,b.face,true);
+    if(b.t>=F(26)){ b.st='rec'; b.t=0; shake(6); }
+  }
+  // phase two — it pulls the air upward under you, then lets go
+  else if(b.st==='liftWind'){ b.tell='white'; b.vx*=0.8; if(b.t>=F(30)){ b.st='lift'; b.t=0; b.tell=''; } }
+  else if(b.st==='lift'){
+    if(b.t<=40 && P.onGround===false) P.vy -= 0.22;
+    if(b.t<=40 && Math.abs(dx)<120) P.vy -= 0.10;
+    if(b.t%6===0) burst(P.x+5,P.y+P.h,2,C.glass,1.0,20);
+    if(b.t>=F(46)){ b.st='rec'; b.t=0; }
+  }
+  else if(b.st==='rec'){ b.tell=''; b.vx*=0.86; b.vy*=0.86; if(b.t>=F(36)){ b.st='idle'; b.t=0; b.cd=F(28); } }
+  moveEnt(b);
+  b.onGround=false;   // it flies; nothing about it ever rests on anything
+}
+
+const UZU_LINES=[
+  "\"Everything that comes in here leaves it finished.\"",
+  "\"You want to be permanent. I do that. Hold still.\"",
+  "\"Your mother is finished already. That is what finished looks like.\"",
+  "\"I am not lying to you. Nobody in this room has to.\""
+];
+// The forge does not lie and does not need to. Its guard comes back faster than
+// you can chip it down, so poise damage has to arrive in a lump: charge the heavy,
+// spend an \u1ecdf\u1ecd, land the chain's third stroke. Tap at it and you will be here all day.
+function uzuUpdate(b){
+  if(b.hp < b.maxhp*0.5 && b.phase===1){
+    b.phase=2; b.stagger=30; shake(9); G.flash=12; S.brk();
+    say("\"Now I will keep the fire in my hands.\"",150);
+    burst(b.x+b.w/2,b.y+b.h/2,50,'#e8862a',3.2,52);
+  }
+  if(b.broken>0){ b.broken--; if(b.broken===0){ b.poise=b.poiseMax; b.stagger=Math.max(b.stagger,16); b.st='idle'; b.t=0; } }
+  else {
+    // the thesis, in one line: the guard reforges roughly ten times faster than
+    // anything else in the game, and faster again once it has both hands free
+    b.poise = Math.min(b.poiseMax, b.poise + (b.phase===2?3.4:2.2));
+  }
+  if(b.stagger>0 || b.broken>0){
+    b.stagger=Math.max(0,b.stagger-1);
+    b.vx*=0.88; b.vy=Math.min(b.vy+0.46,9); b.tell=''; moveEnt(b); return;
+  }
+  const dx=(P.x+P.w/2)-(b.x+b.w/2), adx=Math.abs(dx);
+  b.t++;
+  const F=n=>Math.round(n*(b.phase===2?0.78:1));
+  if(b.st==='idle'){
+    b.face = dx>0?1:-1;
+    b.vx = (dx>0?1:-1)*(adx>64?0.95:0.35);
+    if(b.cd>0) b.cd--;
+    else {
+      const r=rnd();
+      if(adx<70 && r<0.44) b.st='hammerWind';
+      else if(r<0.74) b.st='pourWind';
+      else b.st='sparkWind';
+      b.t=0;
+      if(b.lineT<=0 && rnd()<0.42){ b.line=UZU_LINES[(b.said++)%UZU_LINES.length]; b.lineT=170; }
+    }
+  }
+  // white: the hammer. It is heavy and slow and it can be turned.
+  else if(b.st==='hammerWind'){ b.tell='white'; b.vx*=0.8; if(b.t>=F(32)){ b.st='hammer'; b.t=0; b.tell=''; } }
+  else if(b.st==='hammer'){
+    b.vx=b.face*1.1;
+    if(b.t<=12){
+      const box={x:b.face>0?b.x+b.w-8:b.x-34, y:b.y+6, w:42, h:b.h-6};
+      if(rects(box,P)){ if(!tryParry(b,b.x)) hurtPlayer(21,b.face); }
+    }
+    if(b.t===12){ shake(6); stop(6); burst(b.x+b.face*22+b.w/2,b.y+b.h-4,16,'#e8862a',2.6,26); }
+    if(b.t>=F(22)){ b.st='rec'; b.t=0; }
+  }
+  // gold: it tips the crucible. Nothing turns molten metal aside.
+  else if(b.st==='pourWind'){ b.tell='gold'; b.vx*=0.6; if(b.t>=F(30)){ b.st='pour'; b.t=0; b.tell=''; } }
+  else if(b.st==='pour'){
+    if(b.t%4===0 && b.t<=28){
+      shots.push({x:b.x+b.w/2+b.face*14, y:b.y+10, w:6,h:6, vx:b.face*(0.6+rnd()*0.5), vy:1.6+rnd(), t:0, ember:true});
+    }
+    if(b.t>=F(40)){ b.st='rec'; b.t=0; }
+  }
+  // phase 2 only: it strikes its own anvil and the floor answers
+  else if(b.st==='sparkWind'){ b.tell='white'; b.vx*=0.7; if(b.t>=F(28)){ b.st='spark'; b.t=0; b.tell=''; } }
+  else if(b.st==='spark'){
+    if(b.t===6){
+      shake(9); stop(7); nz(.3,.08,200);
+      burst(b.x+b.w/2,b.y+b.h,28,'#ffcf7a',3.2,34);
+      const n = b.phase===2 ? 3 : 2;
+      for(let k=0;k<n;k++) for(const d of [-1,1])
+        shots.push({x:b.x+b.w/2,y:b.y+b.h-8,w:10,h:10,vx:d*(2.2+k*0.7),vy:0,wave:true,t:0});
+    }
+    if(b.t>=F(34)){ b.st='rec'; b.t=0; }
+  }
+  else if(b.st==='rec'){ b.tell=''; b.vx*=0.82; if(b.t>=F(38)){ b.st='idle'; b.t=0; b.cd=F(30); } }
+  b.vy=Math.min(b.vy+0.46,9);
+  moveEnt(b);
+}
+
 function ekwensuUpdate(b){
   if(b.hp < b.maxhp*0.55 && b.phase===1){
     b.phase=2; b.stagger=34; shake(9); G.flash=12; S.brk();
@@ -2225,7 +3320,32 @@ function onweUpdate(b){
     b.phase=3; b.stagger=26; shake(10); G.flash=16;
     say("It stops copying you. It starts remembering you.",170);
   }
-  if(b.broken>0){ b.broken--; if(b.broken===0){ b.poise=b.poiseMax; b.stagger=Math.max(b.stagger,14); b.st='idle'; b.t=0; } }
+  if(b.broken>0){
+    b.broken--;
+    if(b.broken===0){
+      b.poise=b.poiseMax; b.stagger=Math.max(b.stagger,14); b.st='idle'; b.t=0;
+      // Ending B. You broke its guard and let the window run out without taking
+      // the opening. It reads that as an answer, because it is one.
+      //
+      // An execution cannot reach here: startExec's boss branch sets broken to 0
+      // outright, so the decrement above never runs and this never fires for a
+      // player who did take the opening. If you ever change the execution to wind
+      // broken down instead of zeroing it, this needs a guard — there is a
+      // REGRESSION test on exactly that behaviour.
+      if(b.lowered<=0){
+        b.lowered=420;
+        say("\"You had it. You did not take it.\"  It lowers its hands. [walk in]",300);
+        G.flash=8; S.name&&S.name();
+      }
+    }
+  }
+  if(b.lowered>0){
+    // it will not fight while its hands are down; it waits, and then picks them
+    // back up, because it is you and you would have
+    b.lowered--; b.tell=''; b.vx*=0.9; b.vy=Math.min(b.vy+0.46,9); moveEnt(b);
+    if(b.lowered===0 && !b.standdown) say("It picks its hands back up. You had a moment and you spent it.",190);
+    if(b.lowered>0) return;
+  }
   if(b.stagger>0 || b.broken>0){
     b.stagger=Math.max(0,b.stagger-1);
     b.vx*=0.88; b.vy=Math.min(b.vy+0.46,9); b.tell=''; moveEnt(b); return;
@@ -2344,11 +3464,18 @@ function update(){
   G.t++;
   if(G.mode==='play') G.playT++;
   if(G.noteT>0) G.noteT--; else G.note='';
+  if(G.mode==='play') graveTick();
+  if(G.cardT>0) G.cardT--;
   if(G.outroT>0){ G.outroT--; if(G.outroT===0){
     saveGame();
     const who=G.outroWho||'ogbunabali';
     if(who==='ekwensu') playCut(EK_OUT);
-    else if(who==='onwe') playCut(ON_OUT, ()=>{ G.mode='ending'; ENDW.t=0; });
+    else if(who==='uzu') playCut(UZ_OUT);
+    else if(who==='ikuku') playCut(IK_OUT);
+    else if(who==='onwe'){
+      const beats = G.ending===3 ? ON_OUT_C : (G.ending===2 ? ON_OUT_B : ON_OUT);
+      playCut(beats, ()=>{ G.mode='ending'; ENDW.t=0; });
+    }
     else playCut(BOSS_OUT);
     return; } }
   if(tap('KeyM')||tap('Tab')){ G.mode='map'; return; }
@@ -2373,6 +3500,25 @@ function update(){
   for(const e of enemies) enemyUpdate(e);
   if(boss) bossUpdate(boss);
   shotsUpdate();
+
+  // burning ground: it does not chase anything, it is just somewhere it is now
+  // a bad idea to stand
+  for(let i=flames.length-1;i>=0;i--){
+    const fl=flames[i];
+    fl.box = {x:fl.x-fl.w/2, y:fl.y-fl.h, w:fl.w, h:fl.h+10};
+    fl.t--; fl.tick++;
+    if(fl.t<=0){ flames.splice(i,1); continue; }
+    if(fl.tick%14===0){
+      for(const e of enemies){
+        if(e.dead) continue;
+        if(rects(fl.box,e)){ e.burn=Math.max(e.burn||0,90); e.flash=3; }
+      }
+      if(boss && !boss.dead && rects(fl.box,boss)) boss.burn=Math.max(boss.burn||0,60);
+    }
+    if(fl.tick%4===0 && parts.length<240)
+      parts.push({x:fl.x-fl.w/2+rnd()*fl.w, y:fl.y-2, vx:(rnd()-.5)*.4, vy:-.6-rnd()*.5,
+                  life:18, max:24, col:rnd()<.4?'#ffcf7a':'#e8862a', g:-0.014, sz:1});
+  }
 
   for(let i=parts.length-1;i>=0;i--){
     const p=parts[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.vx*=0.98; p.life--;
@@ -2544,7 +3690,7 @@ let bgLayers=null, bgRoom=-1;
 const LAYER_K=[0.16,0.30,0.48];
 function buildBackLayers(){
   bgLayers=[]; bgRoom=G.room;
-  const WOODED=(G.room===0||G.room===1), BONES=(G.room===6);
+  const WOODED=(G.room===0||G.room===1||G.room===10), BONES=(G.room===6);
   const keepSeed=G.seed;
   for(let layer=0;layer<3;layer++){
     const k=LAYER_K[layer];
@@ -2605,6 +3751,34 @@ function buildBackLayers(){
     bgLayers.push({c:c2, k:k, w:cw, h:ch});
   }
   G.seed=keepSeed;
+}
+// Drawn after the parallax, not before it. Before, the three tree layers —
+// the nearest at 0.82 alpha — painted straight over it, so the moon this room
+// is built around has never actually been on screen. After them it is the
+// foreground boughs that cross it, which is the picture 03-WORLD asks for:
+// the last sky the player sees, seen through branches.
+function drawMoon(){
+    // the one moon in the game, and now it moves: across and down as the night
+    // wears on, with the dark side turning to match
+    // It sits at y~66, not y~42. At 42 it was inside the canopy band this room
+    // paints over the top of the frame, and it had never once been visible —
+    // 03-WORLD calls it the single most important art decision in the room and
+    // the room has been drawing it underneath a wall of leaves since before I
+    // arrived. Low enough to clear them, so branches cross it instead of hiding
+    // it, which is what it should have looked like all along.
+    const ph=nightPhase();
+    const mx2=W-140+Math.cos(ph*Math.PI*2-1.2)*70+(-cam.x*0.05);
+    const my2=66+Math.sin(ph*Math.PI*2-1.2)*13+(-cam.y*0.05);
+    ctx.globalAlpha=.10; ctx.fillStyle='#cfc6ad';
+    ctx.beginPath(); ctx.arc(mx2,my2,26,0,7); ctx.fill();
+    ctx.globalAlpha=.75; ctx.fillStyle='#d8d0b6';
+    ctx.beginPath(); ctx.arc(mx2,my2,13,0,7); ctx.fill();
+    ctx.fillStyle='#0b0f10';
+    ctx.beginPath(); ctx.arc(mx2+Math.cos(nightPhase()*Math.PI*2)*6, my2-4+Math.sin(nightPhase()*Math.PI*2)*3, 12,0,7); ctx.fill();
+    ctx.globalAlpha=.5;
+    for(let i=0;i<24;i++){ const h1=hash2(i*7,3), h2=hash2(i*13,9);
+      pxf((h1*W)|0, (h2*110)|0, .5, .5, '#cfc6ad'); }
+    ctx.globalAlpha=1;
 }
 function drawBackLayers(){
   if(bgRoom!==G.room || !bgLayers) buildBackLayers();
@@ -2734,19 +3908,6 @@ function drawBG(){
   }
 
   // a moon over the buried charm; lanterns over the market; caustics under water
-  if(G.room===0){
-    const mx2=W-96+(-cam.x*0.05), my2=42+(-cam.y*0.05);
-    ctx.globalAlpha=.10; ctx.fillStyle='#cfc6ad';
-    ctx.beginPath(); ctx.arc(mx2,my2,26,0,7); ctx.fill();
-    ctx.globalAlpha=.75; ctx.fillStyle='#d8d0b6';
-    ctx.beginPath(); ctx.arc(mx2,my2,13,0,7); ctx.fill();
-    ctx.fillStyle='#0b0f10';
-    ctx.beginPath(); ctx.arc(mx2+5,my2-4,12,0,7); ctx.fill();
-    ctx.globalAlpha=.5;
-    for(let i=0;i<24;i++){ const h1=hash2(i*7,3), h2=hash2(i*13,9);
-      pxf((h1*W)|0, (h2*110)|0, .5, .5, '#cfc6ad'); }
-    ctx.globalAlpha=1;
-  }
   if(G.room===4){
     for(let i=0;i<7;i++){
       const lx=((i*141)%(R.w*T))-cam.x*0.62, ly=26+((i*37)%34)-cam.y*0.3;
@@ -2789,6 +3950,7 @@ function drawBG(){
   }
 
   drawBackLayers();
+  if(G.room===0) drawMoon();
   // distant fog band
   ctx.globalAlpha=.5;
   const fg=ctx.createLinearGradient(0,H*0.45,0,H);
@@ -2808,14 +3970,23 @@ const STONE=[
  {base:'#211a1e', lit:'#33272c', top:'#4a3730', side:'#291f24', fleck:'#2b2126', moss:'#4a3524'},
  {base:'#12222a', lit:'#1d3a44', top:'#2b5560', side:'#16262e', fleck:'#183038', moss:'#1f4a52'},
  {base:'#241310', lit:'#3a1d13', top:'#5e2c15', side:'#1a0d0a', fleck:'#301810', moss:'#7a3410'},
- {base:'#1e2430', lit:'#2e3648', top:'#4a5468', side:'#161b24', fleck:'#242b38', moss:'#3a4458'}
+ {base:'#1e2430', lit:'#2e3648', top:'#4a5468', side:'#161b24', fleck:'#242b38', moss:'#3a4458'},
+ {base:'#1d1a15', lit:'#2c2720', top:'#463c2c', side:'#241f19', fleck:'#2a241b', moss:'#3a3423'},
+ {base:'#241a1a', lit:'#372626', top:'#553a2c', side:'#2b1e1e', fleck:'#2f2220', moss:'#5a3a20'},
+ {base:'#232019', lit:'#353026', top:'#5a5138', side:'#2a2620', fleck:'#302b22', moss:'#48412c'}
 ];
+// Which stone set each room is cut from. This was a nested ternary on the room
+// index, which meant it had a silent default: every room added past 9 would have
+// fallen through to the sky's pale blue and nobody would have seen it until the
+// screenshot. As a table it is the fifth entry on the five-table checklist and
+// tools/audit.py counts it against ROOMS like the other four.
+const ROOM_STONE=[2,3,4,5,6,7,0,1,8,9,10,11,12];
 function drawTiles(){
-  const P0=STONE[G.room<6?G.room+2:(G.room===6?0:G.room===7?1:G.room===8?8:9)]||STONE[2];
+  const P0=STONE[ROOM_STONE[G.room]]||STONE[2];
   const x0=Math.floor(cam.x/T), x1=Math.ceil((cam.x+W)/T), y0=Math.floor(cam.y/T), y1=Math.ceil((cam.y+H)/T);
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
     const ch=tileAt(R,x,y);
-    if('.wltWKBSNMhrvXOakiF'.indexOf(ch)>=0) continue;
+    if('.wltWKBSNMhrvXOakiFdmoynqjsbpUIx'.indexOf(ch)>=0) continue;
     const sx=x*T-cam.x, sy=y*T-cam.y;
 
     if(ch==='E'){
@@ -3184,6 +4355,126 @@ function drawProps(){
       idolStatue(bx, by, 5, {eye:'#a01c2c'});
     }
   }
+  if(G.room===10){
+    const fy=16*T-cam.y;
+    // The hole. Left as bare empty tiles it is not a hole at all — you see the
+    // parallax through it and it reads as a window cut in the wall. It has to be
+    // filled by hand: dug earth going black downwards, a cut lip where the
+    // spade went in, and roots let through from the tree above.
+    const hx=2*T-cam.x, hw=6*T, hy=fy, hh=2*T;
+    const dg=ctx.createLinearGradient(0,hy,0,hy+hh);
+    dg.addColorStop(0,'#1a150f'); dg.addColorStop(.45,'#0d0a07'); dg.addColorStop(1,'#040302');
+    // +2 so it covers the lit top edge drawTiles paints on the tile underneath:
+    // a bright surface at the bottom of a hole reads as a floor with a light on
+    // it, which is the one thing a grave must not look like.
+    ctx.fillStyle=dg; ctx.fillRect(hx,hy,hw,hh+2);
+    for(let i=0;i<14;i++){                       // spade marks down the walls
+      const sx2=hx+2+((i*37)%(hw-4));
+      ctx.globalAlpha=.5; pxf(sx2, hy+2+((i*13)%(hh-6)), .5, 3+((i*5)%5), '#231c13');
+    }
+    ctx.globalAlpha=.85; pxf(hx,hy,hw,1,'#2e2618');   // the cut lip, lit
+    ctx.globalAlpha=.35; pxf(hx,hy+1,hw,1,'#000');
+    ctx.globalAlpha=1;
+    for(let i=0;i<7;i++){                        // roots hanging in from above
+      const rx=hx+3+((i*29)%(hw-6)), rl=5+((i*11)%13);
+      ctx.strokeStyle='#241d14'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(rx,hy);
+      ctx.quadraticCurveTo(rx+Math.sin(G.t/70+i)*2, hy+rl*0.6, rx+Math.sin(G.t/52+i)*3, hy+rl);
+      ctx.stroke();
+    }
+    // Eight mounds. There is no ninth: the hole is where it would be, and the
+    // player who counts is the one this room is for. 03-WORLD §3.4.
+    for(const c of GRAVES){
+      const bx=c*T+8-cam.x;
+      if(bx<-30||bx>W+30) continue;
+      ctx.fillStyle='#171410';
+      ctx.beginPath(); ctx.ellipse(bx, fy, 11, 5, 0, 3.14159, 0); ctx.fill();
+      ctx.globalAlpha=.5; ctx.fillStyle='#2a2419';
+      ctx.beginPath(); ctx.ellipse(bx, fy-1, 9, 3.6, 0, 3.14159, 0); ctx.fill();
+      ctx.globalAlpha=1;
+      px(bx-1, fy-6, 2, 4, '#0d0b08');
+    }
+    // Nine strokes of nzu at the lip. Chalk is never decorative (03-WORLD §3.4):
+    // this is the mark a dibia leaves when a name has been written down.
+    for(let i=0;i<9;i++){
+      const cx2=8*T+4+i*4-cam.x;
+      ctx.globalAlpha=.78-(i%3)*.10;
+      pxf(cx2, fy-5-((i*5)%3), 1, 4, '#d8d0b6');
+    }
+    ctx.globalAlpha=1;
+    // The tree itself, planted over the hole. An ogilisi is grown from a cut
+    // stake pushed into the ground, which is why it is the tree people use for
+    // boundaries: it survives being moved. That is also the joke.
+    const tx2=5*T-cam.x*1.06;
+    if(tx2>-200 && tx2<W+200)
+      treeShape(tx2, fy+2, 168, {
+        seed:4,
+        bark:['#241d14','#161009','#080502'],
+        leaf:['#101b12','#16261a','#0a120c'],
+        rim:'#2c4826' });
+  }
+  if(G.room===12){
+    const fy=16*T-cam.y;
+    // Arụsị, still standing where they were planted. They are props here, not
+    // enemies — a compound has them the way a house has doors — and they are the
+    // reason 04-COMBAT allows a mimic in this room later if anyone wants one.
+    for(let i=0;i<6;i++){
+      const bx=((i*151+40)%(R.w*T))-cam.x;
+      if(bx<-40||bx>W+40) continue;
+      idolStatue(bx, fy, 5.5+((i*5)%3), {eye:'#7a6a48', chalk:i%3===0});
+    }
+    // The roof, on the floor. Beams at the angle they came down at.
+    for(let i=0;i<7;i++){
+      const bx=((i*97+18)%(R.w*T))-cam.x;
+      if(bx<-50||bx>W+50) continue;
+      ctx.save(); ctx.translate(bx, fy-2); ctx.rotate(-0.42+((i*7)%5)*0.16);
+      px(0,-2,34+((i*11)%16),4,'#1d1710'); pxf(0,-2,34+((i*11)%16),1,'#2e2415');
+      ctx.restore();
+    }
+    // Broken pots. Nobody swept up.
+    for(let i=0;i<9;i++){
+      const bx=((i*73+9)%(R.w*T))-cam.x;
+      if(bx<-20||bx>W+20) continue;
+      px(bx, fy-4, 5, 4, '#2a2018');
+      pxf(bx+((i*3)%4), fy-1, 2, 1, '#3a2d20');
+    }
+    // Nzu on what is left of the back wall: names, written down where the
+    // spirits can read them. Chalk is never decorative (03-WORLD §3.4) — this
+    // is the man's actual work, and it is the only thing in here still legible.
+    for(let i=0;i<13;i++){
+      const cx2=((i*61+11)%(R.w*T))-cam.x*0.94, cy2=fy-30-((i*23)%44);
+      if(cx2<-24||cx2>W+24) continue;
+      ctx.globalAlpha=.26+((i*7)%5)*.05;
+      for(let b=0;b<9;b++) pxf(cx2+b*2.2, cy2-((b===8)?1:0), .5, 5, '#cfc6ad');
+      if(i%4===0){ ctx.globalAlpha=.18; pxf(cx2-1, cy2+7, 19, .5, '#cfc6ad'); }
+    }
+    ctx.globalAlpha=1;
+  }
+  if(G.room===11){
+    const fy=16*T-cam.y;
+    // The lit seam where the roof meets the street. It is the only place in the
+    // game where the bright edge is at the player's feet rather than over their
+    // head, and it is what tells you which floor you are on without a word.
+    const sg=ctx.createLinearGradient(0,fy-9,0,fy+1);
+    sg.addColorStop(0,'rgba(214,120,52,0)'); sg.addColorStop(1,'rgba(214,120,52,0.20)');
+    ctx.fillStyle=sg; ctx.fillRect(0,fy-9,W,10);
+    ctx.globalAlpha=.5; pxf(0,fy,W,.5,'#d6783a'); ctx.globalAlpha=1;
+    // thatch ridges along the roofline
+    for(let i=0;i<20;i++){
+      const bx=((i*67)%(R.w*T))-cam.x;
+      if(bx<-20||bx>W+20) continue;
+      ctx.globalAlpha=.7;
+      for(let b=0;b<5;b++) pxf(bx+b*2, fy-3-((i+b)%3), 1, 3, '#3a2a1c');
+      ctx.globalAlpha=1;
+    }
+    // pots and a covered basket left up here to dry
+    for(let i=0;i<5;i++){
+      const bx=((i*173+50)%(R.w*T))-cam.x;
+      if(bx<-30||bx>W+30) continue;
+      px(bx, fy-7, 7, 7, '#241a14'); pxf(bx, fy-7, 7, 1, '#3d2b1c');
+      px(bx+2, fy-9, 3, 2, '#1a120d');
+    }
+  }
   if(G.room===4){
     for(let i=0;i<5;i++){
       const bx=((i*181+40)%(R.w*T))-cam.x, by=16*T-cam.y;
@@ -3200,7 +4491,7 @@ function drawForeground(){
   const k=1.5;
 
   // branches reaching in from the top of the frame
-  if(G.room===0||G.room===1||G.room===6){
+  if(G.room===0||G.room===1||G.room===6||G.room===10){
     ctx.globalAlpha=.95;
     for(let i=0;i<5;i++){
       const bx=((i*263+G.room*91)%(R.w*T)) - cam.x*(k*0.9);
@@ -3256,6 +4547,22 @@ function drawForeground(){
     else if(G.room===4){
       px(bx,by+8,16,26,'#06070a'); px(bx-2,by+6,20,3,'#080a0d');
       for(let b=0;b<5;b++) pxf(bx-1+b*4, by+9, 2, 4+((i+b)%5), '#06070a');
+    }
+    else if(G.room===12){
+      // splintered roof timber across the front of the frame
+      ctx.save(); ctx.translate(bx, by+18); ctx.rotate(-0.5+((i*5)%4)*0.28);
+      ctx.fillStyle='#050706'; ctx.fillRect(-2,-2,40+((i*9)%22),5);
+      for(let b=0;b<4;b++) ctx.fillRect(6+b*9,-6-((i+b)%5),2,6);
+      ctx.restore();
+    }
+    else if(G.room===11){
+      // cloth hung out on a line, moving with the same gust as everything else
+      for(let b=0;b<4;b++){
+        const sw=Math.sin(G.t/40+i+b*0.8)*2.2, cw=7+((i*b*3)%6);
+        px(bx+b*11+sw, by-6, cw, 16+((i+b*5)%12), '#0a0709');
+        pxf(bx+b*11+sw, by-6, cw, 1, '#120d10');
+      }
+      pxf(bx-4, by-7, 48, .5, '#0d0a0c');
     }
     else if(G.room===6){
       // ribs and shards standing out of the bone road
@@ -3332,12 +4639,159 @@ function drawShrines(){
         ctx.globalAlpha=.45+Math.sin(G.t/9)*.2; glyph(x+8,y+11,4,C.chalkDim,-G.t/60); ctx.globalAlpha=1;
       }
       px(x+1,y-2,14,2,C.goldDim);
+    } else if(s.kind==='npc'){
+      drawNPC(s,x,y);
     } else {
       px(x+2,y,12,22,'#161a1c'); px(x+2,y,12,1,'#20262a');
       ctx.globalAlpha = G.knowsName?.9:.45+Math.sin(G.t/18)*.25;
       glyph(x+8,y+8,4,C.chalk,0); glyph(x+8,y+15,3,C.chalk,0.6);
       ctx.globalAlpha=1;
     }
+  }
+}
+
+// One dominant shape each (06-ART §6.5), three values, top-light. These are the
+// only figures in the game that are not trying to kill you, so they sit still
+// and they are the wrong shape for a fight: no mask, no raffia, no weapon.
+function drawNPC(s,x,y){
+  const t=G.t, spoken=!!(G.met&&G.met[s.id]);
+  if(s.id==='dibia'){
+    // A seated old man behind his mat. The dominant shape is a triangle — widest
+    // where the wrapper spreads on the ground, narrowest at the shoulders. Every
+    // other figure in the game is vertical, so sitting is the whole read.
+    const br=Math.sin(t/54)*0.5;                                   // he breathes; nothing else moves
+    ctx.globalAlpha=.10+Math.sin(t/40)*.03; ctx.fillStyle=C.chalk;
+    ctx.beginPath(); ctx.arc(x+8,y+14,18,0,7); ctx.fill(); ctx.globalAlpha=1;
+
+    // The wrapper, three courses widening to the floor. Lit noticeably along each
+    // top edge — at this size a dark mass with a faint edge reads as a rock.
+    px(x+1,  y+15.5,14,5.5,'#2a2119'); pxf(x+1,  y+15.5,14,1,'#4e3d2b');
+    px(x+2.5,y+11.5,11,4.5,'#332720'); pxf(x+2.5,y+11.5,11,1,'#5b4732');
+    px(x+4,  y+8+br,8,4,'#3b2d22');    pxf(x+4,  y+8+br,8,1,'#675038');
+
+    // arms out of the shoulders and forward onto the knees
+    pxf(x+0.5,y+12,2.5,5,'#2a2119'); pxf(x+0.5,y+12,2.5,1,'#4e3d2b');
+    pxf(x+13, y+12,2.5,5,'#2a2119'); pxf(x+13, y+12,2.5,1,'#4e3d2b');
+
+    px(x+5,y+2.5+br,6,6,'#4a3928');                                // head
+    pxf(x+5,y+2.5+br,6,1,'#7a5f42');
+    pxf(x+10.5,y+2.5+br,.5,6,'#221a11');                           // shaded side
+    pxf(x+4.5,y+1.5+br,7,1.4,'#cfc6ad');                           // white hair
+    pxf(x+6,y+5.5+br,1,1,'#0c0908'); pxf(x+9,y+5.5+br,1,1,'#0c0908');
+    pxf(x+5.5,y+8+br,5,1.2,'#b9b0a0');                             // beard, separates head from body
+
+    // The mat goes on last, in front of him, or the wrapper paints over it. The
+    // cowries are the brightest thing here on purpose: they are what says trader.
+    px(x-3,y+21,22,3,'#141712');
+    pxf(x-3,y+21,22,1,'#333b28');
+    pxf(x+2,y+21.6,4,.6,C.chalk); pxf(x+11,y+21.6,4,.6,C.chalk);   // nzu, a greeting
+    for(let i=0;i<6;i++){
+      const cx=x-1.5+i*3.6;
+      pxf(cx,y+22.4,2.4,1.6,'#e6dcc2'); pxf(cx+.5,y+23.4,1.4,.6,'#8e8474');
+    }
+  }
+  if(s.id==='woman'){
+    // Standing, and the widest thing about her is the ichafu — a horizontal top
+    // on a vertical body, which is the opposite read to the dibia's triangle.
+    // The tray at her feet is empty, and stays empty. She is selling nothing.
+    const sway=Math.sin(t/64)*0.4;
+    ctx.globalAlpha=.09+Math.sin(t/47)*.03; ctx.fillStyle=C.chalk;
+    ctx.beginPath(); ctx.arc(x+8,y+12,17,0,7); ctx.fill(); ctx.globalAlpha=1;
+
+    px(x+4,y+9+sway,8,12,'#2d2434');                               // wrapper, indigo-leaning
+    pxf(x+4,y+9+sway,8,1,'#544566');
+    pxf(x+11,y+9+sway,.5,12,'#191320');
+    for(let i=0;i<3;i++) pxf(x+4,y+12.5+i*3+sway,8,.5,'#3f3349');  // woven bands
+    pxf(x+2.5,y+10+sway,2,8,'#2d2434'); pxf(x+11.5,y+10+sway,2,8,'#2d2434');
+    pxf(x+2.5,y+10+sway,2,.5,'#544566'); pxf(x+11.5,y+10+sway,2,.5,'#544566');
+
+    px(x+5.5,y+3.5+sway,5,6,'#4a3928');                            // head
+    pxf(x+5.5,y+3.5+sway,5,.5,'#7a5f42');
+    pxf(x+6.5,y+6+sway,1,1,'#0c0908'); pxf(x+9,y+6+sway,1,1,'#0c0908');
+    px(x+3.5,y+1+sway,9,3,'#7d2f3a');                              // the ichafu, tied wide
+    pxf(x+3.5,y+1+sway,9,1,'#a8474f');
+    pxf(x+11.5,y+0+sway,2.5,3,'#7d2f3a');                          // the knot, off to one side
+
+    px(x+1,y+21,14,3,'#1b1712');                                   // the tray
+    pxf(x+1,y+21,14,1,'#3b3226');
+  }
+  if(s.id==='ogbanje'){
+    // Small — the smallest figure in the game, deliberately smaller than the
+    // player. Sitting low in the water with the surface cutting across him.
+    const bob=Math.sin(t/38)*0.7;
+    ctx.globalAlpha=.10+Math.sin(t/33)*.04; ctx.fillStyle=C.glass;
+    ctx.beginPath(); ctx.arc(x+8,y+16,15,0,7); ctx.fill(); ctx.globalAlpha=1;
+
+    px(x+5,y+12+bob,7,7,'#243239');                                // body, hunched
+    pxf(x+5,y+12+bob,7,1,'#48626d');
+    pxf(x+11.5,y+12+bob,.5,7,'#121b1f');
+    px(x+5.5,y+6.5+bob,6,6,'#cfc6ad');                             // a small bone mask, like yours
+    pxf(x+5.5,y+6.5+bob,6,1,'#efe6cc');
+    pxf(x+10.5,y+6.5+bob,.5,6,'#8e8474');
+    pxf(x+6.8,y+9+bob,1,1.5,'#0c0908'); pxf(x+9.2,y+9+bob,1,1.5,'#0c0908');
+    for(let i=0;i<4;i++) pxf(x+6+i*1.3,y+5.5+bob,.6,1,'#8e8474');  // four strokes: four burials
+    // the water takes him at the waist and will not stop moving
+    for(let i=0;i<3;i++){
+      const ry=y+17+i*2, w=13-i*3;
+      ctx.globalAlpha=.30-i*.07;
+      pxf(x+8-w/2+Math.sin(t/21+i)*1.6, ry, w, .5, C.glass);
+      ctx.globalAlpha=1;
+    }
+    px(x+1,y+19,14,5,'#0e1b21');                                   // standing water
+    pxf(x+1,y+19,14,.5,'#2b4b56');
+  }
+  if(s.id==='mother'){
+    // A shade: indigo, half-there, kneeling over a bowl and busy. She is the only
+    // figure in the game drawn under 1 alpha, because she is the only one who is
+    // not really here. Nothing about her reaches toward the player.
+    const work=Math.sin(t/13)*1.1;                                 // her hands never stop
+    ctx.globalAlpha=.09+Math.sin(t/44)*.03; ctx.fillStyle=C.indigo;
+    ctx.beginPath(); ctx.arc(x+8,y+14,18,0,7); ctx.fill(); ctx.globalAlpha=1;
+
+    // The head goes forward and low, not on top: bent over the work is the whole
+    // pose, and a head stacked on a body reads as a totem instead of a woman.
+    ctx.globalAlpha=.62;
+    px(x+1.5,y+15,10,6.5,'#232c3d');                               // knees and wrapper, widest
+    pxf(x+1.5,y+15,10,1,'#41506d');
+    px(x+3,y+10,7,5.5,'#283244');                                  // the back, rising and leaning in
+    pxf(x+3,y+10,7,1,'#465675');
+    px(x+4.5,y+7.5,7,4,'#2c3750');                                 // shoulders, tipped toward the bowl
+    pxf(x+4.5,y+7.5,7,1,'#4d5e80');
+    px(x+7,y+5,5,4.5,'#38425a');                                   // head, forward and down
+    pxf(x+7,y+5,5,1,'#5d6c8e');
+    pxf(x+11.5,y+5,.5,4.5,'#1b2230');
+    px(x+6.5,y+3.5,6,2,'#2a3347');                                 // head-tie
+    pxf(x+6.5,y+3.5,6,1,'#4a5a7a');
+    // one arm down out of the shoulder into the bowl, and it never stops
+    pxf(x+10,y+10+work*0.4,2,6.5,'#2c3750');
+    pxf(x+10,y+10+work*0.4,2,1,'#4d5e80');
+    ctx.globalAlpha=1;
+    px(x+8.5,y+20,7,3,'#171c26');                                  // the bowl, solid — it is real
+    pxf(x+8.5,y+20,7,1,'#39435a');
+    pxf(x+9.5,y+21.2,5,.8,'#8e8474');                              // rice
+  }
+  if(!spoken){
+    // a small chalk mote over anyone you have not spoken to, so the market does
+    // not hide them among the stalls
+    const b=y-4+Math.sin(t/18)*1.4;
+    ctx.globalAlpha=.5+Math.sin(t/12)*.22;
+    pxf(x+7.5,b,1,1,C.chalk); ctx.globalAlpha=1;
+  }
+}
+
+function drawFlames(){
+  for(const fl of flames){
+    const x=fl.x-cam.x, y=fl.y-cam.y, fade=Math.min(1, fl.t/60);
+    ctx.globalAlpha=(.16+Math.sin(G.t/7)*.05)*fade; ctx.fillStyle='#e8862a';
+    ctx.beginPath(); ctx.ellipse(x, y-2, fl.w*0.62, 9, 0,0,7); ctx.fill(); ctx.globalAlpha=1;
+    for(let i=0;i<7;i++){
+      const fx=x-fl.w/2+ (i+0.5)*(fl.w/7);
+      const h=3+Math.abs(Math.sin(G.t/6+i*1.3))*5;
+      ctx.globalAlpha=(.55+Math.sin(G.t/5+i)*.2)*fade;
+      pxf(fx-1, y-h, 2, h, i%2?'#ffcf7a':'#e8862a');
+      ctx.globalAlpha=1;
+    }
+    ctx.globalAlpha=.5*fade; pxf(x-fl.w/2, y-1, fl.w, 1.5, '#8e2323'); ctx.globalAlpha=1;
   }
 }
 
@@ -3352,6 +4806,23 @@ function drawPickups(){
       continue;
     }
     const x=p.x-cam.x, y=p.y-cam.y+Math.sin((G.t+p.t)/22)*2;
+    // Red is the heart shard's colour and it was every pickup's colour, because
+    // this used to be one unconditional branch. 03-WORLD §3.4 gives glow a
+    // meaning, so a stick of chalk and a weapon both reading as blood is a lie
+    // about what they are.
+    if(p.kind==='chalk'){
+      ctx.globalAlpha=.26; ctx.fillStyle=C.chalk;
+      ctx.beginPath(); ctx.arc(x+4,y+4,9,0,7); ctx.fill(); ctx.globalAlpha=1;
+      px(x+1,y+2,6,4,'#6b6155');                 // the cloth, long past white
+      px(x+2,y,3,3,C.chalk); px(x+2,y+6,3,1,'#9e968a');
+      continue;
+    }
+    if(p.kind==='weapon'){
+      ctx.globalAlpha=.26; ctx.fillStyle=C.gold;
+      ctx.beginPath(); ctx.arc(x+4,y+4,10,0,7); ctx.fill(); ctx.globalAlpha=1;
+      px(x+3,y-1,2,8,C.bone); px(x+1,y+6,6,2,'#6b5a3a'); px(x+3,y+8,2,2,'#3a2f20');
+      continue;
+    }
     ctx.globalAlpha=.3; ctx.fillStyle=C.blood; ctx.beginPath(); ctx.arc(x+4,y+4,9,0,7); ctx.fill(); ctx.globalAlpha=1;
     px(x+1,y+1,6,6,C.blood); px(x+2,y+2,2,2,'#e6706a');
   }
@@ -3525,7 +4996,7 @@ function drawEnemy(e){
   if(e.tell){
     const gold = e.tell==='gold';
     ctx.globalAlpha=.35+Math.abs(Math.sin(G.t/(gold?3:4)))*.45;
-    ctx.strokeStyle = gold?C.gold:C.chalk; ctx.lineWidth=1;
+    ctx.strokeStyle = tellCol(gold); ctx.lineWidth=1;
     ctx.strokeRect(x-2.5,y-2.5,e.w+5,e.h+5);
     if(gold){ ctx.strokeRect(x-4.5,y-4.5,e.w+9,e.h+9); }
     ctx.globalAlpha=1;
@@ -3546,6 +5017,154 @@ function drawEnemy(e){
   }
   const flash = e.flash>0;
   const stag = e.stagger>0;
+
+  if(e.kind==='pairshield'){
+    const alone = !(e.mate && !e.mate.dead);
+    px(x+3,y+4,e.w-6,e.h-4, flash?C.chalk:'#1c1f18');
+    pxf(x+3,y+4,e.w-6,.5,'#3d4436');
+    px(x+4,y,e.w-8,6, flash?C.chalk:'#12150f');
+    pxf(x+6,y+2,1,1,'#c8952e'); pxf(x+e.w-7,y+2,1,1,'#c8952e');
+    // the shield: a tall oval slab on the facing side, hide over a wood frame
+    const sx = e.face>0 ? x+e.w-5 : x-4;
+    px(sx,y+1,9,e.h-1, flash?C.chalk:'#3a2b1c');
+    pxf(sx,y+1,9,1,'#6b5232');
+    pxf(sx+(e.face>0?8:0),y+1,1,e.h-1,'#1d150c');
+    for(let i=0;i<3;i++) pxf(sx+1.5,y+4+i*5,6,.5,'#5a442a');
+    pxf(sx+3.5,y+e.h/2-2,2,4,'#8e2323');
+    if(alone){ ctx.globalAlpha=.22+Math.sin(G.t/10)*.10; ctx.fillStyle=C.uhie;
+      ctx.beginPath(); ctx.arc(x+e.w/2,y+e.h/2,15,0,7); ctx.fill(); ctx.globalAlpha=1; }
+  }
+
+  if(e.kind==='pairspear'){
+    const reaching = e.st==='level'||e.st==='thrust';
+    px(x+3,y+5,e.w-6,e.h-5, flash?C.chalk:'#191c22');
+    pxf(x+3,y+5,e.w-6,.5,'#3a4048');
+    px(x+3.5,y,e.w-7,6, flash?C.chalk:'#0f1216');
+    px(x+(e.face>0?5:3),y+1,5,4,C.bone);
+    pxf(x+(e.face>0?6:4),y+2.5,1,1,'#1a1410');
+    // the spear: long, and it gets longer the moment it levels
+    const len = reaching ? 34 : 20;
+    const px0 = e.face>0 ? x+e.w-2 : x+2-len;
+    pxf(px0, y+9, len, 1.2, flash?C.chalk:'#6b5232');
+    pxf(px0, y+9, len, .5, '#8f6f42');
+    pxf(e.face>0? px0+len-4 : px0, y+8, 4, 3, '#b9b0a0');           // the head
+    if(e.st==='thrust'){ ctx.globalAlpha=.30; pxf(px0, y+8.5, len, 2, C.chalk); ctx.globalAlpha=1; }
+  }
+
+  if(e.kind==='swimmer'){
+    // A long horizontal body — the only enemy wider than it is tall by this much,
+    // which is what says "this one does not touch the floor".
+    const und=Math.sin(G.t/9+e.ph)*1.2;
+    px(x+2,y+3+und,e.w-4,6, flash?C.chalk:'#17313a');
+    pxf(x+2,y+3+und,e.w-4,.5,'#3f7d8c');
+    pxf(x+e.w-2.5,y+3+und,.5,6,'#0c1a20');
+    px(x+(e.face>0?e.w-6:2),y+2+und,4,5, flash?C.chalk:'#1e4450');   // head end
+    pxf(x+(e.face>0?e.w-5:3),y+3.5+und,1,1,'#8fe6ff');
+    for(let i=0;i<4;i++){                                             // fins along the spine
+      const fx=x+3+i*((e.w-6)/4);
+      pxf(fx,y+1.5+und+Math.sin(G.t/7+i)*0.6,1.5,2,'#2b5f6d');
+      pxf(fx,y+9+und-Math.sin(G.t/7+i)*0.6,1.5,2,'#2b5f6d');
+    }
+    pxf(x+(e.face>0?0:e.w-3),y+4+und,3,3,'#1e4450');                  // tail
+    ctx.globalAlpha=.16+Math.sin(G.t/11)*.06; ctx.fillStyle=C.glass;
+    ctx.beginPath(); ctx.ellipse(x+e.w/2,y+6+und,e.w*0.8,9,0,0,7); ctx.fill(); ctx.globalAlpha=1;
+  }
+
+  if(e.kind==='ceiling'){
+    // upside down, legs up into the stone. Read is the position, not the shape.
+    const drop = e.st==='drop'||e.st==='land';
+    px(x+2,y+2,e.w-4,e.h-4, flash?C.chalk:'#1d1a14');
+    pxf(x+2,y+2,e.w-4,.5,'#443c28');
+    for(let i=0;i<4;i++){
+      const lx=x+1.5+i*((e.w-3)/3.4), sw=Math.sin(G.t/8+i)*0.8;
+      pxf(lx+sw, drop? y+e.h-1 : y-3.5, 1, 4, '#332c1e');
+    }
+    pxf(x+3.5,y+4,1.5,1,'#c2402c'); pxf(x+e.w-5,y+4,1.5,1,'#c2402c');
+    if(e.st==='tense'){
+      ctx.globalAlpha=.28+Math.sin(G.t/3)*.16; ctx.fillStyle=C.gold;
+      ctx.beginPath(); ctx.ellipse(x+e.w/2,y+e.h+16,6,18,0,0,7); ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
+
+  if(e.kind==='grappler'){
+    // Wide and armless-looking at rest, then it becomes almost all arms. The
+    // silhouette change is the tell you actually read at speed.
+    const reaching = e.st==='reach'||e.st==='seize'||e.st==='hold';
+    px(x+3,y+6,e.w-6,e.h-6, flash?C.chalk:'#241c1c');
+    pxf(x+3,y+6,e.w-6,.5, flash?C.chalk:'#4a3838');
+    pxf(x+e.w-3.5,y+6,.5,e.h-6,'#150f0f');
+    px(x+4,y,e.w-8,7, flash?C.chalk:'#171111');                 // low, hunched head
+    pxf(x+4,y,e.w-8,.5,'#3a2a2a');
+    pxf(x+6,y+3,1.5,1,'#c2402c'); pxf(x+e.w-7.5,y+3,1.5,1,'#c2402c');
+    for(let i=0;i<3;i++) pxf(x+5,y+10+i*4,e.w-10,.5,'#3a2a2a');
+    // the arms: tucked at rest, out and long while it reaches
+    const aw = reaching ? 11 : 4;
+    const axx = x + (e.face>0 ? e.w-3 : 3-aw) + (reaching ? e.face*3 : 0);
+    pxf(axx, y+8,  aw, 4, flash?C.chalk:'#2e2222'); pxf(axx, y+8,  aw, .5, '#4a3838');
+    pxf(axx, y+14, aw, 4, flash?C.chalk:'#2e2222'); pxf(axx, y+14, aw, .5, '#4a3838');
+    if(e.st==='hold'){
+      ctx.globalAlpha=.30+Math.sin(G.t/4)*.18; ctx.fillStyle=C.uhie;
+      ctx.beginPath(); ctx.arc(x+e.w/2+e.face*10, y+e.h/2, 14, 0, 7); ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
+
+  if(e.kind==='mimic'){
+    // Asleep it is drawn with idolStatue, exactly as the props in this room are,
+    // and nothing distinguishes it. Awake, the wood splits and the same painter
+    // runs with a red seam through it — so the second one you meet is readable.
+    // Asleep it takes the room's own idol options — the same eye, the same chalk,
+    // the same scale band — so it is not merely similar to the props, it is drawn
+    // by the same call with the same arguments. A palette that was even slightly
+    // off gave it away in the first browser pass.
+    if(e.st==='sleep'){
+      idolStatue(x+e.w/2, y+e.h, 6.5+((Math.round(e.x/T)*7)%3), {eye:'#8fe6ff', chalk:Math.round(e.x/T)%2===0});
+      ctx.globalAlpha=.10; ctx.fillStyle=C.glass;
+      ctx.beginPath(); ctx.arc(x+e.w/2, y+e.h-14, 22, 0, 7); ctx.fill(); ctx.globalAlpha=1;
+      return;
+    }
+    // awake: the same carving, split open and lit from inside, so the next one
+    // you meet is a read rather than another ambush
+    idolStatue(x+e.w/2, y+e.h, e.w/2.3, {wood:['#5a3226','#331914','#170b09'], eye:'#e06a4a'});
+    pxf(x+e.w/2-0.5, y+2, 1, e.h-4, flash?C.chalk:'#8e2323');
+    ctx.globalAlpha=.5+Math.sin(G.t/6)*.2;
+    pxf(x+e.w/2-1.5, y+5, 3, 2, '#e06a4a');
+    pxf(x+e.w/2-1, y+11, 2, 2, '#e06a4a');
+    ctx.globalAlpha=1;
+    if(e.st==='wake'){
+      ctx.globalAlpha=.30+Math.sin(G.t/4)*.16; ctx.fillStyle=C.gold;
+      ctx.beginPath(); ctx.arc(x+e.w/2,y+e.h/2,16+e.t*0.3,0,7); ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
+
+  if(e.kind==='healer'){
+    // A narrow standing post with a wide flat crown — the only enemy whose
+    // silhouette is top-heavy, so you can pick it out of a crowd at a glance.
+    // Its arms come up when it mends and that is the thing to look for.
+    const mending = e.st==='mend';
+    px(x+3,y+7,e.w-6,e.h-7, flash?C.chalk:'#1b1a22');
+    pxf(x+3,y+7,e.w-6,.5, flash?C.chalk:'#3a3748');
+    pxf(x+e.w-3.5,y+7,.5,e.h-7,'#0e0d13');
+    for(let i=0;i<3;i++) pxf(x+3,y+10+i*4,e.w-6,.5,'#2b2936');
+    px(x+2,y+1,8,7, stag?C.chalkDim:'#d8cfae');                   // pale mask, no eyes
+    pxf(x+2,y+1,8,.5,'#f2ebd0');
+    pxf(x+9.5,y+1,.5,7,'#928a70');
+    pxf(x+3.5,y+3.5,1.5,.5,'#241c14'); pxf(x+7,y+3.5,1.5,.5,'#241c14');
+    for(let i=0;i<7;i++) pxf(x+1.5+i*1.3,y-1,.5,2.5,'#6b5f3f');   // flat raffia crown, wide
+    // arms: down at rest, up and open while it works
+    const ar = mending ? -3.5 : 0;
+    pxf(x+0.5,y+9+ar,2.5,6,'#1b1a22'); pxf(x+e.w-3,y+9+ar,2.5,6,'#1b1a22');
+    pxf(x+0.5,y+9+ar,2.5,.5,'#3a3748'); pxf(x+e.w-3,y+9+ar,2.5,.5,'#3a3748');
+    if(mending && e.mend && !e.mend.dead){
+      // the thread is the target: it says which one is being closed
+      const ox=e.mend.x+e.mend.w/2-cam.x, oy=e.mend.y+e.mend.h/2-cam.y;
+      ctx.globalAlpha=.30+Math.sin(G.t/5)*.16; ctx.strokeStyle=C.gold; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(x+e.w/2,y+6);
+      ctx.quadraticCurveTo((x+e.w/2+ox)/2, Math.min(y+6,oy)-14, ox, oy);
+      ctx.stroke(); ctx.globalAlpha=1;
+      ctx.globalAlpha=.22+Math.sin(G.t/7)*.10; ctx.fillStyle=C.gold;
+      ctx.beginPath(); ctx.arc(ox,oy,11,0,7); ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
 
   if(e.kind==='walker'){
     px(x,y+4,e.w,e.h-4, flash?C.chalk:'#191d19');
@@ -3806,7 +5425,7 @@ function bossTell(b,x,y){
   if(!b.tell) return;
   const gold=b.tell==='gold';
   ctx.globalAlpha=.4+Math.abs(Math.sin(G.t/(gold?3:4)))*.45;
-  ctx.strokeStyle=gold?C.gold:C.chalk; ctx.lineWidth=1;
+  ctx.strokeStyle=tellCol(gold); ctx.lineWidth=1;
   ctx.strokeRect(x-4.5,y-4.5,b.w+9,b.h+9);
   if(gold) ctx.strokeRect(x-7.5,y-7.5,b.w+15,b.h+15);
   ctx.globalAlpha=1;
@@ -3833,9 +5452,104 @@ function bossBar(b,name,sub){
   }
   ctx.textAlign='left';
 }
+// A standing forge: an anvil of a body, a hammer arm, and a crucible that tips
+// when it pours. The one boss in the game lit from the inside rather than the top,
+// because everything in this room is lit by what it is holding.
+function drawUzu(b){
+  if(b.dead) return;
+  const x=Math.round(b.x-cam.x), y=Math.round(b.y-cam.y), f=b.face;
+  const heat=0.5+Math.sin(G.t/13)*0.16, ph2=b.phase===2;
+  ctx.globalAlpha=.14+Math.sin(G.t/17)*.05; ctx.fillStyle='#e8862a';
+  ctx.beginPath(); ctx.arc(x+b.w/2,y+b.h*0.6,34,0,7); ctx.fill(); ctx.globalAlpha=1;
+
+  // The room is orange on near-black, so the boss has to sit *above* the room's
+  // value or it reads as a shadow. Cold grey iron, hot seams, and a base wider
+  // than anything else in the room.
+  px(x-2,y+b.h-9,b.w+4,9, b.flash>0?C.chalk:'#4a423c');             // anvil base, widest
+  pxf(x-2,y+b.h-9,b.w+4,1.5,'#8a7d70');
+  pxf(x-2,y+b.h-1,b.w+4,1,'#1b1512');
+  px(x+5,y+10,b.w-10,b.h-18, b.flash>0?C.chalk:'#5a5049');          // body
+  pxf(x+5,y+10,b.w-10,1.5,'#9c8d7e');
+  pxf(x+b.w-6,y+10,1,b.h-18,'#241d18');
+  // the fire it is carrying, seen through the seams
+  ctx.globalAlpha=heat;
+  for(let i=0;i<3;i++) pxf(x+7,y+14+i*7,b.w-14,2.5,'#ff8a2a');
+  ctx.globalAlpha=1;
+  px(x+7,y+1,b.w-14,10, b.flash>0?C.chalk:'#3d3630');               // head/hood
+  pxf(x+7,y+1,b.w-14,1.5,'#7d7166');
+  ctx.globalAlpha=.6+Math.sin(G.t/8)*.25;
+  pxf(x+10,y+5,3,2,'#ffcf7a'); pxf(x+b.w-13,y+5,3,2,'#ffcf7a');     // eyes, forge-lit
+  ctx.globalAlpha=1;
+  // hammer arm, and in phase two it is holding the fire bare
+  const swing = (b.st==='hammer') ? Math.min(b.t,12)/12 : 0;
+  const hx = x + (f>0 ? b.w-2 : -12) + f*swing*14;
+  const hy = y + 12 + swing*16;
+  pxf(x+(f>0?b.w-4:2), y+14, 4, 10, '#4a423c');
+  pxf(hx, hy, 13, 7, b.flash>0?C.chalk:'#59504a');
+  pxf(hx, hy, 13, 1.5, '#9c8d7e');
+  if(ph2){ ctx.globalAlpha=heat; pxf(hx+2, hy+1, 8, 4, '#ffcf7a'); ctx.globalAlpha=1; }
+  // the crucible tips when it pours
+  if(b.st==='pourWind'||b.st==='pour'){
+    const tip = b.st==='pour' ? 1 : Math.min(b.t/30,1);
+    ctx.save(); ctx.translate(x+b.w/2+f*16, y+10); ctx.rotate(f*tip*0.9);
+    pxf(-5,-4,10,8,'#3a2c22'); pxf(-5,-4,10,1,'#6b5232');
+    ctx.globalAlpha=heat+0.3; pxf(-3,-2,6,4,'#ffcf7a'); ctx.globalAlpha=1;
+    ctx.restore();
+  }
+  if(G.t%3===0) parts.push({x:b.x+b.w/2+(rnd()-.5)*b.w, y:b.y+b.h-6,
+    vx:(rnd()-.5)*.6, vy:-.7-rnd()*.6, life:24, max:30, col:'#ffcf7a', g:-0.012, sz:1});
+}
+
+// It has no body to speak of: a long horizontal smear of moving air with a mask
+// carried in the middle of it. Everything about the silhouette says "this is not
+// standing on anything", which is the fight.
+function drawIkuku(b){
+  if(b.dead) return;
+  const x=Math.round(b.x-cam.x), y=Math.round(b.y-cam.y), f=b.face;
+  const gust = b.st==='sweep'||b.st==='stoop';
+  ctx.globalAlpha=.10+Math.sin(G.t/15)*.04; ctx.fillStyle=C.glass;
+  ctx.beginPath(); ctx.ellipse(x+b.w/2,y+b.h/2,42,18,0,0,7); ctx.fill(); ctx.globalAlpha=1;
+  // streamers: the body is the movement
+  for(let i=0;i<7;i++){
+    const t=G.t/6+i*1.1, len=16+((i*13)%18)+(gust?14:0);
+    const yy=y+b.h/2+Math.sin(t)*(7+i);
+    ctx.globalAlpha=.30-i*0.026+(gust?0.16:0);
+    pxf(x+b.w/2-f*len*0.5-len*0.5, yy, len, 1.2, i%2?C.glass:C.chalkDim);
+    ctx.globalAlpha=1;
+  }
+  ctx.globalAlpha=.55;
+  px(x+6,y+6,b.w-12,b.h-12,'#243a44');
+  pxf(x+6,y+6,b.w-12,1,'#4d7d8c');
+  ctx.globalAlpha=1;
+  maskFace(x+b.w/2, y+b.h/2-1, b.w*0.44, b.h*0.62, {
+    wood: b.flash>0?['#ffffff','#efe6cc','#b6ab8e','#6a6150']:['#cfc6ad','#a29878','#6b6353','#3a352c'],
+    socket:'#0a0f12',
+    eye: (b.st==='stoopWind'||b.st==='stoop') ? '#ffcf7a' : '#8fe6ff',
+    ichi:'rgba(0,0,0,0.45)'
+  });
+  if(b.st==='stoopWind'){
+    // it shows you where it is going before it goes
+    ctx.globalAlpha=.30+Math.sin(G.t/3)*.18; ctx.strokeStyle=C.gold; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x+b.w/2,y+b.h/2);
+    ctx.lineTo(b.markX-cam.x+5, b.markY-cam.y+9); ctx.stroke();
+    ctx.beginPath(); ctx.arc(b.markX-cam.x+5, b.markY-cam.y+9, 9, 0, 7); ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  if(b.st==='lift'){
+    for(let i=0;i<5;i++){
+      const ly=(G.t*2+i*14)%70;
+      ctx.globalAlpha=.34-ly/200;
+      pxf(P.x-cam.x+1+((i*3)%9), P.y-cam.y+18-ly, 1, 5, C.glass);
+      ctx.globalAlpha=1;
+    }
+  }
+}
+
 function drawBoss(b){
+  if(b.who==='ikuku'){ drawIkuku(b); return; }
   if(b.who==='ekwensu'){ drawEkwensu(b); return; }
   if(b.who==='onwe'){ drawOnwe(b); return; }
+  if(b.who==='uzu'){ drawUzu(b); return; }
   if(b.dead) return;
   const x=Math.round(b.x-cam.x), y=Math.round(b.y-cam.y);
   const bound = b.bound>0;
@@ -3899,7 +5613,7 @@ function drawBoss(b){
   if(b.tell){
     const gold = b.tell==='gold';
     ctx.globalAlpha=.4+Math.abs(Math.sin(G.t/(gold?3:4)))*.45;
-    ctx.strokeStyle=gold?C.gold:C.chalk; ctx.lineWidth=1;
+    ctx.strokeStyle=tellCol(gold); ctx.lineWidth=1;
     ctx.strokeRect(x-4.5,y-4.5,b.w+9,b.h+9);
     if(gold) ctx.strokeRect(x-7.5,y-7.5,b.w+15,b.h+15);
   }
@@ -4068,7 +5782,7 @@ function drawHUD(){
     const a=Math.min(1,G.msgT/30);
     ctx.globalAlpha=a*.82; px(0,H-40,W,26,'#07090a'); ctx.globalAlpha=a;
     px(0,H-40,W,1,'#1e2420');
-    ctx.font='9px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone; ctx.textAlign='center';
+    narrFont(9); ctx.fillStyle=C.bone; ctx.textAlign='center';
     wrapText(G.msg, W/2, H-27, W-40, 10);
     ctx.textAlign='left'; ctx.globalAlpha=1;
   }
@@ -4079,6 +5793,7 @@ function drawHUD(){
   }
 }
 function wrapText(t,cx,cy,maxw,lh){
+  lh=lh*txtScale();
   const words=t.split(' '); let line='', lines=[];
   for(const w of words){ const test=line?line+' '+w:w;
     if(ctx.measureText(test).width>maxw){ lines.push(line); line=w; } else line=test; }
@@ -4087,6 +5802,95 @@ function wrapText(t,cx,cy,maxw,lh){
   lines.forEach((l,i)=>ctx.fillText(l,cx,start+i*lh));
 }
 
+// It fades in, holds, and fades out, and it never blocks anything: the fight has
+// already started underneath it.
+function drawBossCard(){
+  if(!G.cardT || !G.cardWho) return;
+  const c=bossCard(G.cardWho), t=190-G.cardT;
+  const a = Math.min(1, t/22) * Math.min(1, G.cardT/34);
+  ctx.globalAlpha=a*0.55; px(0,H/2-22,W,30,'#05070b'); ctx.globalAlpha=1;
+  ctx.globalAlpha=a*0.8; pxf(0,H/2-22,W,.5,C.goldDim); pxf(0,H/2+7.5,W,.5,C.goldDim); ctx.globalAlpha=1;
+  ctx.textAlign='center';
+  ctx.globalAlpha=a;
+  ctx.font='13px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone;
+  ctx.fillText(c.t, W/2, H/2-6);
+  if(c.sub){
+    ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.goldDim;
+    ctx.fillText(c.sub, W/2, H/2+4);
+  }
+  ctx.globalAlpha=1; ctx.textAlign='left';
+}
+
+// 3.5. Iyi Idemili's floor is wet stone, so it holds what stands on it. The
+// reflection is the player and the enemies drawn again, upside down, under the
+// tile they are standing on, at low alpha and wobbling — cheap, because it is
+// the same painters called a second time inside a flip, and it is the only
+// place in the game where the floor tells you something.
+function drawWet(){
+  if(G.room!==5) return;
+  const wob=Math.sin(G.t/23)*0.6;
+  const floorOf=(ent)=>{
+    let ty=Math.floor((ent.y+ent.h+1)/T);
+    for(let k=0;k<3 && !SOLID(tileAt(R,Math.floor((ent.x+ent.w/2)/T),ty));k++) ty++;
+    return ty*T;
+  };
+  const one=(fn,ent)=>{
+    const fw=floorOf(ent);
+    if(fw-(ent.y+ent.h) > T*1.2) return;        // in the air: nothing to reflect in
+    const fy=fw-cam.y;
+    ctx.save();
+    // Clipped to a shallow band. Unclipped it ran the full height of whatever
+    // it was reflecting and read as a hole in the floor rather than a shine on
+    // it — a wet floor holds an inch of you, not all of you.
+    ctx.beginPath(); ctx.rect(0, fy, W, 15); ctx.clip();
+    ctx.globalAlpha=.14;
+    ctx.translate(0, 2*fy);
+    ctx.scale(1,-1);
+    ctx.translate(wob*((Math.round(ent.x)%7)-3)*0.25, 0);
+    try{ fn(ent); }catch(e){}
+    ctx.restore();
+  };
+  for(const e of enemies) if(!e.dead) one(drawEnemy, e);
+  if(!P.dead) one(()=>drawPlayer(), P);
+}
+
+// 3.6. The fire room had a heat gradient breathing over the whole screen, which
+// is a tint, not a shimmer. This is the real thing: the lower half of the frame
+// is taken in horizontal strips and put back a pixel or two sideways, so edges
+// actually bend. Strips are 4px so the whole effect is sixteen drawImage calls,
+// and it only runs in room 8 — measured before it was kept (09-TECHNICAL §9.5).
+// 3.6. The fire room had a heat gradient breathing over the whole screen, which
+// is a tint, not a shimmer. This is the real thing: the lower half of the frame
+// is put back in horizontal strips, each nudged sideways, so edges actually
+// bend.
+//
+// The first version read each strip straight off the canvas it was drawing
+// into. That measured at 92.7 ms a frame against 21.9 without it — every
+// drawImage from the live canvas forces a flush, and there were sixteen of
+// them. It copies the band once into a scratch canvas and takes the strips from
+// there: one readback instead of sixteen. 09-TECHNICAL §9.5 says measure before
+// optimising; this is the case for measuring before *keeping*.
+let shimCv=null, shimCx=null;
+function drawShimmer(){
+  if(G.room!==8 || OPT.calm) return;
+  const y0=Math.round(H*0.42), hh=H-y0, band=5;
+  try{
+    if(!shimCv || shimCv.width!==Math.round(W*SC) || shimCv.height!==Math.round(hh*SC)){
+      shimCv=document.createElement('canvas');
+      shimCv.width=Math.round(W*SC); shimCv.height=Math.round(hh*SC);
+      shimCx=shimCv.getContext('2d');
+      if(!shimCx) { shimCv=null; return; }
+      shimCx.imageSmoothingEnabled=false;
+    }
+    shimCx.clearRect(0,0,shimCv.width,shimCv.height);
+    shimCx.drawImage(cvs, 0, y0*SC, W*SC, hh*SC, 0, 0, W*SC, hh*SC);
+    for(let y=0;y<hh;y+=band){
+      const amp=y/hh;                                  // nothing up top, most at the lava
+      const dx=(Math.sin(G.t/13 + y*0.22)*1.6 + Math.sin(G.t/29 + y*0.07)*1.1)*amp;
+      ctx.drawImage(shimCv, 0, y*SC, W*SC, band*SC, dx, y0+y, W, band);
+    }
+  }catch(e){ shimCv=null; }
+}
 function drawVignette(){
   const g=ctx.createRadialGradient(W/2,H/2,60,W/2,H/2,W*0.62);
   g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.72)');
@@ -4096,24 +5900,49 @@ function drawVignette(){
 function render(){
   ctx.save();
   if(G.shake>0.2){ ctx.translate((rnd()-.5)*G.shake*2,(rnd()-.5)*G.shake*2); }
-  drawBG(); drawTiles(); drawProps(); drawDecals(); drawShrines(); drawPickups(); drawShade(); drawShadows();
+  drawBG(); drawTiles(); drawProps(); drawDecals(); drawShrines(); drawPickups(); drawShade(); drawShadows(); drawFlames();
   for(const e of enemies) drawEnemy(e);
   if(boss) drawBoss(boss);
+  drawWet();
   drawShots(); drawPlayer(); drawParts();
   drawAmbient(true);
   drawForeground();
   drawLights();
   ctx.restore();
+  drawShimmer();
   drawVignette(); drawGrain(); drawTutorial();
-  if(G.flash>0){ ctx.globalAlpha=G.flash/22; ctx.fillStyle=C.chalk; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
+  drawBossCard();
+  // ...and the edge of the world lights while any gold is in the air
+  if(wearing('ogene')){
+    let gold=false;
+    for(const e of enemies) if(!e.dead && e.tell==='gold'){ gold=true; break; }
+    if(boss && !boss.dead && boss.tell==='gold') gold=true;
+    if(gold){
+      ctx.globalAlpha=.16+Math.sin(G.t/4)*.08; ctx.fillStyle=C.gold;
+      ctx.fillRect(0,0,W,3); ctx.fillRect(0,H-3,W,3);
+      ctx.fillRect(0,0,3,H); ctx.fillRect(W-3,0,3,H);
+      ctx.globalAlpha=1;
+    }
+  }
+  if(G.flash>0){ ctx.globalAlpha=Math.min(G.flash,OPT.noFlash?3:99)/22;
+    ctx.fillStyle=C.chalk; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
   if(G.fade>0){ ctx.globalAlpha=G.fade; ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
+  if(G.mode==='photo'){
+    if(PHOTO.hud) drawHUD();
+    // The only chrome, and it fades so it is out of the way of a screenshot.
+    ctx.globalAlpha=.30+Math.sin(G.t/40)*.14;
+    ctx.textAlign='center'; ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim;
+    ctx.fillText('arrows  look      Z  faster      C  hud      X  back', W/2, H-7);
+    ctx.textAlign='left'; ctx.globalAlpha=1;
+    return;
+  }
   drawHUD();
 }
 
 // ── title ────────────────────────────────────────────────────────────────────
 // -- title
 const TITLE={sel:0, page:0};
-function titleOpts(){ return (hasSave() ? ['continue','new'] : ['new']).concat(['speedrun','codex','controls']); }
+function titleOpts(){ return (hasSave() ? ['continue','new'] : ['new']).concat(['speedrun','codex','controls','opts']); }
 function titleUpdate(){
   const o=titleOpts();
   if(tap('ArrowUp')||tap('KeyW')){ TITLE.sel=(TITLE.sel-1+o.length)%o.length; tone(540,.05,'square',.02); }
@@ -4123,6 +5952,7 @@ function titleUpdate(){
     if(TITLE.page){ TITLE.page=0; return; }
     const c=o[TITLE.sel];
     if(c==='controls'){ TITLE.page=1; return; }
+    if(c==='opts'){ openOpts('title'); return; }
     if(c==='codex'){ if(hasSave()) loadGame(); openCodex('title'); return; }
     if(c==='speedrun'){ G.cheat=true; G.mode='play'; startSpeedrun(); return; }
     G.cheat=false;
@@ -4130,24 +5960,76 @@ function titleUpdate(){
     else { wipeSave(); G.mode='play'; startNew(); }
   }
 }
-function renderTitle(){
+// 3.7. The title was a word on a black field. The key art is the game's own
+// opening image assembled out of painters that already exist — the ogilisi over
+// the row of graves, the moon behind it, the hole at the end of the row — so it
+// costs no assets and cannot drift from what the rooms actually look like.
+function titleArt(){
+  const keep=G.seed; G.seed=7;
   ctx.fillStyle='#07090a'; ctx.fillRect(0,0,W,H);
-  G.seed=7;
+  const drift=Math.sin(G.t/260)*6;
   ctx.globalAlpha=.5;
   for(let i=0;i<40;i++){ const x=rnd()*W, y=rnd()*H; px(x,y,1,1,'#1a201c'); }
   ctx.globalAlpha=1;
+  // the moon, low and to the right, the way room 0 holds it
+  const mx=W-96+drift*0.4, my=58;
+  ctx.globalAlpha=.08; ctx.fillStyle='#cfc6ad';
+  ctx.beginPath(); ctx.arc(mx,my,30,0,7); ctx.fill();
+  ctx.globalAlpha=.55; ctx.fillStyle='#d8d0b6';
+  ctx.beginPath(); ctx.arc(mx,my,14,0,7); ctx.fill();
+  ctx.fillStyle='#07090a';
+  ctx.beginPath(); ctx.arc(mx+6,my-4,13,0,7); ctx.fill(); ctx.globalAlpha=1;
+  // the ground, the row, and the hole at the end of it
+  // The row sits clear of the footer: at H-40 the ground band ran under the
+  // control hint and the open grave read as a stray black box behind the text.
+  const gy=H-58;
+  px(0,gy,W,58,'#090b09');
+  ctx.globalAlpha=.9; pxf(0,gy,W,1,'#161a15'); ctx.globalAlpha=1;
+  for(let i=0;i<8;i++){
+    const bx=150+i*36;
+    ctx.fillStyle='#0e100d';
+    ctx.beginPath(); ctx.ellipse(bx,gy,11,5,0,3.14159,0); ctx.fill();
+    ctx.globalAlpha=.6; ctx.fillStyle='#171a14';
+    ctx.beginPath(); ctx.ellipse(bx,gy-1,9,3.4,0,3.14159,0); ctx.fill(); ctx.globalAlpha=1;
+    px(bx-1,gy-6,2,4,'#070907');
+  }
+  // the ninth, open, and lit at the lip the way room 10 draws it
+  const hx=104, hw=30;
+  const hg=ctx.createLinearGradient(0,gy,0,gy+20);
+  hg.addColorStop(0,'#14110c'); hg.addColorStop(1,'#000');
+  ctx.fillStyle=hg; ctx.fillRect(hx,gy,hw,20);
+  ctx.globalAlpha=.85; pxf(hx,gy,hw,1,'#2a2418'); ctx.globalAlpha=1;
+  for(let i=0;i<9;i++){ ctx.globalAlpha=.4-(i%3)*.08;
+    pxf(hx+hw+5+i*3, gy-5, .5, 4, C.chalk); }
+  ctx.globalAlpha=1;
+  // and the tree that marks the boundary
+  try{
+    treeShape(58+drift*0.2, gy+3, 168, { seed:4,
+      bark:['#161a13','#0b0e0a','#040604'],
+      leaf:['#0a1109','#0d160c','#060b06'], rim:'#1c2c19' });
+  }catch(e){}
+  G.seed=keep;
+}
+function renderTitle(){
+  titleArt();
   ctx.textAlign='center';
+  // the lockup: the word, a rule under it, and nine strokes of nzu — the same
+  // nine that are on the player's mask and on the name stone
   ctx.font='30px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone;
   ctx.fillText('ỌDỊNALA', W/2, 78);
+  ctx.globalAlpha=.45; pxf(W/2-74,86,148,.5,C.goldDim); ctx.globalAlpha=1;
+  for(let i=0;i<9;i++){ ctx.globalAlpha=.5-(i%3)*.09;
+    pxf(W/2-17+i*4.2, 89, .5, 4, C.chalk); }
+  ctx.globalAlpha=1;
   ctx.font='9px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
-  ctx.fillText('the ọgbanje who would not go back', W/2, 96);
+  ctx.fillText('the ọgbanje who would not go back', W/2, 104);
   glyph(W/2-92,80,7,C.gold,G.t/60); glyph(W/2+92,80,7,C.gold,-G.t/60);
 
   ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim;
   if(!TITLE.page){
     const o=titleOpts();
-    const label={continue:'CONTINUE', new:'BEGIN AGAIN', speedrun:'SPEEDRUN  \u2014  everything open', codex:'THE CODEX', controls:'HOW TO FIGHT'};
-    let ry=140;
+    const label={continue:'CONTINUE', new:'BEGIN AGAIN', speedrun:'SPEEDRUN  \u2014  everything open', codex:'THE CODEX', controls:'HOW TO FIGHT', opts:'HOW YOU PLAY'};
+    let ry=136;
     for(let i=0;i<o.length;i++){
       const y=ry, on=i===TITLE.sel;
       ry += (o[i]==='continue') ? 28 : 19;
@@ -4248,6 +6130,54 @@ const ON_IN=[
  {art:'twin',  voice:'boss', text:"\"You dug me up. I did not ask to be left behind.\""},
  {art:'twin',  voice:'narr', text:"The ninth child. The one who kept the promise. It has been standing here the whole time you were alive."}
 ];
+// It tells the truth from the first line to the last. After a boss who could not
+// be fought and a boss who was paid, this one simply wants to finish you, and
+// says so, and means something slightly different by it than you do.
+// It reframes the room rather than the player. Igwe's horror is that there is a
+// sunset hundreds of feet underground and nobody remarks on it; Ikuku is the
+// answer, and says so in its first line without being asked.
+// Ending B \u2014 Nl\u1ecdghachi, the going back. The cruellest one and the most loving.
+// It is not played for horror: she is simply returned to a morning, and she will
+// do all of it again, and the player picked that for her.
+const ON_OUT_B=[
+ {art:'twin',   voice:'boss', text:"\"There. That was all it wanted. You only had to stop.\""},
+ {art:'twin',   voice:'narr', text:"It lowers its hands and waits, the way somebody waits who has done this before."},
+ {art:'ash',    voice:'you',  text:"You walk into yourself. It is not a fight. It was never going to be one."},
+ {art:'moon',   voice:'narr', text:"The bargain closes over the pair of you the way water closes over a dropped stone."},
+ {art:'burial', voice:'narr', text:"Your mother is standing in a yard, before any of it, holding a child that is going to die."},
+ {art:'burial', voice:'narr', text:"She does not remember the nine. She will bury nine more. You chose that for her."},
+ {art:'child',  voice:'you',  text:"You are the tenth now. There will be an eleventh. That is what going back means."}
+];
+// Ending C \u2014 Onye \u1eccma, the one who did not. It cannot fight you because it
+// fights the way you fight, and you did not.
+const ON_OUT_C=[
+ {art:'twin',   voice:'boss', text:"\"I have been waiting to see what you would do with your hands.\""},
+ {art:'twin',   voice:'boss', text:"\"They are clean. There is nothing here for me to be.\""},
+ {art:'twin',   voice:'narr', text:"It wears your face and cannot hold it. There is nothing in you it can copy."},
+ {art:'ash',    voice:'narr', text:"It comes apart without being struck, which is the only way it was ever going to."},
+ {art:'dawn',   voice:'you',  text:"You walked the whole country of the dead and left everything in it standing."},
+ {art:'dawn',   voice:'narr', text:"Nobody will know. There is nobody down here to tell, and the ones above will not ask."}
+];
+const IK_IN=[
+ {art:'dawn', voice:'boss', text:"\"There you are. Under my sky, walking about like it is weather.\""},
+ {art:'dawn', voice:'you',  text:"There is a sunset here. You are hundreds of feet under the ground. You had not let yourself notice."},
+ {art:'dawn', voice:'boss', text:"\"Somebody has to hold it up. Put your feet on something and I will show you.\""}
+];
+const IK_OUT=[
+ {art:'dawn', voice:'narr', text:"The wind goes out of the room all at once, the way a held breath goes."},
+ {art:'dawn', voice:'you',  text:"The sky does not change. The sun sits where it sat. Whatever was holding it up, it was not only that."},
+ {art:'dawn', voice:'narr', text:"You go on towards the last door with the air very still behind you."}
+];
+const UZ_IN=[
+ {art:'ash',  voice:'boss', text:"\"You are the one that keeps coming back. I have heard.\""},
+ {art:'ash',  voice:'boss', text:"\"This is where things stop being changeable. That is all this place is.\""},
+ {art:'ash',  voice:'you',  text:"It has been working the whole time you have been walking towards it. It does not stop now."}
+];
+const UZ_OUT=[
+ {art:'ash',  voice:'boss', text:"\"You did that in one piece. Good. That is what finished means.\""},
+ {art:'ash',  voice:'narr', text:"The fire goes out of the iron by degrees, the way it would in any yard, and then it is only a shape."},
+ {art:'ash',  voice:'you',  text:"It never told you a single lie. You are not sure that was a kindness."}
+];
 const ON_OUT=[
  {art:'twin',  voice:'boss', text:"\"...then go on. Be the one who stayed. See how heavy it is.\""},
  {art:'ash',   voice:'narr', text:"It does not fall. It thins, the way the last of a fire thins, and the mask comes down last."},
@@ -4256,6 +6186,105 @@ const ON_OUT=[
  {art:'dawn',  voice:'narr', text:"The sky over Aj\u1ecd \u1eccf\u1ecba is doing the grey thing it does before it decides to be morning. You have never seen it from this side."},
  {art:'dawn',  voice:'you',  text:"You are ten now. Only ten. And there will not be an eleventh."}
 ];
+
+// ── the people who are still here ────────────────────────────────────────────
+// NPCs are shrine-like objects, not entities: they do not move, take damage or
+// path. E to talk, and the conversation is a cutscene, so there is no new UI.
+// One conversation per world state — no trees, no choices, no barks.
+// 05-PROGRESSION §5.5.
+//
+// beats() is read fresh every time, so a conversation changes when the world
+// does. The dibia does not recognise you, and never will: the last time he saw
+// you, you were three days old and dying.
+const NPCS = {
+  dibia: { ch:'d', room:4, voice:'dibia', prompt:'E  speak',
+    after(){ if(G.chalk && !G.gaveChalk) G.gaveChalk=1; },
+    beats(){
+      if(G.chalk && !G.gaveChalk) return [
+       {art:'charm', voice:'you',   text:"You put the chalk on the mat. The cloth is stiff with age."},
+       {art:'charm', voice:'dibia', text:"\"Ah.\" He does not pick it up. \"Where.\""},
+       {art:'dark',  voice:'you',   text:"You tell him where."},
+       {art:'dark',  voice:'dibia', text:"\"That was a compound. There were people in it when it went.\""},
+       {art:'dark',  voice:'dibia', text:"\"I went back down for the nzu. I did not go back down for them.\""},
+       {art:'idols', voice:'dibia', text:"\"Keep it. I have not needed it in a long time and I am not starting now.\""}
+      ];
+      if(G.slain.ogbunabali) return [
+       {art:'dark',  voice:'dibia', text:"\"Something went quiet in the night. I felt the market lean.\""},
+       {art:'dark',  voice:'dibia', text:"\"Ogbunabali. There. I said it and nothing came for me.\""},
+       {art:'idols', voice:'you',   text:"His hand goes to the cowries and stops halfway. He leaves them where they are."},
+       {art:'idols', voice:'dibia', text:"\"That was one of the coming-and-going. I would have liked to meet them.\""}
+      ];
+      return [
+       {art:'idols', voice:'dibia', text:"\"Sit if you want. I have nothing to sell and nowhere to be.\""},
+       {art:'idols', voice:'dibia', text:"\"You want to hear about the iyi-uwa. They always do.\""},
+       {art:'charm', voice:'dibia', text:"\"A stone, buried. The knot that ties a child to the coming and the going.\""},
+       {art:'charm', voice:'dibia', text:"\"Cut the knot and the child stays. That is the whole of it.\""},
+       {art:'charm', voice:'dibia', text:"\"I cut one myself, once. Nine burials before it. The mother did the asking.\""},
+       {art:'idols', voice:'you',   text:"He does not look up. He has told this to a hundred people who were not you."}
+      ];
+    } },
+
+  // One line per visit. Across the whole game she describes a woman who used to
+  // shop here — and she is describing your mother, and does not know it, and for
+  // a good while neither does the player. The order is the entire effect: do not
+  // shuffle it. The last line is the one that lands, so it holds rather than
+  // looping back to the first — see the note in 05-PROGRESSION §5.5.
+  woman: { ch:'m', room:4, voice:'woman', prompt:'E  speak',
+    lines:[
+      "\"There was a woman came here every market day. Then there was not.\"",
+      "\"She bought the small yams. Said the big ones were showing off.\"",
+      "\"She laughed like she was getting away with something.\"",
+      "\"She stopped coming for a season. Came back thinner and bought the same yams.\"",
+      "\"Last time she was carrying cloth. White. Not very much of it.\"",
+      "\"I did not ask what it was for. You do not ask.\""
+    ],
+    beats(){
+      const i=Math.min((G.met.woman||0), this.lines.length-1);
+      return [{art:'idols', voice:'woman', text:this.lines[i]}];
+    } },
+
+  // Still in the cycle, four burials in. He asks you the question the whole game
+  // is about and you have no way to answer him — there are no dialogue options
+  // and there will not be. The conversation simply ends. That silence is the
+  // content: it is the road you did not take, standing in the water.
+  ogbanje: { ch:'o', room:5, voice:'child', prompt:'E  speak',
+    beats(){
+      return [
+       {art:'child', voice:'child', text:"\"You are one of us. You have the water on you.\""},
+       {art:'child', voice:'child', text:"\"Four times, me. My mother is getting tired of it.\""},
+       {art:'child', voice:'child', text:"\"They say you dug yours up yourself. From this side.\""},
+       {art:'child', voice:'child', text:"\"What is on the other side of not going back.\""},
+       {art:'child', voice:'you',   text:"You have nothing to tell him. He waits a while, and then stops waiting."}
+      ];
+    } },
+
+  // She does not know you, she is not waiting for you, and she is busy. Under
+  // thirty seconds, and completely flat — it goes cheap the moment it is played
+  // for feeling. After the second visit the prompt goes away and she is scenery.
+  mother: { ch:'y', room:7, voice:'mother',
+    prompt(){ return (G.met.mother||0) < 2 ? 'E  speak' : ''; },
+    beats(){
+      if((G.met.mother||0) >= 2) return [];
+      if((G.met.mother||0) === 1) return [
+       {art:'ash', voice:'you',    text:"She is still picking the stones out of the rice. There is no end to the rice."},
+       {art:'ash', voice:'mother', text:"\"Mind your feet.\""}
+      ];
+      return [
+       {art:'ash', voice:'you',    text:"She is picking stones out of rice. She does not look up when you come in."},
+       {art:'ash', voice:'mother', text:"\"Mind your feet. There is a bowl down there.\""},
+       {art:'ash', voice:'you',    text:"She has said that a thousand times to somebody. Not to you."},
+       {art:'ash', voice:'mother', text:"\"Go on, then. You are letting the cold in.\""}
+      ];
+    } }
+};
+const NPC_BY_CH={};
+for(const k in NPCS) NPC_BY_CH[NPCS[k].ch]=k;
+
+// Every character a room map is allowed to contain: geometry, then props and
+// pickups, then enemy spawns, then whatever the NPC table declares. One source
+// of truth — the test suite reads this rather than keeping its own copy, so a
+// new spawn char cannot be added without the maps being checked against it.
+const TILE_CHARS = '#-.cE^ ' + 'SNMhFx' + 'KBXO' + 'wltWrvakinqjsbp'+'UI' + Object.keys(NPC_BY_CH).join('');
 
 function cutArt(name,cx,cy){
   if(name==='bones'){
@@ -4441,6 +6470,8 @@ const RIDDLES=[
 ];
 const RID={idx:0, sel:0, mirror:null, shake:0, wrong:0};
 function openRiddle(m){
+  if(!m || !RIDDLES.length) return;              // never open a riddle with no mirror behind it
+  mirrorInfo(m.id);                              // warn now, at the glass, not at the answer
   RID.idx = G.riddleIdx % RIDDLES.length;
   G.riddleIdx++;
   RID.sel=0; RID.mirror=m; RID.wrong=0;
@@ -4449,6 +6480,9 @@ function openRiddle(m){
 }
 function riddleUpdate(){
   const r=RIDDLES[RID.idx];
+  // a riddle with nothing behind it is an authoring bug, not a player state —
+  // hand control back rather than working with undefined
+  if(!r || !RID.mirror){ G.mode='play'; return; }
   if(RID.wrong>0){
     RID.wrong--;
     if(RID.wrong===0){
@@ -4466,7 +6500,7 @@ function riddleUpdate(){
       G.mirrors[RID.mirror.id]=true;
       G.mode='play';
       S.name(); G.flash=12;
-      say("The glass clears. "+MIRRORS[RID.mirror.id].name+" will carry you now.",200);
+      say("The glass clears. "+mirrorInfo(RID.mirror.id).name+" will carry you now.",200);
       burst(RID.mirror.x+8, RID.mirror.y+10, 30, C.spiritOr||C.gold, 2.6, 46);
       saveGame();
     } else {
@@ -4512,8 +6546,89 @@ const MIRRORS={
   4:{room:4, tx:5,  ty:16, name:'Mirror in the Night Market'},
   5:{room:5, tx:6,  ty:16, name:'Mirror under the Water'},
   6:{room:6, tx:7,  ty:16, name:'Mirror on the Bone Road'},
-  7:{room:7, tx:8,  ty:16, name:'Mirror in the Land of Spirits'}
+  7:{room:7, tx:8,  ty:16, name:'Mirror in the Land of Spirits'},
+  8:{room:8, tx:7,  ty:16, name:'Mirror at the Forge'},
+  9:{room:9, tx:10, ty:16, name:'Mirror under the Open Sky'}
 };
+// A room can carry an M tile and have no entry here — that is an authoring
+// mistake, and it used to be a fatal one: reading .name off undefined threw out
+// of frame() and the loop never restarted. Fall back to the room's own name and
+// the floor under its M tile so the glass still works, and complain once so the
+// mistake is findable. tools/audit.py fails on this statically.
+const MIRROR_WARNED={};
+function mirrorInfo(id){
+  const m=MIRRORS[id];
+  if(m) return m;
+  if(!MIRROR_WARNED[id]){
+    MIRROR_WARNED[id]=1;
+    if(typeof console!=='undefined' && console.warn)
+      console.warn('Ọdịnala: room '+id+' has a mirror but no MIRRORS entry. '+
+                   'Using the room name. Add one — tools/audit.py checks for this.');
+  }
+  const r=ROOMS[id];
+  let tx=2, ty=16;
+  if(r){
+    for(let y=0;y<r.h && ty===16;y++){
+      const x=r.map[y].indexOf('M');
+      if(x<0) continue;
+      tx=x;
+      for(let k=y;k<r.h;k++) if(SOLID(tileAt(r,tx,k))){ ty=k; break; }
+      break;
+    }
+  }
+  return {room:id, tx:tx, ty:ty, name:(r?r.name:'The glass'), fallback:true};
+}
+const CHM={sel:0};
+function openCharms(){ G.mode='charm'; CHM.sel=0; tone(500,.07,'triangle',.03,700); }
+function charmUpdate(){
+  const own=ownedCharms();
+  if(tap('KeyX')||tap('Escape')){ G.mode='pause'; return; }
+  if(!own.length) return;
+  if(CHM.sel>=own.length) CHM.sel=0;
+  if(tap('ArrowUp')||tap('KeyW')){ CHM.sel=(CHM.sel-1+own.length)%own.length; tone(540,.05,'square',.02); }
+  if(tap('ArrowDown')||tap('KeyS')){ CHM.sel=(CHM.sel+1)%own.length; tone(540,.05,'square',.02); }
+  if(tap('KeyZ')||tap('Enter')){
+    const k=own[CHM.sel], at=G.worn.indexOf(k);
+    if(at>=0){ G.worn.splice(at,1); tone(300,.08,'triangle',.03,200); }
+    else if(G.worn.length<CHARM_SLOTS){ G.worn.push(k); S.pick(); }
+    else { G.note='All three cords are full.'; G.noteT=90; tone(130,.2,'sawtooth',.04,90); return; }
+    saveGame();
+  }
+}
+function renderCharm(){
+  ctx.globalAlpha=.93; px(0,0,W,H,'#06070b'); ctx.globalAlpha=1;
+  ctx.textAlign='center'; ctx.font='9px ui-sans-serif,system-ui'; ctx.fillStyle=C.goldDim;
+  ctx.fillText('WHAT YOU HAVE TIED ON', W/2, 22);
+  for(let i=0;i<CHARM_SLOTS;i++){
+    const cx=W/2-34+i*34, filled=G.worn[i];
+    ctx.globalAlpha=.5; pxf(cx-1,30,2,10,'#3b3226'); ctx.globalAlpha=1;
+    px(cx-7,40,16,14, filled?'#2a2118':'#141414');
+    pxf(cx-7,40,16,1, filled?'#5a4632':'#242424');
+    if(filled){ pxf(cx-3,45,6,5,C.bone); pxf(cx-2,46,4,3,'#8e8474'); }
+  }
+  ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim;
+  ctx.fillText(G.worn.length+' of '+CHARM_SLOTS+' cords used', W/2, 64);
+  ctx.textAlign='left';
+  const own=ownedCharms();
+  if(!own.length){
+    ctx.textAlign='center'; ctx.fillStyle=C.chalkDim; ctx.font='8px ui-serif,Georgia,serif';
+    ctx.fillText('You are carrying none. Ala keeps some at her ledger.', W/2, 104);
+    ctx.textAlign='left';
+  }
+  for(let i=0;i<own.length;i++){
+    const k=own[i], c=CHARMS[k], y=84+i*22, on=i===CHM.sel, tied=wearing(k);
+    if(on){ ctx.globalAlpha=.16; px(24,y-9,W-48,20,C.gold); ctx.globalAlpha=1; }
+    ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle= tied?C.bone:C.chalkDim;
+    ctx.fillText((tied?'\u25b8 ':'  ')+c.name, 30, y);
+    ctx.textAlign='right'; ctx.fillStyle= tied?C.gold:'#4a453c';
+    ctx.fillText(tied?'tied on':'in the bag', W-30, y); ctx.textAlign='left';
+    ctx.font='7px ui-serif,Georgia,serif'; ctx.fillStyle='#5b554a';
+    ctx.fillText(c.blurb, 38, y+9);
+  }
+  ctx.textAlign='center'; ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim;
+  ctx.fillText('\u2191 \u2193  choose      Z  tie on / take off      X  back', W/2, H-14);
+  ctx.textAlign='left';
+}
 const TRV={sel:0};
 function openTravel(){
   const keys=Object.keys(G.mirrors).filter(k=>G.mirrors[k]);
@@ -4523,11 +6638,15 @@ function openTravel(){
 function travelList(){ return Object.keys(MIRRORS).filter(k=>G.mirrors[k]); }
 function travelUpdate(){
   const list=travelList();
+  // an empty list would make the modulo below NaN and strand the player in a
+  // menu with nothing in it
+  if(!list.length){ if(tap('KeyX')||tap('KeyZ')||tap('Enter')) G.mode='play'; return; }
+  if(TRV.sel>=list.length) TRV.sel=0;
   if(tap('ArrowUp')||tap('KeyW')){ TRV.sel=(TRV.sel-1+list.length)%list.length; tone(540,.05,'square',.02); }
   if(tap('ArrowDown')||tap('KeyS')){ TRV.sel=(TRV.sel+1)%list.length; tone(540,.05,'square',.02); }
   if(tap('KeyX')){ G.mode='play'; return; }
   if(tap('KeyZ')||tap('Enter')){
-    const m=MIRRORS[list[TRV.sel]];
+    const m=mirrorInfo(list[TRV.sel]);
     G.mode='play'; G.fade=1; S.name();
     resetPlayerAt(m.room, m.tx, m.ty);
     say(m.name,120); saveGame();
@@ -4539,7 +6658,7 @@ function renderTravel(){
   ctx.textAlign='center'; ctx.font='9px ui-sans-serif,system-ui'; ctx.fillStyle=C.goldDim;
   ctx.fillText('STEP THROUGH', W/2, 54);
   for(let i=0;i<list.length;i++){
-    const m=MIRRORS[list[i]], y=88+i*24, on=i===TRV.sel;
+    const m=mirrorInfo(list[i]), y=88+i*24, on=i===TRV.sel;
     if(on){ ctx.globalAlpha=.16; px(W/2-120,y-12,240,19,C.gold); ctx.globalAlpha=1; }
     ctx.font='10px ui-serif,Georgia,serif'; ctx.fillStyle=on?C.bone:C.chalkDim;
     ctx.fillText(m.name, W/2, y);
@@ -4552,6 +6671,9 @@ function renderTravel(){
 }
 
 // -- the ledger (spend cowries) ----------------------------------------------
+// Every kind shopUpdate knows how to buy. One declaration, so the suite does not
+// keep a second copy that goes stale the moment a new line of stock appears.
+const SHOP_KINDS = ['spell','weapon','flask','heart','riposte','swift','charm','wearcharm'];
 function shopItems(){
   const it=[];
   for(const k of SPELL_ORDER){
@@ -4572,6 +6694,10 @@ function shopItems(){
     label:'RIPOSTE', desc:'A turned blade answers on its own. Parries strike back.'});
   if(!G.skills.swift) it.push({kind:'swift', cost:230,
     label:'SWIFT HAND', desc:'Recover from every swing a quarter faster.'});
+  for(const ck of CHARM_ORDER){
+    if(!G.charms[ck]) it.push({kind:'wearcharm', k:ck, cost:CHARMS[ck].cost,
+      label:'CHARM  '+CHARMS[ck].name+'  \u2014 '+CHARMS[ck].sub, desc:CHARMS[ck].blurb});
+  }
   if(!G.skills.charm) it.push({kind:'charm', cost:160,
     label:'COWRIE CHARM', desc:'The dead drop half again as much.'});
   return it;
@@ -4594,6 +6720,7 @@ function shopUpdate(){
     if(o.kind==='riposte') G.skills.riposte=1;
     if(o.kind==='swift') G.skills.swift=1;
     if(o.kind==='charm') G.skills.charm=1;
+    if(o.kind==='wearcharm'){ G.charms[o.k]=1; if(G.worn.length<CHARM_SLOTS) G.worn.push(o.k); }
     S.name(); G.flash=8; saveGame();
     G.sel=Math.min(G.sel, Math.max(0,shopItems().length-1));
   }
@@ -4723,7 +6850,31 @@ function drawTutorial(){
 }
 
 // -- the codex: everything the game knows about itself ------------------------
+const GRAVE_LINES=[
+ "The first is small and the grass has taken it. Nobody has needed to know which one it is for a long time.",
+ "The second is the same size. So is the third. They stopped growing at the same age, which is the point.",
+ "The fourth has a stone on it. Somebody carried that here.",
+ "The fifth is where the row starts to look like a row rather than a series of accidents.",
+ "The sixth. A dibia was called by now. He asked the right questions and got the answers children give.",
+ "The seventh. The mother did the asking herself by this one.",
+ "The eighth is the last that anyone dug expecting it to be the last.",
+ "There is no ninth mound. The ninth was dug up.",
+ "You have been standing in it. It is smaller than you remember, and it is the only one here that was ever opened."
+];
 const LORE=[
+ // §5.6's third standing request. `b` is computed, so the entry genuinely grows
+ // as the player walks the row rather than unlocking whole.
+ {id:'graves', t:'NINE', when:()=>gravesStood()>0 || !!G.graves.own,
+  // a getter, not an array and not a call: every other entry is read as `.b`,
+  // and an IIFE here would freeze the entry at whatever was true when the file
+  // loaded, which is nothing
+  get b(){
+    const out=[];
+    for(let i=0;i<GRAVES.length;i++) if(G.graves[GRAVES[i]]) out.push(GRAVE_LINES[i]);
+    if(G.graves.own) out.push(GRAVE_LINES[8]);
+    else if(gravesStood()===GRAVES.length) out.push(GRAVE_LINES[7]);
+    return out;
+  }},
  {id:'ogbanje', t:'\u1eccGBANJE', when:()=>true, b:[
   "A child who is born to die and be born again to the same woman. Not a ghost and not a curse: a member of a spirit company who agreed, before birth, to come only briefly and then go back.",
   "The Igbo word carries no melodrama. It is a diagnosis. A woman who has buried three infants in a row is not unlucky; she is being visited by the same one."]},
@@ -4738,6 +6889,22 @@ const LORE=[
  {id:'ofo', t:'\u1eccF\u1eccC', when:()=>true, b:[
   "A staff cut from the \u1ecdf\u1ecd tree and held by whoever has the right to speak. To hold it is to be believed; to lie while holding it is to be struck.",
   "What you carry is not the staff. It is the authority. That is why it empties when you use it and fills when you are proved right in a fight."]},
+ {id:'dibia', t:'DIBIA', when:()=>!!(G.met&&G.met.dibia), b:[
+  "A diviner, a healer, and the person a family calls when the same child keeps arriving and leaving. Not a priest. Closer to a doctor who is also expected to argue with the spirit world on your behalf.",
+  "Finding an iyi-uwa is his work. He asks the child where it is, and the child, being small and not yet careful, tells him.",
+  "The one in the night market did that for a family with nine graves behind the compound. He has told the story so many times that it has stopped being about anybody."]},
+ {id:'onwe', t:'ONWE', when:()=>!!(G.seen&&G.seen.boss_onwe), b:[
+  "The ninth child. The one that did go back, nine times over, and was still going when you stopped going.",
+  "It has no moveset of its own. Everything it does it does because it watched you do it first, which is why it is exactly as quick as you are and exactly as good.",
+  "A thing that can only copy has a problem if it is given nothing to copy."]},
+ {id:'ogilisi', t:'OGILISI', when:()=>!!G.visited[10], b:[
+  "The tree people plant to say where one thing ends and another begins \u2014 a compound boundary, a shrine, a grave. It is not sown. A cut stake is pushed into the ground and agrees to go on living there, which is exactly why it is the tree for boundaries: it survives being moved.",
+  "Eight mounds under it, in a row, and a hole at the end of the row.",
+  "You are not going to find anything down there. You already took it."]},
+ {id:'compound', t:'THE COMPOUND THAT FELL IN', when:()=>!!G.visited[12], b:[
+  "A dibia works out of his own compound: idols planted at the boundary, chalk on the wall, and a shelf of things that are only tools if you know what they are for.",
+  "The wall is still readable. It is a list of names, written where the spirits can read them, and it is a long list.",
+  "Nobody has been down here since the earth took it. The chalk was left because whoever came back for it was in a hurry."]},
  {id:'alusi', t:'ALUSI', when:()=>true, b:[
   "The deities, each with ground of their own. Ala holds the earth and the law that comes with it. Amadioha is lightning and the judgement inside it. Idemili is the water that stands up. Ikenga is the right hand and everything it has earned.",
   "They are carved, fed, consulted and \u2014 if they fail \u2014 put outside in the rain. A relationship, not a worship."]},
@@ -4782,12 +6949,30 @@ const BEASTS=[
   "It rolls before it rises. Rolling, it only bruises. Risen, it bites \u2014 and that bite is white-edged and can be turned."},
  {k:'horned',  t:'MMANW\u1ee4 MP\u1eccKI', sub:'the horned masquerade', b:
   "Two attacks. The near one is white and can be parried. The charge is gold and cannot. Learn which shoulder drops first."},
+ {k:'pairshield', t:'\u1eccT\u1ee4 NA \u1eccKPARA', sub:'the shield of the pair', b:
+  "Two of them work as one. The shield does not attack while its partner lives \u2014 it only stands in the way, and anything light you throw at its face is wasted. Kill the spear and it stops being patient."},
+ {k:'pairspear',  t:'\u1eccKPARA NA \u1eccT\u1ee4', sub:'the spear of the pair', b:
+  "It reaches past its own shield, so the safe-looking spot directly in front of the wall is the one place it can certainly hit you. Go around, or break the shield, or kill this one and watch the other lose its patience."},
+ {k:'swimmer',  t:'AZ\u1ee4 IYI', sub:'the thing in Idemili\u2019s water', b:
+  "It has no business with the floor. It holds a lane in the water, coils white-edged, and comes along that lane in a straight line \u2014 which is the one useful thing about it, because a straight line can be stepped out of or turned."},
+ {k:'ceiling',  t:'\u1eccN\u1ee4 ELU', sub:'the one on the ceiling', b:
+  "It walks the stone above you and waits for you to walk under it. The drop is gold-edged and there is no turning it aside. Look up in rooms where the ceiling is close."},
+ {k:'grappler', t:'ONYE NJIDE', sub:'the one that takes hold', b:
+  "It does not swing. It reaches, and the reach is gold-edged, so a ward is no use to you \u2014 roll it or be taken. Once it has you, hit anything until it lets go. It lets go on its own eventually, but eventually is a long time to be held."},
+ {k:'mimic',   t:'AR\u1ee4S\u1eca \u1eccJ\u1ecc', sub:'the idol that was waiting', b:
+  "There are a great many carved posts in the land of spirits and one of them has been watching you walk past it. It stands up gold-edged, which cannot be turned aside \u2014 but it does stand up first. Nothing here strikes without showing you."},
+ {k:'healer',  t:'ONYE MMEZI', sub:'the one who closes what you open', b:
+  "It does not want to fight you and it will back away if you come at it. It stands behind the others and puts their guard back together, and a guard it has closed takes as long to open again as the first time. Kill it first or accept that nothing here stays broken."},
  {k:'chalk',   t:'MMANW\u1ee4 NZU', sub:'the masquerade of chalk', b:
   "It stood up out of the clearing to teach you and then decided to test the lesson. Nothing in this place is only a lesson."},
  {k:'boss_ogbunabali', t:'OGBUNABALI', sub:'he who kills at night', boss:1, b:
   "Cannot be wounded while he is nobody. Nine strokes of nzu on a stone in the shaft carry his name; speak it and he acquires edges. Parries and executions keep him named longer."},
  {k:'boss_ekwensu', t:'EKWENSU', sub:'he who was paid', boss:1, b:
   "Never hides what he is doing. The cleave is white and can be turned; the gore and the stamp are gold and cannot. He was hired. He will tell you by whom if you last long enough."},
+ {k:'boss_ikuku', t:'IKUKU', sub:'the wind that is holding the sky up', boss:1, b:
+  "It never comes down and it never stands anywhere. It sweeps the floor white-edged, which means get off the ground, and then it stoops gold-edged at wherever you are standing, which means leave. The platforms in this room are not scenery. It also answers the riddle you were asked at a mirror: it speaks and has no mouth."},
+ {k:'boss_uzu', t:'\u1ee4Z\u1ee4 \u1eccK\u1ee4', sub:'the smith of the fire that does not go out', boss:1, b:
+  "Its guard closes about ten times faster than anything else in this place, so chipping at it is a way of spending an afternoon. Open it in one lump \u2014 a charged heavy, a word, the third stroke of the chain \u2014 or do not open it. The hammer is white. The pour is gold, and molten iron has never once been turned aside by anybody."},
  {k:'boss_onwe', t:'ONWE', sub:'the ninth child, wearing your face', boss:1, b:
   "It fights the way you fight because it learned from watching you. It rolls behind you, chains three cuts, and reaches up through the ground. In its last quarter it stops copying and starts remembering."}
 ];
@@ -4797,6 +6982,12 @@ function beastOpen(){ return BEASTS.filter(e=> G.seen[e.k] || G.slain[e.k.replac
 function openCodex(from){ CDX.from = from || 'pause'; G.mode='codex'; CDX.sel=0; }
 function codexUpdate(){
   const list = CDX.tab===0 ? loreOpen() : beastOpen();
+  // 3.8. A rematch with something you have already put down, from the page that
+  // says you put it down. Never a preview: rushable() only offers the dead.
+  if(CDX.tab===1 && list[CDX.sel] && tap('KeyN')){
+    const k=(list[CDX.sel].k||'').replace('boss_','');
+    if(rushable().indexOf(k)>=0 && startRush(k)) return;
+  }
   if(tap('ArrowLeft')||tap('KeyA')){ CDX.tab=0; CDX.sel=0; tone(520,.05,'square',.02); }
   if(tap('ArrowRight')||tap('KeyD')){ CDX.tab=1; CDX.sel=0; tone(560,.05,'square',.02); }
   if(list.length){
@@ -4849,7 +7040,13 @@ function renderCodex(){
     ctx.fillText(e.boss?'\u2014 a name worth keeping':'\u2014 common on this ground', 186, H-32);
   }
   ctx.textAlign='center'; ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle='#4a473f';
-  ctx.fillText('\u2191 \u2193  entries      \u2190 \u2192  tabs      X  back', W/2, H-14);
+  {
+    const l=CDX.tab===1?beastOpen():[];
+    const k=(l[CDX.sel]&&l[CDX.sel].k||'').replace('boss_','');
+    const canRush = CDX.tab===1 && rushable().indexOf(k)>=0;
+    ctx.fillText(canRush ? '\u2191 \u2193  entries      \u2190 \u2192  tabs      N  face it again      X  back'
+                         : '\u2191 \u2193  entries      \u2190 \u2192  tabs      X  back', W/2, H-14);
+  }
   ctx.textAlign='left';
 }
 function wrapLeft(text,x,y,maxw,lh){
@@ -4886,8 +7083,133 @@ function storyProgress(){
 // -- pause, and what you are carrying ----------------------------------------
 const PAUSE={sel:0};
 function openPause(){ G.mode='pause'; PAUSE.sel=0; tone(420,.07,'triangle',.03,620); }
+// ── settings: bindings and accessibility ─────────────────────────────────────
+// One screen for both, because they are one thing to the player: how the game
+// meets them. Reached from the pause menu and from the title, so a player who
+// needs it does not have to start a run to find it.
+const OPTS={ sel:0, top:0, wait:false };
+function optsRows(){
+  const r=[{k:'head', n:'HOW IT PLAYS'}];
+  for(const o of OPT_ROWS) r.push({k:'opt', id:o.id});
+  r.push({k:'head', n:'KEYS'});
+  for(const a of ACTIONS) r.push({k:'key', id:a.id});
+  r.push({k:'reset'});
+  return r;
+}
+const OPTS_WIN=10;                       // visible rows; the list is longer
+function optsMove(d){
+  const r=optsRows();
+  let i=OPTS.sel;
+  // headings are not selectable — step past them in whichever direction we came
+  do { i=(i+d+r.length)%r.length; } while(r[i].k==='head');
+  OPTS.sel=i;
+  if(OPTS.sel<OPTS.top) OPTS.top=OPTS.sel;
+  if(OPTS.sel>OPTS.top+OPTS_WIN-1) OPTS.top=OPTS.sel-OPTS_WIN+1;
+  tone(540,.05,'square',.02);
+}
+function optsCapture(physical){
+  const r=optsRows()[OPTS.sel];
+  OPTS.wait=false;
+  if(!r || r.k!=='key') return;
+  if(physical==='Escape'){ say('Left as it was.',70); return; }
+  const a=ACTIONS.filter(x=>x.id===r.id)[0];
+  if(!a) return;
+  if(rebind(a.code, physical)){ S.pick(); savePrefs(); }
+  else say(keyName(physical)+' is spoken for and cannot be moved.',110);
+}
+function optsUpdate(){
+  if(OPTS.wait) return;                  // the keydown listener has the input
+  const r=optsRows();
+  if(OPTS.sel>=r.length) OPTS.sel=1;
+  if(r[OPTS.sel] && r[OPTS.sel].k==='head') optsMove(1);
+  if(tap('ArrowUp')||tap('KeyW')) optsMove(-1);
+  if(tap('ArrowDown')||tap('KeyS')) optsMove(1);
+  const row=r[OPTS.sel];
+  if(tap('KeyX')||tap('Escape')){ savePrefs(); G.mode=OPTS.from||'pause'; return; }
+  if(tap('KeyZ')||tap('Enter')||tap('Space')){
+    if(row.k==='opt'){ OPT[row.id]=OPT[row.id]?0:1; S.pick(); savePrefs(); }
+    else if(row.k==='key'){ OPTS.wait=true; }
+    else if(row.k==='reset'){ resetBinds(); for(const o of OPT_ROWS) OPT[o.id]=0;
+      S.name(); say('Back to how it was.',110); savePrefs(); }
+  }
+  if(row && row.k==='opt' && (tap('ArrowLeft')||tap('ArrowRight')||tap('KeyA')||tap('KeyD'))){
+    OPT[row.id]=OPT[row.id]?0:1; S.pick(); savePrefs();
+  }
+}
+function renderOpts(){
+  ctx.globalAlpha=.93; px(0,0,W,H,'#05070b'); ctx.globalAlpha=1;
+  ctx.textAlign='center'; ctx.font='9px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
+  ctx.fillText('HOW YOU PLAY', W/2, 18); ctx.textAlign='left';
+  const r=optsRows();
+  for(let i=0;i<OPTS_WIN && OPTS.top+i<r.length;i++){
+    const row=r[OPTS.top+i], y=34+i*20, on=(OPTS.top+i)===OPTS.sel;
+    if(row.k==='head'){
+      ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.goldDim;
+      ctx.fillText(row.n, 40, y+4);
+      ctx.globalAlpha=.3; pxf(40,y+7,W-80,.5,C.goldDim); ctx.globalAlpha=1;
+      continue;
+    }
+    if(on){ ctx.globalAlpha=.14; px(32,y-8,W-64,18,C.gold); ctx.globalAlpha=1;
+            px(34,y-2,2,4,C.gold); }
+    if(row.k==='opt'){
+      const o=OPT_ROWS.filter(x=>x.id===row.id)[0], v=!!OPT[row.id];
+      ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=on?C.bone:C.chalkDim;
+      ctx.fillText(o.n, 44, y);
+      ctx.fillStyle=v?C.gold:'#4a453d'; ctx.textAlign='right';
+      ctx.fillText(v?'ON':'OFF', W-44, y); ctx.textAlign='left';
+      ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle='#6b6155';
+      ctx.fillText(o.d[v?1:0], 44, y+8);
+    } else if(row.k==='key'){
+      const a=ACTIONS.filter(x=>x.id===row.id)[0];
+      ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=on?C.bone:C.chalkDim;
+      ctx.fillText(a.n, 44, y);
+      ctx.textAlign='right';
+      if(on && OPTS.wait){ ctx.fillStyle=C.gold; ctx.fillText('press a key…', W-44, y); }
+      else { ctx.fillStyle=on?C.gold:'#6b6155'; ctx.fillText(keyName(boundKey(a.code)), W-44, y); }
+      ctx.textAlign='left';
+    } else {
+      ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=on?C.bone:C.chalkDim;
+      ctx.fillText('PUT IT ALL BACK', 44, y);
+    }
+  }
+  // how much list there is, since only ten rows fit
+  const frac=OPTS_WIN/r.length, off=OPTS.top/r.length;
+  px(W-24, 32, 2, 200, '#1a1f22');
+  px(W-24, 32+off*200, 2, Math.max(8,frac*200), C.goldDim);
+  ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle=C.chalkDim; ctx.textAlign='center';
+  ctx.fillText(OPTS.wait ? 'press the key you want — ESC to leave it alone'
+                         : 'Z change   X back', W/2, H-10);
+  ctx.textAlign='left';
+}
+// ── 3.9 photo mode ──────────────────────────────────────────────────────────
+// The world stops, the HUD goes, and the camera comes off its leash. It reads
+// keys[] directly rather than tap(), so the menu repeat rate has nothing to do
+// with how a pan feels.
+const PHOTO={ hud:0, moved:0 };
+function openPhoto(){ PHOTO.hud=0; PHOTO.moved=0; G.mode='photo'; }
+function photoUpdate(){
+  // It moves the camera itself rather than carrying an offset that the renderer
+  // re-applies. The offset version added itself to cam every frame, so the
+  // camera ran away and the clamp handed back a delta of zero.
+  const sp = (keys['KeyZ']?3.4:1.5);
+  let dx=0, dy=0;
+  if(keys['ArrowLeft']||keys['KeyA'])  dx-=sp;
+  if(keys['ArrowRight']||keys['KeyD']) dx+=sp;
+  if(keys['ArrowUp']||keys['KeyW'])    dy-=sp;
+  if(keys['ArrowDown']||keys['KeyS'])  dy+=sp;
+  // Clamped to the room. 10-ROADMAP polish item 64 is that the camera never
+  // shows outside the world, and a free camera is the one thing that breaks it.
+  const maxx=Math.max(0,R.w*T-W), maxy=Math.max(0,R.h*T-H);
+  const nx=clamp(cam.x+dx,0,maxx), ny=clamp(cam.y+dy,0,maxy);
+  if(nx!==cam.x||ny!==cam.y) PHOTO.moved=1;
+  cam.x=nx; cam.y=ny;
+  if(tap('KeyC')) PHOTO.hud=PHOTO.hud?0:1;
+  if(tap('KeyX')||tap('Escape')||tap('KeyK')) G.mode='play';
+}
+
+function openOpts(from){ OPTS.from=from||'pause'; OPTS.sel=1; OPTS.top=0; OPTS.wait=false; G.mode='opts'; }
 function pauseRows(){
-  const r=['resume','weapon','spell','inventory','codex','map','sound','cheat','save','title'];
+  const r=['resume','weapon','spell','charms','inventory','codex','map','opts','photo','sound','cheat','save','title'];
   if(TUT.on) r.splice(1,0,'skiptut');
   return r;
 }
@@ -4897,9 +7219,12 @@ function pauseLabel(k){
   if(k==='skiptut') return 'SKIP THE TEACHING';
   if(k==='spell'){ const e=G.equipped, lv=spellLv(e);
     return '\u1eccF\u1eccC  '+SPELLS[e].name+(lv?'  '+'I'.repeat(lv):'  (unlearned)'); }
+  if(k==='charms') return 'CHARMS   '+G.worn.length+'/'+CHARM_SLOTS+' tied on';
   if(k==='inventory') return 'WHAT YOU CARRY';
   if(k==='codex'){ const p=storyProgress(); return 'THE CODEX   ('+(loreOpen().length+beastOpen().length)+' entries, '+p.pct+'% told)'; }
   if(k==='map') return 'MAP';
+  if(k==='opts') return 'HOW YOU PLAY   keys, assists, motion';
+  if(k==='photo') return 'LOOK AROUND';
   if(k==='sound'){ const st=audioState();
     return 'SOUND  '+(st==='on'?'on':st==='muted'?'muted':st==='blocked'?'blocked \u2014 press a key':'off'); }
   if(k==='cheat') return 'CHEATS  '+(G.cheat?'on \u2014 untouchable, one-hit':'off');
@@ -4923,9 +7248,12 @@ function pauseUpdate(){
   if(tap('KeyZ')||tap('Enter')||tap('Space')){
     if(k==='resume'){ G.mode='play'; }
     else if(k==='skiptut'){ endTutorial(true); G.mode='play'; }
+    else if(k==='charms'){ openCharms(); }
     else if(k==='inventory'){ G.mode='inv'; }
     else if(k==='codex'){ openCodex('pause'); }
     else if(k==='map'){ G.mode='map'; }
+    else if(k==='opts'){ openOpts('pause'); }
+    else if(k==='photo'){ openPhoto(); }
     else if(k==='sound'){ initAudio(); musicToggle(); }
     else if(k==='cheat'){
       if(G.cheat) relock();
@@ -4959,10 +7287,18 @@ function renderPause(){
   ctx.textAlign='left';
 }
 
+// title, then the line under it. Ending A keeps the wording it shipped with.
+const ENDING_NAME={
+  1:['NKW\u1ee4GHACHI', 'the return'],
+  2:['NL\u1eccGHACHI',  'the going back'],
+  3:['ONYE \u1eccMA',    'the one who did not']
+};
 const ENDW={t:0};
 function endingUpdate(){
   ENDW.t++;
-  if(ENDW.t>90 && (tap('KeyZ')||tap('Enter')||tap('KeyX')||tap('Escape'))){
+  if(ENDW.t<=90) return;
+  if(tap('KeyN')){ startNgPlus(); return; }
+  if(tap('KeyZ')||tap('Enter')||tap('KeyX')||tap('Escape')){
     saveGame(); G.mode='title'; TITLE.sel=0;
   }
 }
@@ -4973,8 +7309,17 @@ function renderEnding(){
   ctx.textAlign='center';
   ctx.font='22px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone;
   ctx.fillText('\u1eccD\u1eaeNALA', W/2, 54);
-  ctx.font='8px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
-  ctx.fillText('the \u1ecdgbanje who would not go back', W/2, 68);
+  // the Igbo leads and the English sits under it, which is the register the rest
+  // of the game keeps; the card is the one place a gloss belongs at all
+  if(ENDING_NAME[G.ending]){
+    ctx.font='10px ui-serif,Georgia,serif'; ctx.fillStyle=C.bone;
+    ctx.fillText(ENDING_NAME[G.ending][0], W/2, 69);
+    ctx.font='8px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
+    ctx.fillText(ENDING_NAME[G.ending][1], W/2, 80);
+  } else {
+    ctx.font='8px ui-serif,Georgia,serif'; ctx.fillStyle=C.goldDim;
+    ctx.fillText('the \u1ecdgbanje who would not go back', W/2, 68);
+  }
   glyph(W/2-92,60,7,C.gold,G.t/70); glyph(W/2+92,60,7,C.gold,-G.t/70);
   ctx.globalAlpha=1;
 
@@ -4989,12 +7334,14 @@ function renderEnding(){
       ['cowries kept',      String(P.cowries)],
       ['bestiary',          beastOpen().length+' of '+BEASTS.length],
       ['lore recovered',    loreOpen().length+' of '+LORE.length],
-      ['ground walked',     Object.keys(G.visited).length+' of 8'],
-      ['mirrors opened',    Object.keys(G.mirrors).filter(k=>G.mirrors[k]).length+' of 6']
+      ['ground walked',     Object.keys(G.visited).length+' of '+ROOMS.length],
+      ['mirrors opened',    Object.keys(G.mirrors).filter(k=>G.mirrors[k]).length+' of '+Object.keys(MIRRORS).length],
+      ['left standing',     G.spared ? 'everything' : 'no'],
+      ['times round',       String((G.ng||0)+1)]
     ];
     ctx.font='8px ui-sans-serif,system-ui';
     for(let i=0;i<rows.length;i++){
-      const y=100+i*15;
+      const y=98+i*14;
       ctx.textAlign='right'; ctx.fillStyle=C.chalkDim; ctx.fillText(rows[i][0], W/2-8, y);
       ctx.textAlign='left';  ctx.fillStyle=C.bone;     ctx.fillText(rows[i][1], W/2+8, y);
     }
@@ -5005,6 +7352,10 @@ function renderEnding(){
     ctx.globalAlpha=.5+Math.sin(G.t/22)*.3;
     ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=C.gold;
     ctx.fillText('Z  \u2014  the charm remembers you', W/2, H-18);
+    // 3.10, offered where the player is already thinking about it rather than
+    // buried on the title. 02-STORY flagged this as the missing half of the card.
+    ctx.fillStyle=C.chalkDim;
+    ctx.fillText('N  \u2014  go round again. Your chi remembers.', W/2, H-8);
     ctx.globalAlpha=1;
   }
   ctx.textAlign='left';
@@ -5073,36 +7424,90 @@ function renderInv(){
 }
 
 // -- the map -----------------------------------------------------------------
-const MAPPOS=[[10,74],[92,74],[196,60],[236,176],[188,10],[292,10],[352,176],[300,132],[352,74],[400,132]];
+// Laid out in four bands that read the way the world does: the warm strip on
+// top, the opening rooms under it, the descent on the right, the back half
+// along the bottom. Thumbnails are 2px a tile, so this has to be checked
+// against 480x270 by eye — three new rooms pushed the old layout off the
+// right edge and dropped labels on top of other rooms.
+const MAPPOS=[
+  [ 72, 88],  // 0  Ala Iyi-uwa    80x40
+  [160, 88],  // 1  Ohia           96x40
+  [300, 30],  // 2  Uzo Ala        64x80  the shaft, tall on purpose
+  [376, 88],  // 3  Ebe Ochichiri  88x36
+  [104, 30],  // 4  Ahia Mmuo      96x40
+  [208, 30],  // 5  Iyi Idemili    80x40
+  [  8,146],  // 6  Okochi         112x40
+  [352,146],  // 7  Ala Mmuo       104x40
+  [128,146],  // 8  Oku Mmuo       112x40
+  [248,146],  // 9  Igwe           96x40
+  [  8, 88],  // 10 Ogilisi        56x40
+  [  8, 30],  // 11 Ahia Elu       88x40
+  [376, 30]]; // 12 Ulo Dibia      80x40
 function mapUpdate(){
   if(tap('KeyM')||tap('Tab')||tap('KeyX')||tap('Escape')) G.mode='play';
+}
+// The map redrew every tile of every room it knows about, every frame it was
+// open — 12,000 of them once the world reached thirteen rooms, which measured
+// at five times the cost of an ordinary play frame and is the sort of thing the
+// 60 FPS ground rule is about. None of it moves. It is baked to an offscreen
+// canvas exactly the way the parallax is, and rebuilt only when what it draws
+// actually changes: which rooms you have seen, which mirrors are lit, and which
+// room you are standing in.
+let mapCache=null, mapKey='';
+function mapCacheKey(){
+  let k=G.room+'|';
+  for(let i=0;i<ROOMS.length;i++) k += (G.visited[i]?'1':'0') + (G.mirrors[i]?'m':'-');
+  return k;
+}
+function buildMapCache(){
+  const key=mapCacheKey();
+  if(mapCache && mapKey===key) return;
+  let c2,g2;
+  try{
+    c2=document.createElement('canvas');
+    c2.width=Math.max(1,W*SC); c2.height=Math.max(1,H*SC);
+    g2=c2.getContext('2d');
+    if(!g2) throw 0;
+    g2.setTransform(SC,0,0,SC,0,0);
+    g2.imageSmoothingEnabled=false;
+  }catch(e){ mapCache=null; mapKey=''; return; }
+  const real=ctx;
+  // trap 1 in 09-TECHNICAL: ctx is a let, and a throw in here without the
+  // finally would leave every later frame painting into a discarded canvas
+  try{
+    ctx=g2;
+    ctx.strokeStyle='#20262c'; ctx.lineWidth=1;
+    const link=(a,b)=>{ if(!G.visited[a]||!G.visited[b]) return;
+      const pa=MAPPOS[a], pb=MAPPOS[b];
+      ctx.beginPath(); ctx.moveTo(pa[0]+ROOMS[a].w, pa[1]+ROOMS[a].h);
+      ctx.lineTo(pb[0]+ROOMS[b].w, pb[1]+ROOMS[b].h); ctx.stroke(); };
+    link(0,1); link(1,2); link(2,3); link(1,4); link(4,5); link(5,2); link(3,6); link(6,8); link(8,9); link(9,7);
+    link(0,10); link(4,11); link(2,12);
+    ctx.textAlign='left';
+    for(let i=0;i<ROOMS.length;i++){
+      if(!G.visited[i]) continue;
+      const r=ROOMS[i], p=MAPPOS[i]||[0,0];
+      for(let y=0;y<r.h;y++) for(let x=0;x<r.w;x++){
+        const ch=tileAt(r,x,y);
+        if(ch==='#'||ch==='c'){ px(p[0]+x*2, p[1]+y*2, 2,2, i===G.room?'#2e3a34':'#1e242a'); }
+        else if(ch==='-'){ px(p[0]+x*2, p[1]+y*2, 2,1, '#2a3228'); }
+        else if(ch==='E'){ px(p[0]+x*2, p[1]+y*2, 2,2, C.goldDim); }
+        else if(ch==='M'){ px(p[0]+x*2, p[1]+y*2, 2,2, G.mirrors[i]?C.spirit||C.gold:'#3a3a44'); }
+        else if(ch==='S'||ch==='N'){ px(p[0]+x*2, p[1]+y*2, 2,2, C.uhie); }
+      }
+      ctx.font='6px ui-sans-serif,system-ui';
+      ctx.fillStyle = i===G.room?C.bone:'#5a5a52';
+      ctx.fillText(r.name.split('\u2014')[0].trim(), p[0], p[1]-3);
+    }
+  } finally { ctx=real; }
+  mapCache=c2; mapKey=key;
 }
 function renderMap(){
   ctx.globalAlpha=.9; px(0,0,W,H,'#05070b'); ctx.globalAlpha=1;
   ctx.textAlign='center'; ctx.font='8px ui-sans-serif,system-ui'; ctx.fillStyle=C.goldDim;
   ctx.fillText('ALA \u2014 what you have walked', W/2, 16); ctx.textAlign='left';
-  // links
-  ctx.strokeStyle='#20262c'; ctx.lineWidth=1;
-  const link=(a,b)=>{ if(!G.visited[a]||!G.visited[b]) return;
-    const pa=MAPPOS[a], pb=MAPPOS[b];
-    ctx.beginPath(); ctx.moveTo(pa[0]+ROOMS[a].w, pa[1]+ROOMS[a].h);
-    ctx.lineTo(pb[0]+ROOMS[b].w, pb[1]+ROOMS[b].h); ctx.stroke(); };
-  link(0,1); link(1,2); link(2,3); link(1,4); link(4,5); link(5,2); link(3,6); link(6,8); link(8,9); link(9,7);
-  for(let i=0;i<ROOMS.length;i++){
-    if(!G.visited[i]) continue;
-    const r=ROOMS[i], p=MAPPOS[i]||[0,0];
-    for(let y=0;y<r.h;y++) for(let x=0;x<r.w;x++){
-      const ch=tileAt(r,x,y);
-      if(ch==='#'||ch==='c'){ px(p[0]+x*2, p[1]+y*2, 2,2, i===G.room?'#2e3a34':'#1e242a'); }
-      else if(ch==='-'){ px(p[0]+x*2, p[1]+y*2, 2,1, '#2a3228'); }
-      else if(ch==='E'){ px(p[0]+x*2, p[1]+y*2, 2,2, C.goldDim); }
-      else if(ch==='M'){ px(p[0]+x*2, p[1]+y*2, 2,2, G.mirrors[i]?C.spirit||C.gold:'#3a3a44'); }
-      else if(ch==='S'||ch==='N'){ px(p[0]+x*2, p[1]+y*2, 2,2, C.uhie); }
-    }
-    ctx.font='6px ui-sans-serif,system-ui';
-    ctx.fillStyle = i===G.room?C.bone:'#5a5a52';
-    ctx.fillText(r.name.split('\u2014')[0].trim(), p[0], p[1]-3);
-  }
+  buildMapCache();
+  if(mapCache){ try{ ctx.drawImage(mapCache, 0, 0, W, H); }catch(e){} }
   // you
   const p=MAPPOS[G.room]||[0,0];
   const bx=p[0]+Math.round(P.x/T)*2, by=p[1]+Math.round(P.y/T)*2;
@@ -5114,7 +7519,36 @@ function renderMap(){
 
 // ── loop ─────────────────────────────────────────────────────────────────────
 let last=performance.now(), acc=0;
+// The loop must never be able to die. A single bad property lookup inside any
+// update or painter used to escape frame(), skip the requestAnimationFrame at
+// the bottom, and stop the game permanently — the player sees a frozen picture
+// and loses the run. Everything is wrapped: on a throw we log once, mark
+// G.crashed, and keep scheduling. A game running with one broken system beats a
+// game that has stopped.
 function frame(now){
+  try{ frameBody(now); }
+  catch(err){
+    if(!G.crashed){
+      G.crashed = true;
+      G.crashErr = (err && err.message) ? err.message : String(err);
+      if(typeof console!=='undefined' && console.error)
+        console.error('Ọdịnala: a frame threw and was contained. The loop keeps running.', err);
+    }
+    // ctx is a `let` that buildBackLayers() swaps; if the throw happened mid-bake
+    // we would otherwise keep painting into the offscreen canvas forever
+    if(ctx!==baseCtx) ctx=baseCtx;
+    try{ drawCrashNotice(); }catch(e){}
+  }
+  requestAnimationFrame(frame);
+}
+// Small, non-blocking, and it does not stop the player playing.
+function drawCrashNotice(){
+  ctx.globalAlpha=.72; px(0,H-11,W,11,'#1a0d0d'); ctx.globalAlpha=1;
+  ctx.font='7px ui-sans-serif,system-ui'; ctx.fillStyle='#c0603b'; ctx.textAlign='left';
+  ctx.fillText('something went wrong here — the game is still running', 6, H-3);
+  ctx.textAlign='left';
+}
+function frameBody(now){
   let dt = now-last; last=now; acc += Math.min(60,dt);
   const step = 1000/60;
   while(acc>=step){
@@ -5131,6 +7565,9 @@ function frame(now){
       case 'pause':  G.t++; pauseUpdate();  break;
       case 'inv':    G.t++; invUpdate();    break;
       case 'codex':  G.t++; codexUpdate();  break;
+      case 'charm':  G.t++; charmUpdate();  break;
+      case 'opts':   G.t++; optsUpdate();   break;
+      case 'photo':  G.t++; photoUpdate();  break;
       case 'ending': G.t++; endingUpdate(); break;
       default:
         // presses survive hitstop and slow-mo: a tap during a freeze frame still
@@ -5152,9 +7589,11 @@ function frame(now){
     else if(G.mode==='pause') renderPause();
     else if(G.mode==='inv') renderInv();
     else if(G.mode==='codex') renderCodex();
+    else if(G.mode==='charm') renderCharm();
+    else if(G.mode==='opts') renderOpts();
     else if(G.mode==='ending') renderEnding();
   }
-  requestAnimationFrame(frame);
+  if(G.crashed) drawCrashNotice();
 }
 // -- speedrun: everything open, nothing in the way ---------------------------
 function unlockAll(){
@@ -5167,13 +7606,80 @@ function unlockAll(){
   G.equipped = 'amadioha';
   for(let i=0;i<ROOMS.length;i++){ G.visited[i]=1; ROOMS[i].taken=true; }
   for(const k of Object.keys(MIRRORS)) G.mirrors[k]=true;
-  G.taught = {exec:1, bound:1, bossIn:1, bossOut:1};
+  G.taught = {exec:1, bound:1, bossIn:1, bossOut:1, ekIn:1, onIn:1, uzIn:1, ikIn:1};
   P.hp = G.maxHP; P.flasks = 5; P.ofo = 100; P.cowries = Math.max(P.cowries, 99999);
 }
 function relock(){
   G.cheat=false;
   say('Cheats off. Everything you were given, you keep.',150);
 }
+// ── 3.8 boss rush, 3.10 new game plus ──────────────────────────────────────
+// Where each boss stands, so the rush can put you in front of one without
+// walking the game. Derived from ROOMS rather than listed twice: the spawn char
+// is already in the map and a fifth table keyed by boss is a fifth table to drift.
+const BOSS_CHAR={ B:'ogbunabali', X:'ekwensu', O:'onwe', U:'uzu', I:'ikuku' };
+function bossHome(who){
+  for(let i=0;i<ROOMS.length;i++){
+    const r=ROOMS[i];
+    for(let y=0;y<r.h;y++) for(let x=0;x<r.w;x++){
+      if(BOSS_CHAR[r.map[y][x]]===who) return {room:i, tx:x, ty:y};
+    }
+  }
+  return null;
+}
+// Only bosses you have actually put down. The rush is a rematch, not a preview.
+function rushable(){
+  const out=[];
+  for(const c in BOSS_CHAR){ const w=BOSS_CHAR[c]; if(G.slain[w] && bossHome(w)) out.push(w); }
+  return out;
+}
+// It runs in the speedrun slot, which already exists for exactly this reason:
+// a rematch must never be able to write over the run somebody is playing.
+function startRush(who){
+  const h=bossHome(who); if(!h) return false;
+  G.cheat=true;                       // routes saveGame() to SAVEKEY_RUN
+  unlockAll();
+  G.cheat=false;                      // but not untouchable — it is a real fight
+  G.rush=who;
+  G.slain=Object.assign({}, G.slain); delete G.slain[who];
+  G.taught=Object.assign({}, G.taught);
+  G.knowsName=true;
+  resetPlayerAt(h.room, Math.max(2,h.tx-14), 16);
+  G.checkpoint={room:h.room, tx:Math.max(2,h.tx-14), ty:16};
+  G.mode='play';
+  say('Again.',120);
+  return true;
+}
+
+// 3.10. Your chi remembers: everything you learned stays and everything you had
+// is gone. 05-PROGRESSION §5.1 puts knowledge above the other three currencies,
+// so knowledge is exactly what carries.
+function startNgPlus(){
+  const keepLore={ seen:G.seen, slain:G.slain, met:G.met, graves:G.graves,
+                   knowsName:G.knowsName, chalk:G.chalk, gaveChalk:G.gaveChalk,
+                   ending:G.ending, deaths:G.deaths };
+  const cycle=(G.ng||0)+1;
+  relock();
+  G.ng=cycle;
+  G.seen=keepLore.seen; G.met=keepLore.met; G.graves=keepLore.graves;
+  G.deaths=keepLore.deaths; G.ending=0;
+  // The bestiary and the codex keep what they know; the world does not.
+  G.slain={}; G.visited={}; G.mirrors={}; G.bossDead=false;
+  G.knowsName=false;                 // the name is the one thing you go back for
+  G.chalk=0; G.gaveChalk=0;
+  G.storyDone=true; G.tutDone=true;  // you have done the Teaching. Twice is unkind.
+  G.playT=0;
+  P.cowries=0;
+  resetPlayerAt(0,9,16);
+  G.checkpoint={room:0,tx:9,ty:16};
+  G.mode='play';
+  say('Your chi remembers. Nothing else does.',260);
+  saveGame();
+}
+// How much harder each cycle is. One number, applied to poise, so a guard takes
+// longer to break and nothing else about any fight changes shape.
+function ngPoise(){ return 1 + Math.min(3,(G.ng||0))*0.22; }
+
 function startSpeedrun(){
   unlockAll();
   resetPlayerAt(0,9,16);
@@ -5211,7 +7717,24 @@ if(globalThis.__ODINALA_TEST) globalThis.__ODINALA_TEST({
   startSpeedrun, unlockAll, relock, titleOpts, PAUSE_SEL:()=>PAUSE.sel,
   PAUSE_LABEL:()=>pauseLabel(pauseRows()[PAUSE.sel]), LORE_OPEN:loreOpen, BEAST_OPEN:beastOpen,
   CDX:()=>CDX, storyProgress, LORE, BEASTS, openCodex, BG_ROOM:()=>bgRoom,
-  WEAPONS, CHAIN, WA, cycleWeapon
+  WEAPONS, CHAIN, WA, cycleWeapon, NPCS, VOICE, TILE_CHARS, BOSS_STATS,
+  ENDING_NAME, ON_OUT, ON_OUT_B, ON_OUT_C, get flames(){return flames}, bossIsGated,
+  TRACKS, SCALES, BEDS, ROOM_TRACK, BOSS_TRACK, retrograde, bossCard,
+  musicDuck, DUCK_LEVEL:()=>duckedTo, MUS_VOL:()=>MUS.vol,
+  MAPPOS, AMBIENT, ROOM_STONE, mapCacheKey, buildMapCache,
+  CTX_IS_BASE:()=>ctx===baseCtx,
+  MAP_CACHED:()=>!!mapCache, MAP_KEY:()=>mapKey,
+  MUS_NAME:()=>{ for(const k in TRACKS) if(TRACKS[k]===MUS.track) return k; return null; },
+  ACTIONS, OPT, OPT_ROWS, OPTS_ROWS:optsRows, BINDS_OF:()=>BINDS, boundKey, rebind, resetBinds,
+  releaseAll, get KEYS(){return keys},
+  keyName, openOpts, optsCapture, OPTS_SEL:()=>OPTS.sel, OPTS_WAIT:()=>OPTS.wait, parryWindow,
+  savePrefs, loadPrefs, PREFKEY,
+  tellCol, txtScale, FIXED,
+  GRAVES, GRAVE_LINES, gravesStood, graveTick,
+  nightPhase, deepNight, NIGHT_TURN, drawWet, drawShimmer, openPhoto, PHOTO, get cam(){return cam},
+  bossHome, rushable, startRush, startNgPlus, ngPoise, BOSS_CHAR,
+  MODES, MENU_MODES, MENU_REPEAT, CHARMS, CHARM_ORDER, CHARM_SLOTS, ownedCharms, wearing, SHOP_KINDS,
+  CHM_SEL:()=>CHM.sel
 });
 cvs.focus();
 requestAnimationFrame(frame);

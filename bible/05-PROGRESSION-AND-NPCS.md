@@ -1,0 +1,344 @@
+# 05 — Progression, Economy, NPCs and Quests
+
+## 5.1 The progression thesis
+
+The player gets stronger in four currencies, and only one of them is numbers.
+
+1. **Knowledge** — a name, a riddle answer, a boss's pattern. Never lost, never bought.
+2. **Access** — Ala's Fall opens cracked floors; mirrors open the map.
+3. **Numbers** — heart shards, gourds, spell levels, skills. Bought with cowries.
+4. **Options** — weapons and spells. Bought or found.
+
+**Knowledge outranks the other three.** The name is worth more than any upgrade in the
+game and it costs nothing but attention. This ordering is the game's argument.
+
+## 5.2 The cowrie economy
+
+Cowries (`P.cowries`) drop from every kill as physical pickups that arc out and
+magnetise to the player within 44px.
+
+| Source | Yield |
+|---|---|
+| Thrower | 12 |
+| Walker / crawler / lunger / ember | 15 |
+| Warden / effigy | 26 |
+| Boss | 260 |
+| Cowrie Charm skill | ×1.5 on everything |
+| Parry | +4 (small, but it rewards defence) |
+
+**Death drops your cowries as a shade** in the room where you fell. Walk back and take
+them. This is the Souls loop and it is correct: it makes the walk back meaningful
+without punishing you twice.
+
+### Ala's Ledger — the shop (E at any rest charm)
+
+| Item | Cost |
+|---|---|
+| Learn a spell | 70 |
+| Spell level 2 | 170 |
+| Spell level 3 | 340 |
+| Nkwụ (twin knives) | 190 |
+| Ogu (war staff) | 260 |
+| Another gourd (max 5) | 110 × (current − 2) |
+| Deepen the vessel (+30 HP, max 3) | 130 × (owned + 1) |
+| Riposte — parries strike back for 20 | 210 |
+| Swift Hand — 25% faster recovery | 230 |
+| Cowrie Charm — +50% drops | 160 |
+
+**Total cost of everything: roughly 3,400 cowries.** A complete playthrough should yield
+enough for perhaps 60–70% of that. **You should not be able to buy everything in one
+run.** That is what makes the choices choices.
+
+### Economy rules
+- **Never sell healing.** Gourd *capacity* is buyable; gourd refills are free at charms.
+  A game where you can buy your way out of a hard fight has no hard fights.
+- **Never sell the name.** Knowledge is not for sale.
+- **Prices are round and legible.** No 187-cowrie items.
+- **Nothing is missable.** Every purchasable remains purchasable forever.
+
+## 5.3 The mirrors and the riddles
+
+Eight mirrors: rooms 0, 2, 4, 5, 6, 7, 8, 9. The Forge and the Open Sky were added in
+Phase 1 — the back half of the game had no fast travel, and room 9 had an `M` tile with
+no table entry, which was the freeze.
+
+**Every `M` tile must have a `MIRRORS` entry and every entry must have an `M` tile.**
+`tools/audit.py` fails on either. A mirror with no entry no longer throws — `mirrorInfo()`
+falls back to the room's own name and warns once on the console — but the fallback is a
+net, not a licence: fix the table.
+
+An unattuned mirror asks a **gwam gwam gwam** — a real Igbo riddle — presented in Igbo
+with an English gloss below and three answers.
+
+- **Correct** → the mirror attunes permanently and joins the travel network. Saved.
+- **Wrong** → the glass goes black. `G.mirrorLock[room] = true`. You must **leave the
+  room entirely and come back** before it will ask again, and it asks a *different*
+  riddle (`G.riddleIdx` advances every attempt, cycling through ten).
+
+This punishment is exactly right: it costs a walk, not a run. Never make it harsher.
+
+The ten riddles are real traditional forms. If you add more, they must be real. Do not
+invent riddles and present them as traditional.
+
+## 5.3b Charms — **[BUILT]**
+
+**Three cords, five charms.** More charms than slots, so wearing one is always a
+decision. Explicitly **not** Hollow Knight's notch economy — 01-VISION puts that on the
+do-not-take side — so a slot is a slot and nothing costs a different number of them.
+
+Every charm changes *how* you fight. A charm that is only a bigger number is a stat
+increase wearing a necklace.
+
+| Charm | Cost | What it does | What it costs you |
+|---|---|---|---|
+| **NZU** — chalk in water | 150 | Four life back on every parry | Nothing but the cord |
+| **ỌKPỤKPỤ** — a bone already buried once | 220 | The blow that would finish you leaves you at 1 | Spent until you rest at a charm |
+| **OGENE** — the iron bell | 120 | Gold rings once as it begins, and the screen edge lights | Nothing but the cord |
+| **EJỤLÀ** — a snail, in no hurry | 180 | A late ward costs half as much | **You walk 20% slower, always** |
+| **ỤDỤ** — a clay pot holds what it is given | 200 | Half your cowries stay with you when you fall | Nothing but the cord |
+
+Bought at Ala's Ledger, worn from a `charm` screen off the pause menu (Z ties on and takes
+off, X back). Buying one ties it on if a cord is free. `G.charms` is what you own, `G.worn`
+is what is tied on; both are saved, and a junk key in an old save is dropped rather than
+worn.
+
+`playerDown()` exists because `hurtPlayer` has **two** exits — the late-ward branch and the
+ordinary one — and the bone has to cover both. The killing blow resolves in exactly one
+place.
+
+**Ogene must ring on the frame a gold tell begins and not while it is held.** Ringing every
+frame is unbearable; `e.rang` is what stops it, and there is a REGRESSION test.
+
+## 5.4 The tutorial — "The Teaching"
+
+After the opening cutscene, a masquerade of chalk stands up in the clearing and drills
+the player through eleven steps. Each step waits on the player *actually performing the
+action* — not on a timer, not on a button prompt dismissal.
+
+Walk → jump → cut → three-hit chain → charged heavy → roll → ward a white tell → break
+its guard → execute it → drink nzu → cast your first ọfọ.
+
+Design rules that made it work and must be preserved:
+- **A key badge shows the exact button.** The touch buttons carry the same letters, so
+  "press Z" is legible on a phone.
+- **A pip bar shows progress.** Eleven pips. The player can see the end.
+- **It says "good." between steps.** One word. That is the entire reward and it is
+  enough.
+- **The teacher does not hit back at first.** It watches. Then it drills — slow,
+  white-outlined swings that exist to be parried. Then, on the final step, it **goes
+  live**: full health, gold tells, no mercy.
+- **It is skippable** from the pause menu. Always.
+
+**This is the model for teaching anything in this game.** Never a modal. Never a wall of
+text. A thing that stands up and shows you.
+
+## 5.5 NPCs — the gap and the plan
+
+**All four are built.** The dibia and the market woman in Ahịa Mmụọ, the younger
+ọgbanje in Iyi Idemili, the mother's shade on the approach to Onwe.
+
+### Why it matters
+Blasphemous and Hollow Knight both use NPCs as *tonal punctuation* — the player spends
+twenty minutes being attacked and then meets someone who is simply sad. Ọdịnala has no
+such punctuation, and the game is more monotone than it should be.
+
+### The four — **[BUILT]**
+
+**1. The dibia who buried your charm** — Ahịa Mmụọ, the night market. **[BUILT]**
+Dead now, still working. Sits behind a mat of chalk and cowries. **He does not recognise
+you**, because the last time he saw you, you were three days old and dying.
+
+He is the game's exposition character and its only warmth. He explains what an iyi-uwa
+is, what you did, and why it was a bad idea, without ever knowing he is talking to the
+child he saved. If you return after killing Ogbunabali, he says the name aloud and
+flinches.
+
+*Function:* lore delivery, codex unlocks. **[PROPOSED]** he could also be the only NPC
+who sells, moving the ledger out of the abstract.
+
+*As built:* spawn char `d`, room 4 at (17,14), voice profile `dibia`. Two conversations,
+switched on `G.slain.ogbunabali` — before, he explains the iyi-uwa; after, he says the
+name aloud and stops with his hand halfway to the cowries. Talking unlocks the `DIBIA`
+codex entry. He never recognises you, and there is no state in which he does.
+
+**2. The market woman selling nothing** — Ahịa Mmụọ. **[BUILT]**
+One line per visit, cycling. Over the course of the game she describes a woman who used
+to come to this market — what she bought, how she laughed, what she was carrying the
+last time. **She is describing your mother and she does not know it, and neither, for a
+while, does the player.**
+
+*Function:* the game's only slow-burn emotional thread. Costs almost nothing to build.
+
+*As built:* spawn char `m`, room 4 at (24,14), voice profile `woman`. Six lines, one per
+visit, indexed off `G.met.woman`. The order is the effect and must not be shuffled.
+
+**Deviation from the plan, deliberate:** the brief says the lines *cycle*. They do not.
+The sixth line is the burial cloth, and looping from there back to "there was a woman
+came here every market day" would undo it — the player would learn that the thread is a
+carousel rather than a life. She holds on the last line instead. If you want her to keep
+talking forever, write more lines; do not make her repeat the beginning.
+
+**3. The younger ọgbanje** — Iyi Idemili. **[BUILT]**
+Still in the cycle. Has died four times. Sits in the water. Asks you what is on the
+other side of not going back. **You have no dialogue options and cannot answer.** The
+conversation just ends.
+
+*Function:* makes the player's choice visible by showing the road not taken.
+
+*As built:* spawn char `o`, room 5 at (27,14), voice profile `child`. Five beats, the
+same five whatever you have done — he is the one character in the game who does not
+react to your progress, because he is not in your story. The last beat is the narrator,
+not a reply: you have nothing to tell him, he waits, he stops waiting. Four chalk strokes
+on his mask, for four burials. He is the smallest figure in the game, smaller than you.
+
+**4. Your mother's shade** — Ala Mmụọ, in the corridor before Onwe. **[BUILT]**
+She does not know you. She is not waiting for you. She is doing something ordinary.
+Brief — under thirty seconds — and completely unsentimental. If the player tries to
+interact more than twice, nothing further happens.
+
+*Function:* the emotional peak. It must be underplayed or it becomes cheap.
+
+*As built:* spawn char `y`, room 7 at (24,14) — ten tiles before Onwe, so you pass her on
+the way in. Voice profile `mother`. She is picking stones out of rice and does not look
+up. Four beats the first time, two the second, and on the third press **nothing happens
+at all**: `beats()` returns empty and her prompt returns an empty string, so the game
+stops inviting you to try. She is the only figure drawn under full alpha, because she is
+the only one who is not really here.
+
+She never says anything to you that she has not said to somebody else a thousand times.
+That is the entire design. Do not give her a line that only makes sense if she knows.
+
+### NPC implementation rules
+- NPCs are **shrine-like objects**, not entities. They do not move, take damage, or path.
+- Interaction is **`E`**, consistent with the ledger.
+- Dialogue uses the **cutscene system** (`playCut`) with the speaker's voice profile —
+  no new UI needed.
+- **No dialogue trees. No choices. No barks.** One conversation per state, advancing as
+  the world state advances.
+- Every NPC needs a **voice profile** in `VOICE` (see `07-AUDIO.md`).
+
+## 5.6 Quest design
+
+**There are no quests and there probably should not be many.** This game is 90 minutes
+long and structured as a descent. A quest log would be a lie about its scale.
+
+What exists instead:
+
+**Standing requests, not quests.** There is chalk at the foot of the shaft. Take it to
+the dibia and he tells you something. No log, no marker, no completion sound beyond the
+one every found thing gets. The player either notices or doesn't.
+
+### The dibia's chalk — **[BUILT]**
+
+`x` in room 12, the collapsed compound off the bottom of the shaft. Picking it up sets
+`G.chalk`; giving it back sets `G.gaveChalk`; both are saved, because a thread that
+resets when you quit is not a thread.
+
+While you are carrying it, `beats()` returns a different conversation — he asks where it
+was, and the answer is the only time in the game he says something about himself that he
+would rather not have said. Afterwards he goes back to his usual conversation. **He does
+not take it back.**
+
+Two rules the implementation had to obey:
+
+- **`beats()` must not have side effects.** It is asked what the NPC *would* say; that is
+  not the same as saying it. Consuming the chalk in `beats()` meant merely reading his
+  dialogue spent the thread. There is an optional **`after()`** hook on an NPC now, run
+  once between reading the conversation and saving, and that is where state changes go.
+- **`after()` must check.** Setting `G.gaveChalk` unconditionally means talking to him
+  *before* you find the chalk burns the thread and it can never fire. There is a
+  REGRESSION test for exactly that.
+
+Three such threads, maximum:
+1. ~~The dibia's chalk~~ — **[BUILT]**, rewards lore.
+2. The market woman's story — rewards nothing but itself, and unlocks the final codex
+   entry.
+3. ~~Nine graves~~ — **[BUILT]**, see below.
+
+### Nine graves — **[BUILT]**
+
+They are not scattered. They are **the row in room 10**, which is the same row the
+dibia's own codex entry already refers to: *"a family with nine graves behind the
+compound."* Eight mounds and, at the end of the row, the hole — **the ninth is yours and
+it is the only one that was ever opened.**
+
+Standing at a mound adds a line to the `NINE` codex entry and does **nothing else**. No
+marker, no log, no sound, no counter on screen. The player finds out there is more by
+opening the codex and seeing where it stops.
+
+Three things this needed:
+
+- **The hole had to move to the end of the row.** It was authored in the middle, which
+  contradicted the room's own lore entry — *"eight mounds under it, in a row, and a hole
+  at the end of the row"* — and put the ninth grave third in space. The text was right
+  and the geometry was wrong.
+- **The entry is a getter, not an array.** Every other `LORE` entry is read as `.b`; an
+  array or an IIFE freezes the entry at whatever was true when the file loaded, which is
+  nothing.
+- **`saveGame(quiet)` exists because of this.** Standing at a grave saves, and the save
+  raises a `Saved.` note — nine times as you walk the row. A note flashing nine times is
+  a marker whichever way you look at it, and this section forbids markers. There is a
+  REGRESSION test that watches for it **during** the walk, because the note expires and
+  checking afterwards proves nothing.
+
+### Rules
+- **No quest markers. No quest log. No "objective complete."**
+- **No fetch quests where the item is arbitrary.** The chalk is chalk because chalk
+  means something in this game.
+- **Rewards are lore or access, never stats.** Stats come from the ledger.
+
+## 5.6b New game plus — *chi* — **[BUILT]**
+
+`01-VISION.md` names the framing and it is the whole design: **your chi remembers, and
+nothing else does.** §5.1 puts knowledge above the other three currencies, so knowledge
+is exactly what carries.
+
+| Carries over | Does not |
+|---|---|
+| The bestiary — what you have seen | Every boss you killed |
+| The people — `G.met`, so conversations continue | Cowries, weapons, spells, skills, charms |
+| The graves you have stood at | The mirrors, the map, the ground walked |
+| That you have done the Teaching | **The name** |
+
+**The name is the one thing you go back for.** It is the game's central idea — the
+epistemic gate, the thing that costs nothing but attention — so a second run that starts
+holding it is a second run with nothing to find. There is a REGRESSION test.
+
+Each cycle raises **enemy poise only**, capped at three cycles. One number, applied at
+`base()`, so a guard takes longer to break and *no fight changes shape*. It is capped
+because an uncapped multiplier eventually makes a guard unbreakable, which would silently
+delete the execution from the game.
+
+**Not built, and honestly so:** `01-VISION` also asks for *one extra gold tell per boss*.
+That means authoring five new boss attacks, which is Phase 4 work, not a scalar. It is
+**[NOT BUILT]** and this paragraph is the record of why.
+
+## 5.6c The rematch — **[BUILT]**
+
+`N` on a bestiary entry for a boss you have **already put down** drops you into its room
+with the fight ready. Never a preview: `rushable()` offers only the dead, so it cannot be
+used to see a boss early.
+
+It runs in the **speedrun save slot**, which already exists for exactly this reason — a
+rematch must never be able to write over the run somebody is playing, and there is a
+REGRESSION test that the real save is byte-identical afterwards. It is **not** the
+untouchable mode: `unlockAll()` gives you the kit and then cheats go straight back off,
+because a rematch you cannot lose is not a rematch.
+
+`bossHome()` finds each boss by its spawn char in `ROOMS` rather than from a table. A
+table of boss positions would be a sixth thing keyed by boss and a sixth thing to drift.
+
+## 5.7 Progression pacing — the intended playthrough
+
+| Beat | Time | Player has |
+|---|---|---|
+| Opening + Teaching | 0–8 min | Machete, one spell, 140 cowries |
+| Forest and shaft | 8–20 min | The name. ~300 cowries. First ledger visit. |
+| Ogbunabali | 20–30 min | Ala's Fall. Understands the game's central idea. |
+| Market and water | 30–45 min | A second weapon, a heart shard, mirrors, breathing room |
+| Bone road, Ekwensu | 45–60 min | Third weapon, most of a spell tree |
+| Fire and sky | 60–75 min | The firebrand. Peak power. |
+| Ala Mmụọ, Onwe, ending | 75–90 min | Everything they chose |
+
+**Target: 90 minutes for a first completion, 25–30 for a speedrun.** If a change pushes
+the first completion past two hours, the change is probably wrong.

@@ -66,6 +66,22 @@ Gold does double duty (danger-you-can't-parry and safety-you-can-rest-at) and th
 works because the two never appear in the same context — one is on an enemy mid-swing,
 the other is on a static object. **Do not add a third meaning for gold.**
 
+### Pickups obey the contract too
+
+`drawPickups` had one unconditional branch under the cowrie: a red halo and a red body.
+That is the heart shard's look, and it was therefore *every* pickup's look — the
+firebrand lying in the forge and the dibia's chalk both glowed like blood, which the
+table above reserves for fire and for damage. Three branches now:
+
+| Pickup | Reads as |
+|---|---|
+| Heart shard | red — it is a piece of you |
+| Weapon | gold — it is a thing worth having |
+| Chalk | bone-white in grey cloth — it is nzu, and nzu is never decorative |
+
+**A new pickup kind needs a branch here.** Falling through is not a default, it is a
+claim that the thing is made of blood.
+
 ## 6.5 Character art standards
 
 ### The player
@@ -220,6 +236,32 @@ frequencies, so it never reads as a loop.
 - **Bars are rails, not gradients.** Health is a notched rail with a lit top pixel and a
   shaded bottom pixel. Notches every 50 HP.
 - **Icons are 16×16 with a 1px inset frame**, drawn in `px`/`pxf`, never text glyphs.
+
+## 6.10b Two effects that had to be measured before they were kept — **[BUILT]**
+
+**The wet floor, Iyi Idemili (3.5).** The floor there is wet stone, so it holds what
+stands on it: every entity is drawn a second time, flipped about the tile it is standing
+on, at 0.14 alpha with a slow horizontal wobble. It is the same painters called again
+inside a flip, so it costs almost nothing.
+
+**It is clipped to a 15px band.** Unclipped it ran the full height of whatever it was
+reflecting and read as a *hole* in the floor rather than a shine on it. A wet floor holds
+an inch of you, not all of you. Anything more than a tile above the ground is skipped
+entirely — nothing in mid-air has a reflection.
+
+**Heat shimmer, Ọkụ Mmụọ (3.6).** The room had a heat gradient breathing over the whole
+screen, which is a tint, not a shimmer. The real thing takes the lower half of the frame
+in horizontal strips and puts each back a pixel or two sideways, so edges bend. It fades
+to nothing at the top of the band and is strongest at the lava.
+
+**The first version cost 92.7 ms a frame.** It read each strip straight off the canvas it
+was drawing into, and every such `drawImage` forces a flush — sixteen of them per frame,
+against a 16.6 ms budget. Copying the band **once** into a scratch canvas and taking the
+strips from there brought it to **1.4 ms**. §9.5 says measure before optimising; this is
+the case for measuring before *keeping*, and the number is the only reason the effect
+survived.
+
+It respects **reduced motion** and does not run when that is on.
 
 ## 6.11 Art assets that do not exist and should — **[NOT BUILT]**
 

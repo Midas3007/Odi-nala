@@ -11,14 +11,14 @@
 
 ## 9.2 File anatomy
 
-`odinala.html`, roughly 4,900 lines. One `<script>`. Order:
+`odinala.html`, roughly 5,200 lines. One `<script>`. Order:
 
 | Section | Contents |
 |---|---|
 | 1. Shell | Canvas, `SC` transform, `fit()`, `toLogical()`, `px`/`pxf`, input tables, `CODES`, `MENU_MODES`, `menuRepeat()` |
 | 2. Persistence | `store` / `load` / `saveGame` / `loadGame` / `slot()`, two save slots |
 | 3. Audio | `initAudio`, `tone`, `nz`, `S`, the music sequencer, `VOICE`, `voiceBlip` |
-| 4. Data | `ROOMS` (10 ASCII maps), `WEAPONS`, `SPELLS`, `RIDDLES`, `MIRRORS`, `LORE`, `BEASTS`, `STORY` and cutscene beats |
+| 4. Data | `ROOMS` (13 ASCII maps), `WEAPONS`, `SPELLS`, `RIDDLES`, `MIRRORS`, `LORE`, `BEASTS`, `STORY` and cutscene beats |
 | 5. State | `G` (global), `P` (player), `R` (current room), `cam`, `enemies`, `boss`, `shots`, `parts`, `pickups`, `shrines`, `decals`, `amb` |
 | 6. Entities | Builders, `enemyUpdate`, `bossUpdate`, `playerUpdate`, `swing`, `damage`, `hurtPlayer`, `tryParry` |
 | 7. Systems | Tutorial, riddles, mirrors, ledger, codex, map, pause, inventory, ending |
@@ -49,6 +49,45 @@ while (acc >= step) {
 
 **The `consumed` flag is load-bearing.** It is why a tap during a freeze frame is not
 eaten. Do not simplify it.
+
+### The crash guard
+
+`frame()` is a wrapper. All the work is in `frameBody()`, and the wrapper is:
+
+```js
+function frame(now){
+  try{ frameBody(now); }
+  catch(err){ /* log once, G.crashed = true, restore ctx, draw a notice */ }
+  requestAnimationFrame(frame);   // unconditional — this is the whole point
+}
+```
+
+**The rAF call is outside the try and must stay there.** A throw anywhere in any update
+or painter used to escape `frame()`, skip the re-schedule, and stop the game permanently:
+the player sees a frozen picture, does not know it is a crash, and loses the run. One bad
+property lookup should never be able to do that again.
+
+On a caught error the guard also restores `ctx` from `baseCtx`. `buildBackLayers()` swaps
+`ctx` for an offscreen context; if it throws mid-bake the swap-back never happens and
+every later frame paints into a discarded canvas — which looks exactly like a freeze.
+
+`G.crashed` and `G.crashErr` are set once and surfaced as a small non-blocking strip at
+the bottom of the screen. The game keeps playing. **A game running with one broken system
+beats a game that has stopped.**
+
+### The soft-lock net
+
+`unstickPlayer()` is the first thing `playerUpdate()` calls. If the player's body overlaps
+solid tiles — which should be impossible — it searches outward in 2px steps up to three
+tiles, preferring up, and moves them to the first free spot; if nothing is free it returns
+them to the last rest charm. It is silent: no message, no mode, the player never learns it
+exists.
+
+It tests `SOLID` only. One-way platforms are deliberately excluded, because resting on one
+is normal and is not being stuck.
+
+This is a net, not a licence. `tools/audit.py` is what stops bad geometry shipping; this is
+what stops bad geometry ending a run if it does.
 
 ## 9.4 Coding standards
 
@@ -92,8 +131,17 @@ a silent wrong-palette or a crash:
 2. `MAPPOS` — thumbnail position on the map screen
 3. `ROOM_TRACK` — which music track
 4. `AMBIENT` — which particle
-5. The `STONE[]` index expression in `drawTiles`
+5. `ROOM_STONE` — which stone set the room is cut from
 Plus: `link()` calls in `renderMap`, and a `LORE` entry if it matters.
+
+All five are counted against `ROOMS` by `tools/audit.py`, so missing one is a red gate
+rather than a wrong palette three rooms later. Item 5 used to be a nested ternary on the
+room index with a silent `else` — every room added past 9 would have been painted in the
+sky's pale blue, and the audit could not see it. It is a table now for exactly that
+reason: **a lookup with a default is not a table, it is a bug with a fallback.**
+
+The room's `E` tiles and its `exits` rects must also agree exactly — see
+`03-WORLD-AND-BIOMES.md` §3.3, "Doorways". Three shipped exits did not.
 
 ### Adding an enemy
 `mkThing()` builder → `enemyUpdate` branch → `drawEnemy` branch → spawn char in
@@ -101,8 +149,25 @@ Plus: `link()` calls in `renderMap`, and a `LORE` entry if it matters.
 a `BESTIARY` entry → **a `tell` of `'white'` or `'gold'`**.
 
 ### Adding a mode
-A `case` in the `frame()` switch, a branch in the render dispatch, and an entry in
-`MENU_MODES`.
+A `case` in the `frame()` switch, a branch in the render dispatch, an entry in **`MODES`**,
+and — if the player steers it with a direction — an entry in `MENU_MODES` (§8.2b).
+
+`MODES` is the list of every mode the game can legally be in, and the soak asserts
+`G.mode` is always one of them. `test.js` used to keep **its own copy** of that list, and
+it had drifted: `charm` went in with 2f and never reached the test, so the charm screen
+was never soak-tested, and the drift only announced itself when `opts` was added and
+mashing happened to open it. The game owns the list now and the suite reads it.
+
+### Adding an NPC
+NPCs are shrine-like, so they cost far less than an enemy: an entry in `NPCS` (spawn
+char, room, voice, prompt, and a `beats()` that reads current world state) → a branch in
+`drawNPC` → a profile in `VOICE` → the char in the tile-skip string in `drawTiles` → the
+char in the room map. `spawnRoom` and the interaction handler are generic and need no
+edit. `tools/audit.py` reads the spawn chars straight out of `NPCS`, so a new NPC is
+covered by the embedded-in-solid check automatically.
+
+`beats()` is called fresh on every conversation, so dialogue tracks world state without
+any extra machinery. `G.met` counts conversations and is saved.
 
 ## 9.5 Performance
 
@@ -137,7 +202,13 @@ optimise on intuition.
 
 ## 9.6 Testing
 
-`test.js` — **218 assertions, headless Node, no dependencies.**
+`test.js` — **1,635 assertions, headless Node, no dependencies**, about 30 seconds.
+
+`node test.js --quick` skips the two soaks and runs in about 7 seconds. That is the
+inner loop only — **it is not the gate**, it says so in its own output, and what you run
+before a commit is `node test.js` with no arguments. The soaks are 21 of the 30 seconds
+and they are not optional (rule 6 below). Its
+first section shells out to `tools/audit.py`, so a red audit is a red test run.
 
 ### How it works
 It stubs `document`, `AudioContext`, `localStorage` and `requestAnimationFrame`, loads
@@ -162,9 +233,25 @@ and illegal states.
 3. **Every bug gets a regression test** *before* it is fixed.
 4. **Tests must be hermetic.** Reset `G.hitstop`, `G.slow`, `P.face`, `P.st` before
    asserting. Most flaky failures in this suite's history were leftover hitstop.
+   **`G.cheat` is the other one** — `unlockAll()` leaves it on, and cheat mode refills
+   life, gourds and ọfọ every frame, so a block that forgets to clear it silently stops
+   testing what it thinks it is testing.
 5. **Never weaken an assertion to make it pass.** If the game changed, change the
    expectation deliberately and say why.
 6. **The soak tests are not optional.** They have caught real crashes.
+7. **Assertions tagged `REGRESSION` guard a bug that actually shipped**, and each was
+   mutation-tested when it was fixed: put the bug back, watch the suite go red, restore.
+   A guard nobody has seen fail is a guard nobody should trust. Currently guarded:
+   dropped inputs during hitstop, multi-hit swings, colliding save slots, an arrival
+   buried in rock, a shade reclaimed on the frame it was dropped, a silent equipment
+   swap.
+8. **Exit arrivals are checked twice** — once on the geometry, and once by actually
+   coming through the doorway and walking away from where you land. `tools/audit.py`
+   covers the static half; the suite covers the played half. An arrival buried in rock
+   pins the player: no direction moves them, and it reads as a hang rather than a bug.
+
+*(Rules 4's cheat clause, 7 and 8 recovered from `bible/archive/11-TECH.md` §11.6 — they
+describe the shipped suite and the new set had dropped them.)*
 
 ### Syntax check
 ```bash

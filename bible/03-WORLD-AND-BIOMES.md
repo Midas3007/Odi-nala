@@ -2,13 +2,15 @@
 
 ## 3.1 The map, as built
 
-Ten rooms. Rooms are indexed 0–9 and **every index-keyed table must be updated together**
+Thirteen rooms. Rooms are indexed 0–12 and **every index-keyed table must be updated together**
 when a room is added (see `09-TECHNICAL.md` §Adding a room).
 
 ```
                   [4 market] ── [5 water]
                        │             │
    [0 charm] ─ [1 path] ┴─ [2 shaft] ─┘
+        │            │        │
+  [10 ogilisi]   [11 roofs]  [12 compound]
                              │
                         [3 Ogbunabali]
                              │
@@ -45,6 +47,56 @@ specified before a new biome is built.
 The moon is the single most important art decision in this room. It is the last sky the
 player sees until room 9, and it is why room 9 lands.
 
+**It was never visible.** It was drawn *before* `drawBackLayers()`, and this room's three
+parallax tree layers — the nearest at 0.82 alpha — painted straight over it, so from the
+first build to Phase 3 nobody had ever seen it. It is drawn after the parallax now, and
+sits at y≈66 rather than y≈42 so it clears the canopy band. The **foreground** boughs
+still cross it, which is the picture this paragraph was always describing: the last sky,
+seen through branches.
+
+**It moves.** See §3.6 below.
+
+### Room 10 — Ogilisi (the tree at the boundary) — **[BUILT]**
+| | |
+|---|---|
+| **Palette** | `#101710`. Green-black, a shade warmer than room 0. |
+| **Stone** | `STONE[10]` — dug earth with roots through it |
+| **Music** | `ogilisi` — room 0's scale, thinner than the shaft. The sparsest track in the game. |
+| **Ambient** | dust |
+| **Light** | none. The one room with no light source of its own. |
+| **Hazard** | none |
+| **Emotion** | the hole is smaller than you remember |
+
+A dead end off the **left** wall of room 0 — the direction the player has no reason to
+go. Nothing to fight, nothing to buy, no charm, no mirror. It exists to be looked at.
+
+**Eight mounds and a hole, in that order, left to right.** The hole is at the **end of
+the row** — it was authored in the middle, which contradicted the room's own codex entry
+and put the ninth grave third in space. The hole is where the ninth would be, and nothing
+in the game says so.
+
+Standing at each mound writes a line into a codex entry, and standing **in** the hole
+writes the last one. See `05-PROGRESSION.md` §5.6. This is the number-nine rule in 3.4
+working exactly as written — a player who counts is rewarded and a player who does not
+feels a rhythm.
+
+The pit is **two tiles deep, not three.** Three was the first draft and it was wrong
+twice: it is a soft-lock risk at the far end of a dead-end room, and a hole you have to
+work to climb out of is not a hole that is smaller than you remember. There is a
+REGRESSION test that climbs out of it.
+
+**The hole had to be drawn, not left empty.** Bare tiles are not a hole — you see the
+parallax through the gap and it reads as a window cut in the wall. `drawProps` fills it
+with dug earth going black downwards, a lit lip where the spade went in, roots let
+through from the tree, and — the part that mattered most — a dark band over the tile
+underneath, because `drawTiles` lights the top edge of every solid tile and a lit surface
+at the bottom of a grave reads as a floor with a lamp on it.
+
+The tree is drawn **once, in the near plane**, at a size nothing else in the game
+reaches. The room is named for a single tree; twelve of them in parallax is a forest, and
+there is already a forest. The generic wooded parallax runs behind it, which is correct —
+it is a boundary, and there has to be something on the other side.
+
 ### Room 1 — Ọhịa (the path that watches)
 | | |
 |---|---|
@@ -74,6 +126,35 @@ unfulfilled dread is correct.
 Tall room (40 tiles). The only vertical space in the game. The chalk stone with
 Ogbunabali's name is here and the room's whole job is to make sure you walk past it.
 
+### Room 12 — Ụlọ Dibia (the compound that fell in) — **[BUILT]**
+| | |
+|---|---|
+| **Palette** | `#14120d`. Dry brown-black. |
+| **Stone** | `STONE[12]` — plastered mud wall, cracked |
+| **Music** | `ulo` — the palm-wine guitar in the shaft's low minor, stopping mid-phrase |
+| **Ambient** | grit |
+| **Light** | none |
+| **Hazard** | none |
+| **Emotion** | somebody worked here and it did not save them |
+
+West off the **foot of the shaft**, beside the mirror — so it is found at the bottom of
+the longest descent in the game, at the moment the player has just stopped falling.
+
+**The guitar is the argument.** It is the market's instrument and the roofs' — the sound
+of somewhere people live. Down here it plays the shaft's key and stops in the middle of
+the phrase. That is the room in one line, and it is why `ulo` carries a `gtr` at all when
+nothing else underground does.
+
+The walls are **nzu in nines**. §3.4 sets the rule — four strokes is a greeting, nine is
+a name written down where the spirits can read it — so a wall of names is groups of nine
+and nothing else. It was authored in twos and threes first and read as tally marks.
+
+Idols stand in it as **props, not enemies**. A dibia's compound has arụsị the way a house
+has doors. That also means this is the one other room in the game where a mimic would be
+legal (04-COMBAT §4.7) — there is nothing here that needs one.
+
+**It holds the dibia's chalk.** See `05-PROGRESSION.md` §5.6.
+
 ### Room 3 — Ebe Ọchịchịrị (where he keeps the dark)
 | | |
 |---|---|
@@ -101,6 +182,36 @@ information, not positioning.
 
 This room exists to be a break. It is the only warm, busy, almost-cheerful place in the
 game and it must stay that way. Do not put a boss here. Do not make it scary later.
+
+### Room 11 — Ahịa Elu (the roofs above the market) — **[BUILT]**
+| | |
+|---|---|
+| **Palette** | `#181016`. Warm purple-black, one shade drier than the street. |
+| **Stone** | `STONE[11]` — mud brick and thatch |
+| **Music** | `elu` — the market's own scale and guitar, slower, **no rattle** |
+| **Ambient** | lantern sparks |
+| **Light** | **the street, from below.** |
+| **Hazard** | none |
+| **Emotion** | the party is downstairs |
+
+Reached by four awnings up the far right of the market, stacked three tiles apart —
+directly over the way to the water room, so the player walks under the climb every time
+they go past. **They must be three tiles or fewer.** They were authored at four by
+accident and the room was unreachable while every table in the game still agreed with
+itself; a per-rung regression test is what found it, and it is what will find it again.
+
+**The light comes from underneath.** Every other warm light in the game hangs above the
+player. Here the street's lamps sit at the floor line and throw up, and a lit seam runs
+along the player's feet. That is the whole room: it tells you which floor you are on
+without a word, and it is the only place in the game that does it that way.
+
+The arrangement is the same argument in sound. Same scale, same palm-wine guitar, and
+**the shaker is gone** — the melody carries up to a roof and the rattle does not. Slower,
+too, because you have stepped out of it.
+
+It carries the **first rest charm in the warm half of the game**. The market had a mirror
+and no charm, which meant the ledger was unreachable anywhere near the game's one
+cheerful room. That is a fix disguised as a room.
 
 ### Room 5 — Iyi Idemili (the water that remembers)
 | | |
@@ -183,6 +294,33 @@ hole you dug.
 - The player is 10×18px and jumps ~3.7 tiles high, ~3.5 tiles across. **No gap wider
   than 3 tiles without a dash unlock. No ledge higher than 3 tiles without a route.**
 
+### Doorways: the rect and the `E` tile must be the same tiles
+
+An exit is **two things that nothing ties together**: an `exits` record, which is a
+rectangle tested against the player's body, and `E` tiles in the map, which are what
+paint the doorway — the gold-lit gap in the world, and the gold square on the map screen
+whose legend promises "gold squares are doorways".
+
+**Every tile inside an exit rect must be `E`, and every `E` tile must be inside an exit
+rect.** `tools/audit.py` fails on either, and `test.js` walks into every side doorway to
+prove the rect is reachable — a check the audit structurally cannot do.
+
+Three exits were wrong when this rule was written, all of them shipped and all of them
+working, which is why nobody had noticed:
+
+- **Room 3 → the bone road** had *no `E` tile at all*. The way out of the first boss room
+  was an invisible trigger in open air, and the map screen showed the boss room with one
+  doorway when it has two.
+- **Rooms 0 → 1 and 6 → 8** had rects sitting one column past their doorway art, on tiles
+  that `padEnd()` had quietly filled with rock. Both fired anyway, because the player's
+  body overlapped the rect by a single pixel before collision stopped it. Room 6's is the
+  gate to the forge — the whole back half of the game was reachable through a one-pixel
+  accident.
+
+**Map rows must also be the same length.** A short row is padded with `#`, so a doorway
+authored at the end of a short row silently becomes wall. That is what happened to rooms
+0 and 6, and the audit now fails on ragged rows for that reason.
+
 ### Tile vocabulary
 | Char | Meaning |
 |---|---|
@@ -196,6 +334,7 @@ hole you dug.
 | `M` | mirror |
 | `h` | heart shard |
 | `F` | weapon pickup |
+| `x` | the dibia's chalk |
 | `w l t W v a k i` | walker, lunger, thrower, warden, horned, ember, crawler, effigy |
 | `B X O` | Ogbunabali, Ekwensu, Onwe |
 | `K` | the chalk masquerade (tutorial) |
@@ -255,6 +394,33 @@ and it means the player can read a dark screen instantly.
 - [ ] Does it glow? If yes, is it either safe (gold/cyan) or dangerous (orange/red)?
 - [ ] Would removing it change the room's meaning? If no, remove it.
 
+## 3.6 The night turns — **[BUILT]**
+
+**It never becomes day, and that is the whole design.** `01-VISION.md` files a full
+day/night cycle under *"fits in a bigger version"* and it is right to: this game is one
+night long. Room 0 holds the last moon the player sees until room 9; room 9's horror is
+that there is a sky down there at all; and room 4 is *the market that opens at night*. A
+sunrise deletes all three. **Deviation from `10-ROADMAP.md` row 3.4, deliberate, and this
+paragraph is the record of it.**
+
+What turns is the night itself — the dead of it round to the thin end and back, one turn
+per forty minutes played, off `G.playT`. `nightPhase()` is 0..1 and `deepNight()` is 1 at
+the dead of night and 0 at its thinnest.
+
+Three things read it, and only three:
+
+| | |
+|---|---|
+| **The moon** | crosses and descends, and its dark side turns with it |
+| **The market** | two of its six lamps gutter at the thin end and come back. **It never closes.** |
+| **Ogbunabali** | holds a broken guard for less time while the night is deepest |
+
+**Nothing becomes unreachable and nothing is missable.** Both market NPCs are there at
+every hour — §5.2's economy rule, and there is a REGRESSION test that spawns them at both
+ends of the night. Ogbunabali's number is his *stagger duration*, never his damage gate:
+the name still zeroes his defence, so the epistemic gate the whole game is built on is
+untouched.
+
 ## 3.5 Rooms not yet built — **[NOT BUILT]**
 
 Ranked by value.
@@ -262,8 +428,7 @@ Ranked by value.
 1. **A village at dawn — playable prologue.** Ten minutes of ordinary life before the
    taking, with no combat. Would transform the ending. Highest narrative value in the
    entire wishlist.
-2. **The ogilisi tree** — a small shrine room off room 0, containing the actual hole.
-   Cheap, high resonance.
-3. **A second market level** — Ahịa Mmụọ is the game's best room and there is only one.
+2. ~~**The ogilisi tree**~~ — **[BUILT]** as room 10. See 3.2.
+3. ~~**A second market level**~~ — **[BUILT]** as room 11. See 3.2.
 4. **The river crossing** — Idemili's python, as an optional boss.
-5. **A collapsed dibia's compound** — books, chalk, tools, the man who buried your charm.
+5. ~~**A collapsed dibia's compound**~~ — **[BUILT]** as room 12. See 3.2.

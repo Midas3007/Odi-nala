@@ -108,9 +108,25 @@ Design rules for any new weapon:
   cowries), the firebrand is *found* in the fire room. **At least one weapon should
   always be found rather than bought.**
 
-**[NOT BUILT]** Weapon-specific heavy attacks. Currently each weapon has its own heavy
-*numbers* but the same *shape*. Giving Ogu a sweeping heavy and Nkwụ a rapid flurry
-would be the highest-value combat addition available.
+### Weapon-specific heavies — **[BUILT]**
+
+Each weapon's heavy now has its own **shape**, not just its own numbers. The shape is
+declared in `WEAPONS[k].heavy.kind` and branched in the `heavy` player state, so adding a
+weapon means adding a kind rather than editing a shared code path.
+
+| Weapon | Kind | Shape |
+|---|---|---|
+| **Mma** | `lunge` | One committed stroke forward. The baseline the others are read against — deliberately unchanged. |
+| **Nkwụ** | `flurry` | Four cuts inside one commitment, 5 frames apart, each ~1.35× of a quarter share. Each is its own swing, so each lands once. |
+| **Ogu** | `sweep` | Comes all the way round: the hitbox is built symmetrically about the player, so it catches what is **behind** you. The only attack in the game that does. |
+| **Mkpịsị Ọkụ** | `slam` | Downward, and it leaves **burning ground** — a patch that applies `burn` to anything standing in it every 14 frames for 260 frames. |
+
+Burning ground lives in `flames[]`, capped at 6 (§09.5 rule 3), cleared by `spawnRoom` so
+it does not follow you between rooms, and it casts a light so it reads at night.
+
+**The drawbacks are unchanged and still carry the balance.** The sweep is the slowest
+wind-up in the game; the flurry has the shortest reach; the slam roots you hardest and
+commits you downward. A shape that removed a weapon's cost would be a bug, not a buff.
 
 ## 4.5 Spell design — the four ọfọ
 
@@ -139,7 +155,7 @@ Rules:
 5. It occupies a distinct *range band* — melee, mid, ranged, aerial.
 6. Its death drops cowries.
 
-### The nine
+### The fifteen
 
 | Enemy | HP / Poise | Range | Idea | Tell |
 |---|---|---|---|---|
@@ -152,19 +168,76 @@ Rules:
 | **Ember** (`a`) | 30 / 20 | **aerial** | Hovers above you, then falls. Gold gather, then dive. | **gold** |
 | **Crawler** (`k`) | 34 / 26 | melee | Fast, low, bites twice | white |
 | **Effigy** (`i`) | 66 / **96** | ranged | Rooted. Three-shot aimed volley. High poise — must be broken. | white |
+| **Healer** (`n`) | 30 / 24 | mid | Restores an ally's poise and closes a broken guard. Retreats; will not chase. | white |
+| **Mimic** (`q`) | 44 / 34 | melee | An idol that is an idol until you are inside its reach. | **gold** waking, white after |
+| **Grappler** (`j`) | 64 / 48 | melee | Takes hold of you. Mash out, or wait it out. | **gold** |
+| **Pair — shield** (`p`) | 58 / 72 | melee | Holds the line and eats light hits. Does not attack while its spear lives. | white (alone) |
+| **Pair — spear** (`p`) | 34 / 26 | mid | Reaches *past* its own shield. Backs off if the shield dies. | white |
+| **Swimmer** (`s`) | 38 / 28 | **aquatic** | No gravity. Holds a lane, then darts along it. | white |
+| **Ceiling** (`b`) | 32 / 22 | **aerial** | Hangs, tracks you, drops when you walk under. | **gold** |
 
 ### Enemy roster gaps — **[NOT BUILT]**
 Ranked by what the roster is missing mechanically:
 
-1. **A healer / buffer.** Nothing currently supports other enemies. A masked figure that
-   restores an ally's poise would force target prioritisation — the single biggest
-   missing pressure.
-2. **A grappler.** Something that grabs and must be broken out of. Adds a real fear.
-3. **A shield-and-spear pair that fights as a unit.**
-4. **A mimic prop** — a skull or idol that is an enemy. The prop vocabulary already
-   supports this and it would be cheap.
-5. **A swimmer** for Iyi Idemili — the water room has no unique enemy, which is a gap.
-6. **A wall-crawler** that changes the vertical read.
+1. ~~**A healer / buffer.**~~ **[BUILT]** `n`, Onye Mmezi. Stands off, picks the nearest
+   ally that is missing poise or already broken, and channels for 72 frames; on
+   completion it returns 55% of that ally's poise and shuts a broken guard early. A gold
+   thread names the target the whole time it is working, so the decision is always
+   legible. Staggering it cancels the channel outright — that is the counterplay, and it
+   is why it is frail (30 HP against the warden's 78). It retreats from the player and
+   only swings, white-telegraphed, when cornered.
+2. ~~**A grappler.**~~ **[BUILT]** `j`, Onye Njide, in the fire room. A 34-frame **gold**
+   reach — a roll, never a ward — then a seize. On contact the player enters a new
+   `held` state: pinned, damaged every 24 frames, and freed by mashing Z/X/C or by the
+   grappler being staggered or killed.
+
+   **The escape is guaranteed and must stay that way.** `P.grabT` runs down on its own
+   whether or not the player touches anything, so a grab tops out around 96 frames. A
+   grab you cannot escape is a soft-lock wearing a costume, and priority 2 in the
+   operating manual outranks any amount of tension. There is a REGRESSION assertion on
+   exactly this.
+
+   Being hurt by *something else* while held does **not** eject you. It used to —
+   `hurtPlayer` overwrote `P.st` — which made the grappler weaker the more crowded the
+   room was, exactly backwards, and left it holding nobody. Damage while pinned applies
+   with a shortened i-frame and the hold continues.
+3. ~~**A shield-and-spear pair.**~~ **[BUILT]** `p` spawns both. The shield holds station
+   in front of the spear and **does not attack at all** while its partner lives; light
+   hits on it are wasted, exactly as with the warden. The spear reaches *past* the
+   shield, so the safe-looking spot at the wall is the one place it can certainly hit
+   you. Kill either and the survivor changes: the shield stops being patient and starts
+   swinging, the spear backs off and its cooldown doubles. Neither half is a fight on
+   its own, which is the point of the entry.
+4. ~~**A mimic prop.**~~ **[BUILT]** `q`, Arụsị Ọjọọ, in Ala Mmụọ. Asleep it is drawn by
+   the *same `idolStatue()` call with the same arguments* as the room's real props — not
+   a similar palette, the same one, because a palette that was slightly off gave it away
+   immediately in a browser. Inside 40px it stands up on a **gold** tell and pounces.
+   Pillar 2 holds: the surprise is that it was scenery, never that the attack is
+   unreadable — it always stands up first. Awake it stays awake, splits open and lights
+   from inside, so the second one you meet is a read rather than another ambush. Two are
+   placed for exactly that reason.
+
+   **The mimic may only be placed in a room that already has idols standing in it.** Its
+   whole design is that it is drawn by the same call as the props around it; in a room
+   with no idols it is a lone carving nobody put there, and it gives itself away before
+   it moves. Worse, its sleeping form carries a cyan halo, and 03-WORLD §3.4 makes cyan
+   mean *mirror*, which means safe. A cyan glow that is actually an ambush breaks the
+   rule that lets a player read a dark screen at a glance. Room 11 was authored with one
+   and it was caught in the first browser pass; there is now a test that fails if a `q`
+   is placed anywhere but Ala Mmụọ. **Adding one elsewhere means giving that room idols
+   first, or giving the mimic that room's own prop to be.**
+5. ~~**A swimmer.**~~ **[BUILT]** `s`, Azụ Iyi, in Iyi Idemili. It returns before the
+   shared gravity line in `enemyUpdate`, so it is the one enemy with no relationship to
+   the floor at all: it holds a slow figure-of-eight lane, coils white, and darts along
+   that lane in a straight line. The straight line is deliberate — it is what makes an
+   enemy that ignores the floor still readable.
+6. ~~**A wall-crawler.**~~ **[BUILT]** `b`, Ọnụ Elu, in the shaft. It hangs from a
+   ceiling, tracks you along it, and drops **gold** when you walk underneath, then
+   climbs back up. It is the only enemy that makes the ceiling worth looking at.
+
+   **`tools/audit.py` inverts its geometry rule for `b`:** every other spawn char is
+   flagged if there is solid above it, but a ceiling-dweller with no ceiling would hang
+   in mid-air, so for `b` the audit requires solid above and clear air below.
 
 ## 4.7 Boss bible
 
@@ -197,6 +270,53 @@ test.** After a boss that could not be fought, the player needs a boss that can.
 
 He needs no naming. He tells the truth unprompted. His fee was not paid in cowries.
 
+### Boss 5 — Ikuku, the wind (room 9)
+**The idea: it takes the ground away from you.**
+
+Named by Midas. Ikuku was already in the game before it was a boss — it is the answer to
+the mirror riddle *"It speaks and has no mouth"* — so the fight is a word the player has
+already met being handed a body.
+
+- 640 HP, 200 poise. **It never lands.** `ikukuUpdate` returns without the shared gravity
+  line and clears `onGround` every frame; a REGRESSION assertion holds it to that,
+  because a flying boss that comes to rest has stopped being the fight it was built as.
+- `sweepWind` (white) → it drops to just above the floor and skims it. **Get off the
+  ground.** `stoopWind` (**gold**) → it marks where you are standing, draws the line to
+  it, and commits. **Leave.** The two alternate, so the fight pushes you up and then off
+  again, and room 9's platforms stop being scenery.
+- The stoop commits to the mark, not to the player. Moving after it has drawn the line is
+  the counterplay, and it is asserted.
+- Phase 2 at 50% adds `liftWind`: it pulls the air upward under you and then lets go.
+- It reframes the room rather than the player. Igwe's horror is a sunset hundreds of feet
+  underground that nobody remarks on; Ikuku's first line is that somebody has to hold it
+  up. Its last is that the sky does not change when it dies, which is worse.
+- **Optional. It gates nothing.** Igwe is the game's one contemplative room and its
+  emotion is "vertigo, and something wrong you cannot name"; a compulsory fight
+  overwrites that, and two mandatory bosses back to back before the finale spends more
+  of the two-hour budget in §14 than the fight is worth. You can walk past it to Onwe.
+- Because it is optional, **killing it is a choice and it costs you Ending C.** Whether a
+  boss counts is derived by `bossIsGated()` from the exit tables rather than listed, so
+  ungating any boss in future automatically makes killing it avoidable.
+
+### Boss 4 — Ụzụ Ọkụ, the smith of the fire (room 8)
+**The idea: its guard reforges faster than you can chip it down.**
+
+- 700 HP. **150 poise — deliberately shallow**, because the boss is not the size of the
+  pool, it is the rate it refills. It regains **2.2 poise a frame**, 3.4 in phase two,
+  against an ordinary enemy's 0.3.
+- Poise damage therefore has to arrive in a lump: a charged heavy, an ọfọ, the third
+  stroke of the chain. Tapping at it does nothing at all, and that is the lesson.
+- `hammerWind` (white) → a heavy overhead that can be turned. `pourWind` (**gold**) → it
+  tips the crucible and molten metal runs down the arena; nothing turns that aside.
+  `sparkWind` (white) → it strikes its own anvil and the floor answers in waves.
+- Phase 2 at 50%: 22% faster, and the anvil throws three waves each side instead of two.
+  It *adds*, per the contract.
+- **It never lies.** After a boss who could not be fought and a boss who was paid, this
+  one tells the plain truth from its first line to its last: this is where things stop
+  being changeable, and it would like to finish you. It means something slightly
+  different by that than you do.
+- Gates the way to the open sky.
+
 ### Boss 3 — Onwe (room 7)
 **The idea: it fights with your moveset.**
 
@@ -213,10 +333,10 @@ cowries. See `05-PROGRESSION-AND-NPCS.md` §Tutorial.
 ### Bosses not yet built — **[NOT BUILT]**
 | Where | Who | Idea |
 |---|---|---|
-| Room 9, the open sky | **[PROPOSED]** an alusi of the air | A fight with real verticality — the game has none |
+| Room 9, the open sky | ~~an alusi of the air~~ **[BUILT]** — Ikuku | The game's only fight in the vertical |
 | Room 5, the water | Idemili's python | Optional. Non-lethal — it tests you and lets you pass |
 | Room 4, the market | **do not** | The market must stay safe |
-| Room 8, the fire | A forge-thing that reforges its own guard | Poise that regenerates fast, forcing burst |
+| Room 8, the fire | ~~A forge-thing~~ **[BUILT]** — Ụzụ Ọkụ | Poise regenerates at 2.2/frame (3.4 in phase two) against a walker's 0.3 |
 
 A realistic ceiling for this codebase is **8–10 bosses**. See `01-VISION.md`
 §1.10 for why forty is a different game.
