@@ -6923,7 +6923,10 @@ const LORE=[
  {id:'ekwensu', t:'EKWENSU', when:()=>!!G.seen['boss_ekwensu'], b:[
   "Spirit of war, bargaining and reversal. Invoked before a fight, thanked after, and sent away carefully so he does not stay.",
   "Missionaries translated him as the devil. He is not. He is a negotiator who happens to settle in blood, and he does not lie about it \u2014 which makes him worse company than a liar."]},
- {id:'onwe', t:'ONWE', when:()=>!!G.seen['boss_onwe'], b:[
+ // This was a second entry with id 'onwe' and the title 'ONWE', so the codex
+ // listed ONWE twice and any id lookup silently took whichever came first. It
+ // is the word rather than the thing, and it is titled and keyed that way now.
+ {id:'self', t:'ONWE \u2014 THE WORD', when:()=>!!G.seen['boss_onwe'], b:[
   "Onwe: the self. Not a deity. The word you use when you mean the person you actually are underneath what everyone calls you.",
   "Your spirit company kept the version of you that agreed to come and go. It has been waiting the whole time, wearing your face, keeping your side of a promise you broke."]},
  {id:'end', t:'WHAT YOU CHOSE', when:()=>G.ending>0, b:[
@@ -6931,12 +6934,15 @@ const LORE=[
   "That is what staying costs. Nobody hands you a reason. You just do not go back."]}
 ];
 const BEASTS=[
- {k:'ember',   n:'\u1ecck\u1ee5 Nwa \u2014 an ember with a face',
-  d:'A piece of the fire that does not go out, small enough to have opinions. It waits above your head and then falls. The falling cannot be turned aside \u2014 only stepped out of.'},
- {k:'crawler', n:'Nkakwu Mm\u1ee5\u1ecd \u2014 the low one',
-  d:'It runs on four bent legs and bites twice, and the second bite is the one that gets you, because you were already walking away.'},
- {k:'effigy',  n:'Ar\u1ee5s\u1ecb Nche \u2014 the watching idol',
-  d:'Carved, planted, and left with instructions. Its eyes are cowries. It cannot follow you, which it does not appear to consider a problem.'},
+ // These three were authored with n/d while every other row uses t/sub/b, and
+ // renderCodex reads t and b. They drew the word "undefined" as their name and
+ // showed no text at all. There is a REGRESSION guard on the field names now.
+ {k:'ember',   t:'\u1eccK\u1ee4 NWA', sub:'an ember with a face', b:
+  "A piece of the fire that does not go out, small enough to have opinions. It waits above your head and then falls. The falling cannot be turned aside \u2014 only stepped out of."},
+ {k:'crawler', t:'NKAKWU MM\u1ee4\u1ecc', sub:'the one that runs on four legs', b:
+  "It runs on four bent legs and bites twice, and the second bite is the one that gets you, because you were already walking away."},
+ {k:'effigy',  t:'AR\u1ee4S\u1eca NCHE', sub:'the watching idol', b:
+  "Carved, planted, and left with instructions. Its eyes are cowries. It cannot follow you, which it does not appear to consider a problem."},
  {k:'walker',  t:'ONYE \u1ecaFIA', sub:'one of the watchers on the path', b:
   "Raffia over a face that was somebody. It swings twice if you let it, and both swings are honest \u2014 white-edged, and both can be turned."},
  {k:'lunger',  t:'MGB\u1eccK\u1ecc', sub:'the low one', b:

@@ -58,5 +58,8 @@ it is the wrong solution.
 | `test.js` | Headless harness, run with `node test.js` |
 | `tools/audit.py` | Static room and table audit |
 | `tools/checklist.py` | Decides what the polish checklist may tick |
+| `tools/handbook.js` | Generates the handbook out of the live tables |
+| `HANDBOOK.md`, `handbook.html` | The player's handbook. **Generated — never edit by hand.** |
+| `poster.html` | Standalone key-art renderer |
 | `bible/` | Design authority — 11 chapters plus the operating manual |
 | `bible/archive/` | A superseded earlier bible. **Never cite it.** Kept only in case it holds a detail the current set dropped; if you find one, move it into the current file and note it there. |

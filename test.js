@@ -4093,8 +4093,33 @@ section('the codex');
   check('every lore entry has a title and body', api.LORE.every(e => e.t && e.b));
   check('every lore entry has an unlock condition', api.LORE.every(e => typeof e.when === 'function'));
   check('bestiary entries are authored', api.BEASTS.length > 0, 'entries=' + api.BEASTS.length);
-  check('every bestiary entry names a creature', api.BEASTS.every(e => e.k && (e.n || e.t)));
-  check('every bestiary entry has a description', api.BEASTS.every(e => e.d || e.b));
+  // REGRESSION. The two assertions that used to live here accepted `e.n || e.t`
+  // and `e.d || e.b`, which is the shape of the data rather than the shape of
+  // the consumer: renderCodex reads e.t and e.b and nothing else. Three entries
+  // were authored with n/d and shipped drawing the literal string "undefined"
+  // as their name, with no body at all, and the suite was green the whole time.
+  // Assert what the renderer reads.
+  check('REGRESSION: every bestiary entry has the title renderCodex draws',
+    api.BEASTS.every(e => typeof e.t === 'string' && e.t.length > 0),
+    'without t: ' + api.BEASTS.filter(e => !e.t).map(e => e.k).join(','));
+  check('REGRESSION: every bestiary entry has the body renderCodex draws',
+    api.BEASTS.every(e => e.b && (Array.isArray(e.b) ? e.b.length > 0 : String(e.b).length > 0)),
+    'without b: ' + api.BEASTS.filter(e => !e.b).map(e => e.k).join(','));
+  check('every bestiary entry is keyed to a creature', api.BEASTS.every(e => e.k));
+  {
+    // and nothing may carry the abandoned field names, or the next author will
+    // copy the wrong row
+    const stale = api.BEASTS.filter(e => e.n !== undefined || e.d !== undefined).map(e => e.k);
+    check('no bestiary entry still uses the old n/d field names', stale.length === 0, stale.join(','));
+  }
+  {
+    // REGRESSION. LORE shipped two entries with id 'onwe' and the same title, so
+    // the codex listed ONWE twice and any id lookup silently took the first.
+    const ids = api.LORE.map(e => e.id), titles = api.LORE.map(e => e.t);
+    const dupe = (a) => a.filter((v, i) => a.indexOf(v) !== i);
+    check('REGRESSION: no two lore entries share an id', dupe(ids).length === 0, dupe(ids).join(','));
+    check('no two lore entries share a title', dupe(titles).length === 0, dupe(titles).join(','));
+  }
 
   // Pillar 4 — the codex never gets ahead of the player.
   G().seen = {}; G().slain = {}; G().visited = {}; G().knowsName = false;
@@ -4386,6 +4411,141 @@ function soak(label, frames, seed) {
   return seenModes;
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// A guide that lies is worse than no guide, so the handbook is held to the same
+// standard as the code: every number it prints is checked against the table it
+// came from. Retune a weapon without regenerating and this section goes red.
+//
+// It reads the document as text and looks for the row it must contain. That is
+// deliberate — asserting the generator against the tables would only prove the
+// generator agrees with itself, and the artefact people actually read is the
+// file on disk.
+section('the handbook still tells the truth');
+(() => {
+  const MD_PATH = path.join(__dirname, 'HANDBOOK.md');
+  let MD = null;
+  try { MD = fs.readFileSync(MD_PATH, 'utf8'); } catch (e) { MD = null; }
+  if (!check('HANDBOOK.md exists', MD !== null, 'run `node tools/handbook.js`')) return;
+
+  // constants read out of the source the same way the generator reads them, so
+  // the two agree on what the game says before either of them says it
+  const { K, ENEMY: EN, BOSS_ATK: BA } = require('./tools/handbook.js');
+
+  const has = (s) => MD.indexOf(s) >= 0;
+  const claims = (what, s) => check('the handbook still says the right ' + what, has(s), 'missing: ' + s);
+
+  // ── frame data, every row of it ───────────────────────────────────────────
+  {
+    const rows = [];
+    for (const k of Object.keys(api.WEAPONS)) {
+      const w = api.WEAPONS[k];
+      for (const a of w.chain.concat([w.heavy, w.air])) {
+        rows.push([a.wind, a.act, a.rec, a.dmg, a.poise, a.reach, a.kb].join(' | '));
+      }
+    }
+    const missing = rows.filter(r => !has('| ' + r + ' |'));
+    check('every frame-data row in the handbook matches WEAPONS',
+      missing.length === 0, missing.length + ' rows adrift: ' + missing.slice(0, 3).join(' / '));
+    // and no more than that: a row in the document with no attack behind it is
+    // the same lie in the other direction
+    const printed = (MD.match(/^\| [^|]+ \| \d+ \| \d+ \| \d+ \| \d+ \| \d+ \| \d+ \| [\d.]+ \|$/gm) || []).length;
+    check('the handbook prints one frame-data row per attack and no extras',
+      printed === rows.length, 'printed=' + printed + ' attacks=' + rows.length);
+  }
+
+  // ── the numbers the player feels ──────────────────────────────────────────
+  claims('ward window',        K.wardWindow + ' frames');
+  claims('assisted ward window', 'widens it to ' + K.wardAssist);
+  claims('roll invulnerability', 'frames ' + K.rollIfrom + '–' + K.rollIto + ' of the roll');
+  claims('roll cooldown',      '| Roll cooldown | ' + K.rollCd + ' frames');
+  claims('charge threshold',   '| Charge threshold | ' + K.chargeAt + ' frames');
+  claims('combo window',       '| Combo window | ' + K.comboWin + ' frames');
+  claims('coyote time',        '| Coyote time | ' + K.coyote + ' frames');
+  claims('jump buffer',        '| Jump buffer | ' + K.jumpBuffer + ' frames');
+  claims('guard-break window', K.brokenNormal + ' frames');
+  claims('boss guard-break window', K.brokenBoss + ' frames');
+  claims('Swift Hand multiplier', 'recovery × ' + K.swiftMult);
+  claims('gourd heal',         K.gourdHeal + ' life');
+  claims('execution heal',     K.execHeal + ' life back');
+  claims('execution damage',   K.execDmg + ' damage');
+  claims('ọfọ per parry',      K.ofoParry + ' ọfọ');
+  claims('cowries per parry',  K.parryCowrie + ' cowries');
+  claims('bind duration',      K.bindTime + ' frames');
+  claims('bind extension per parry', 'adds ' + K.bindParry + ' frames');
+  claims('bind extension per execution', 'adds ' + K.bindExec + ' frames');
+  claims('bind ceiling',       'ceiling of ' + K.bindCap + ' frames');
+  claims('damage against an unnamed boss', Math.round(K.unnamedMult * 100) + '%');
+
+  // ── the tables ────────────────────────────────────────────────────────────
+  {
+    const bad = Object.keys(api.SPELLS).filter(k => !has('| ' + api.SPELLS[k].cost + ' | '));
+    check('every spell cost in the handbook matches SPELLS', bad.length === 0, bad.join(','));
+  }
+  {
+    const bad = Object.keys(api.CHARMS).filter(k => !has('| ' + api.CHARMS[k].cost + ' | '));
+    check('every charm price in the handbook matches CHARMS', bad.length === 0, bad.join(','));
+  }
+  {
+    const bad = Object.keys(api.BOSS_STATS).filter(k => {
+      const s = api.BOSS_STATS[k];
+      return !has('| ' + s[2] + ' | ' + s[3] + ' | ');
+    });
+    check('every boss\'s life and poise in the handbook matches BOSS_STATS', bad.length === 0, bad.join(','));
+  }
+  {
+    const bad = Object.keys(EN).filter(k => !has('| ' + EN[k].hp + ' | ' + EN[k].poise + ' | '));
+    check('every creature\'s life and poise in the handbook matches its builder', bad.length === 0, bad.join(','));
+  }
+  {
+    const bad = api.RIDDLES.filter(r => !has(r.a[r.c]) || !has(r.ig));
+    check('every riddle and its answer appear in the handbook exactly as the game asks them',
+      bad.length === 0, bad.length + ' adrift');
+    check('the handbook carries all ' + api.RIDDLES.length + ' riddles',
+      api.RIDDLES.every(r => has(r.en)));
+  }
+  {
+    const bad = ROOMS.filter(r => !has(r.name));
+    check('every room name in the handbook matches ROOMS', bad.length === 0, bad.map(r => r.name).join(','));
+  }
+  {
+    const bad = api.BEASTS.filter(b => !has(b.t));
+    check('every creature in the handbook is named the way the bestiary names it',
+      bad.length === 0, bad.map(b => b.k).join(','));
+  }
+  {
+    // the tell colours are the game's second pillar, and the handbook must not
+    // be the place a player learns a wrong one
+    const wrong = [];
+    for (const who of Object.keys(BA)) {
+      const tells = [...new Set(BA[who].map(a => a.tell))];
+      for (const a of BA[who]) {
+        const line = '| ' + a.state.replace(/Wind$/, '') + ' | ' + a.tell + ' | ' + a.wind + ' frames';
+        if (!has(line)) wrong.push(who + '.' + a.state);
+      }
+      if (tells.length !== 2) wrong.push(who + ' does not have both colours');
+    }
+    check('every boss attack in the handbook carries the tell colour the code gives it',
+      wrong.length === 0, wrong.join(','));
+  }
+  {
+    // Pillar 2 in the document itself: white is turnable, gold is not, and the
+    // handbook may never suggest otherwise
+    const goldPara = MD.slice(MD.indexOf('| Gold |'), MD.indexOf('| Gold |') + 200);
+    check('the handbook tells the player to roll gold, never ward it',
+      /Roll/.test(goldPara) && !/Ward it/.test(goldPara), goldPara.slice(0, 90));
+  }
+
+  // ── and the whole document, byte for byte ─────────────────────────────────
+  // Every assertion above is a spot check. This one is the gate: it regenerates
+  // both documents from the live tables and fails if what is on disk differs.
+  {
+    const r = spawnSync(process.execPath, [path.join(__dirname, 'tools', 'handbook.js'), '--check'],
+      { encoding: 'utf8' });
+    check('HANDBOOK.md and handbook.html are current with the tables',
+      r.status === 0, (r.stderr || r.stdout || '').trim());
+  }
+})();
+
 // The soaks are 21 of the suite's 30 seconds. They are not optional (09-TECHNICAL
 // §9.6 rule 6 — they have caught real crashes), so `--quick` skips them for the
 // inner loop only and says loudly that it is not the gate. What you run before a
@@ -4406,4 +4566,13 @@ if (failed) {
   console.log('');
 }
 console.log('  ' + passed + ' assertions, ' + failed + ' failures' + (QUICK ? '   (--quick: soaks skipped, not the gate)' : ''));
+// The manual's first stop condition is a suite over about 30 seconds, and it is
+// the only one nothing in the repository was measuring. It is measured now, so
+// crossing it is a line of output rather than something somebody notices later.
+{
+  const secs = process.uptime();
+  const over = !QUICK && secs > 30;
+  console.log('  ' + secs.toFixed(1) + ' s' + (over
+    ? '   <-- over the 30 s stop condition. The next commit is polish, tests or deletion.' : ''));
+}
 process.exit(failed ? 1 : 0);
