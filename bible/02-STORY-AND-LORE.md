@@ -37,6 +37,16 @@ So the child goes back to the ogilisi tree and digs up its own charm, breaking t
 bargain from the wrong side. It can no longer die properly. Neither, it will turn out,
 can the thing that took her.
 
+> **[CONFLICT — for Midas to settle.]** This section says nine burials and a tenth
+> child. **The shipped game says nine children and eight burials**, consistently and in
+> three separate places: `GRAVES` is eight mounds with the ninth grave being the hole
+> the player wakes in (`GRAVE_LINES[7]`: *"There is no ninth mound. The ninth was dug
+> up."*), Onwe's bestiary entry calls it *the ninth child*, and the nine strokes of nzu
+> then read as one per grave rather than one per burial — which is the tidier reading,
+> since the player is wearing their own. The game's version is internally coherent and
+> `HANDBOOK.md` follows it. Either the prose above or the tables need to move; do not
+> silently pick one while editing something else.
+
 **Act Two — The name.**
 The player descends: the path that watches, the shaft, the dark. They meet **Ogbunabali**,
 he who kills at night, and discover they cannot hurt him. He heals faster than they cut.

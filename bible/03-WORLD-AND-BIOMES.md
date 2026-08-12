@@ -342,6 +342,12 @@ authored at the end of a short row silently becomes wall. That is what happened 
 
 ### Pacing rules
 - **Every room has a rest charm within ~30 seconds of walking**, or a mirror.
+  *As built, four do not:* Ọhịa (1), Ebe Ọchịchịrị (3), Ogilisi (10) and Ụlọ Dibia (12).
+  A boss arena is a defensible exception — the fight is the room, and a charm inside it
+  would undo the walk back — so 3 is fine. The other three are short dead ends off a
+  room that does have one, which is arguably the same thing, but the rule has no length
+  clause in it. Either the rooms or the rule should move. `HANDBOOK.md`'s errata carries
+  this and the list is derived, so it will shorten by itself as rooms are fixed.
 - **No more than four enemies live in one screen** at 480×270. Five reads as a mob and
   the combat stops being readable.
 - **Alternate pressure and release.** Forest (pressure) → market (release) → water
