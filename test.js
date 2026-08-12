@@ -4093,8 +4093,33 @@ section('the codex');
   check('every lore entry has a title and body', api.LORE.every(e => e.t && e.b));
   check('every lore entry has an unlock condition', api.LORE.every(e => typeof e.when === 'function'));
   check('bestiary entries are authored', api.BEASTS.length > 0, 'entries=' + api.BEASTS.length);
-  check('every bestiary entry names a creature', api.BEASTS.every(e => e.k && (e.n || e.t)));
-  check('every bestiary entry has a description', api.BEASTS.every(e => e.d || e.b));
+  // REGRESSION. The two assertions that used to live here accepted `e.n || e.t`
+  // and `e.d || e.b`, which is the shape of the data rather than the shape of
+  // the consumer: renderCodex reads e.t and e.b and nothing else. Three entries
+  // were authored with n/d and shipped drawing the literal string "undefined"
+  // as their name, with no body at all, and the suite was green the whole time.
+  // Assert what the renderer reads.
+  check('REGRESSION: every bestiary entry has the title renderCodex draws',
+    api.BEASTS.every(e => typeof e.t === 'string' && e.t.length > 0),
+    'without t: ' + api.BEASTS.filter(e => !e.t).map(e => e.k).join(','));
+  check('REGRESSION: every bestiary entry has the body renderCodex draws',
+    api.BEASTS.every(e => e.b && (Array.isArray(e.b) ? e.b.length > 0 : String(e.b).length > 0)),
+    'without b: ' + api.BEASTS.filter(e => !e.b).map(e => e.k).join(','));
+  check('every bestiary entry is keyed to a creature', api.BEASTS.every(e => e.k));
+  {
+    // and nothing may carry the abandoned field names, or the next author will
+    // copy the wrong row
+    const stale = api.BEASTS.filter(e => e.n !== undefined || e.d !== undefined).map(e => e.k);
+    check('no bestiary entry still uses the old n/d field names', stale.length === 0, stale.join(','));
+  }
+  {
+    // REGRESSION. LORE shipped two entries with id 'onwe' and the same title, so
+    // the codex listed ONWE twice and any id lookup silently took the first.
+    const ids = api.LORE.map(e => e.id), titles = api.LORE.map(e => e.t);
+    const dupe = (a) => a.filter((v, i) => a.indexOf(v) !== i);
+    check('REGRESSION: no two lore entries share an id', dupe(ids).length === 0, dupe(ids).join(','));
+    check('no two lore entries share a title', dupe(titles).length === 0, dupe(titles).join(','));
+  }
 
   // Pillar 4 — the codex never gets ahead of the player.
   G().seen = {}; G().slain = {}; G().visited = {}; G().knowsName = false;
